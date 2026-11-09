@@ -1,10 +1,10 @@
-// Tez Browser — 100% local storage (IndexedDB).
+// Orbit Browser — 100% local storage (IndexedDB).
 // History / bookmarks / settings / speed-dial / AI chat:
 // SAB kuch aapke device par hi rehta hai, kisi company ke server par nahi jata.
 
 import { Bookmark, ChatMsg, HistoryItem, SpeedDialItem } from "./types";
 
-const DB_NAME = "tez-browser";
+const DB_NAME = "orbit-browser";
 const DB_VERSION = 1;
 
 export type StoreName = "history" | "bookmarks" | "speeddial" | "settings" | "aichat";
@@ -201,7 +201,7 @@ export async function exportAllData(): Promise<ExportBundle> {
     loadChatMessages(),
   ]);
   return {
-    app: "Tez Browser",
+    app: "Orbit Browser",
     exportedAt: new Date().toISOString(),
     history,
     bookmarks,

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Tab, Suggestion, NEWTAB } from "@/lib/browser/types";
 import {
   addHistory,
-  ensureDefaultSpeedDial,
   getSetting,
   listBookmarks,
   listHistory,
@@ -14,9 +13,7 @@ import {
   exportAllData,
   updateHistoryTitle,
 } from "@/lib/browser/localStore";
-import { SpeedDialItem } from "@/lib/browser/types";
 import { toast } from "sonner";
-import { lsDelete, addSpeedDial, removeSpeedDial, listSpeedDial } from "@/lib/browser/localStore";
 import { isExternal, normalizeInput, proxyUrl, searchQueryOf, titleFor, uid } from "@/lib/browser/shared";
 import { TabBar } from "./TabBar";
 import { Toolbar, MenuAction } from "./Toolbar";
@@ -27,7 +24,7 @@ import { BookmarksPage } from "./BookmarksPage";
 import { SettingsPage } from "./SettingsPage";
 import { AboutPage } from "./AboutPage";
 import { AiSidebar } from "./AiSidebar";
-import { Zap } from "lucide-react";
+import { OrbitLogo } from "./OrbitLogo";
 
 function makeTab(url: string = NEWTAB): Tab {
   return {
@@ -47,7 +44,6 @@ export function BrowserApp() {
   const [activeTabId, setActiveTabId] = useState("");
   const [privateMode, setPrivateMode] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const [speedDial, setSpeedDial] = useState<SpeedDialItem[]>([]);
   const [bookmarksRefresh, setBookmarksRefresh] = useState(0);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [bookmarkUrls, setBookmarkUrls] = useState<Set<string>>(new Set());
@@ -61,20 +57,19 @@ export function BrowserApp() {
   useEffect(() => {
     (async () => {
       try {
-        await ensureDefaultSpeedDial();
-        const dial = await listSpeedDial();
-        setSpeedDial(dial);
         const bms = await listBookmarks();
         setBookmarkUrls(new Set(bms.map((b) => b.url)));
         const session = await getSetting<{ tabs: Tab[]; activeTabId: string } | null>("session", null);
         if (session && Array.isArray(session.tabs) && session.tabs.length > 0) {
-          const restored = session.tabs.map((t) => ({
+          const migrated = session.tabs.map((t) => ({
             ...t,
-            loading: isExternal(t.url),
+            url: t.url === "tez://newtab" ? NEWTAB : t.url.replace(/^tez:\/\//i, "orbit://"),
+            history: t.history?.map((h) => h.replace(/^tez:\/\//i, "orbit://")) ?? [NEWTAB],
+            loading: false,
             nonce: 0,
           }));
-          setTabs(restored);
-          setActiveTabId(restored.find((t) => t.id === session.activeTabId)?.id ?? restored[0].id);
+          setTabs(migrated);
+          setActiveTabId(migrated.find((t) => t.id === session.activeTabId)?.id ?? migrated[0].id);
         } else {
           const t = makeTab();
           setTabs([t]);
@@ -199,7 +194,7 @@ export function BrowserApp() {
         | undefined;
       if (!d || typeof d !== "object" || !d.type || !d.tabId) return;
 
-      if (d.type === "tez:meta" && d.title) {
+      if (d.type === "orbit:meta" && d.title) {
         setTabs((prev) =>
           prev.map((t) => {
             if (t.id !== d.tabId || !d.title) return t;
@@ -209,7 +204,7 @@ export function BrowserApp() {
           })
         );
       }
-      if (d.type === "tez:navigate" && d.url) {
+      if (d.type === "orbit:navigate" && d.url) {
         if (d.newTab) {
           const t = makeTab(d.url);
           setTabs((prev) => [...prev, t]);
@@ -308,16 +303,16 @@ export function BrowserApp() {
           newTab();
           break;
         case "history":
-          navigate(activeTab.id, "tez://history");
+          navigate(activeTab.id, "orbit://history");
           break;
         case "bookmarks":
-          navigate(activeTab.id, "tez://bookmarks");
+          navigate(activeTab.id, "orbit://bookmarks");
           break;
         case "settings":
-          navigate(activeTab.id, "tez://settings");
+          navigate(activeTab.id, "orbit://settings");
           break;
         case "about":
-          navigate(activeTab.id, "tez://about");
+          navigate(activeTab.id, "orbit://about");
           break;
         case "export":
           exportAllData().then((bundle) => {
@@ -325,7 +320,7 @@ export function BrowserApp() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `tez-browser-data-${new Date().toISOString().slice(0, 10)}.json`;
+            a.download = `orbit-browser-data-${new Date().toISOString().slice(0, 10)}.json`;
             a.click();
             URL.revokeObjectURL(url);
             toast.success("Data export ho gaya");
@@ -341,15 +336,6 @@ export function BrowserApp() {
     },
     [activeTab, newTab, navigate]
   );
-
-  // ---------- speed dial ----------
-  const handleAddDial = useCallback((label: string, url: string) => {
-    addSpeedDial(label, url).then(() => listSpeedDial().then(setSpeedDial));
-  }, []);
-
-  const handleRemoveDial = useCallback((id: number) => {
-    removeSpeedDial(id).then(() => listSpeedDial().then(setSpeedDial));
-  }, []);
 
   // ---------- theme ----------
   const applyTheme = useCallback((t: "light" | "dark" | "system") => {
@@ -373,29 +359,21 @@ export function BrowserApp() {
   // ---------- render helpers ----------
   const renderInternal = (tab: Tab) => {
     if (tab.url === NEWTAB) {
-      return (
-        <NewTabPage
-          privateMode={privateMode}
-          speedDial={speedDial}
-          onNavigate={(input) => navigate(tab.id, input)}
-          onAddDial={handleAddDial}
-          onRemoveDial={handleRemoveDial}
-        />
-      );
+      return <NewTabPage privateMode={privateMode} onNavigate={(input) => navigate(tab.id, input)} />;
     }
-    if (tab.url.startsWith("tez://search")) {
+    if (tab.url.startsWith("orbit://search")) {
       return <SearchPage q={searchQueryOf(tab.url)} onNavigate={(url) => navigate(tab.id, url)} />;
     }
-    if (tab.url.startsWith("tez://history")) {
+    if (tab.url.startsWith("orbit://history")) {
       return <HistoryPage onNavigate={(url) => navigate(tab.id, url)} refreshKey={historyRefresh} />;
     }
-    if (tab.url.startsWith("tez://bookmarks")) {
+    if (tab.url.startsWith("orbit://bookmarks")) {
       return <BookmarksPage onNavigate={(url) => navigate(tab.id, url)} refreshKey={bookmarksRefresh} />;
     }
-    if (tab.url.startsWith("tez://settings")) {
+    if (tab.url.startsWith("orbit://settings")) {
       return <SettingsPage onThemeChange={applyTheme} onNavigate={(url) => navigate(tab.id, url)} />;
     }
-    if (tab.url.startsWith("tez://about")) {
+    if (tab.url.startsWith("orbit://about")) {
       return <AboutPage />;
     }
     return null;
@@ -404,10 +382,8 @@ export function BrowserApp() {
   if (!ready) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-background gap-4">
-        <span className="flex items-center justify-center w-16 h-16 rounded-3xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20">
-          <Zap className="w-8 h-8" />
-        </span>
-        <div className="text-lg font-bold">Tez Browser</div>
+        <OrbitLogo size={64} spin />
+        <div className="text-lg font-bold tracking-tight">Orbit</div>
         <div className="text-xs text-muted-foreground">Local data load ho raha hai...</div>
       </div>
     );
@@ -457,7 +433,7 @@ export function BrowserApp() {
         <main className="flex-1 relative min-w-0 bg-background" aria-label="Browser content">
           {tabs.map((tab) => {
             const active = tab.id === activeTab.id;
-            if (tab.url.startsWith("tez://")) {
+            if (tab.url.startsWith("orbit://")) {
               if (!active) return null;
               return (
                 <div key={tab.id} className="absolute inset-0">

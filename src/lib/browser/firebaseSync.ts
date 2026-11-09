@@ -1,4 +1,4 @@
-// Tez Browser — OPTIONAL cloud sync sirf AAPKE apne Firebase project me.
+// Orbit Browser — OPTIONAL cloud sync sirf AAPKE apne Firebase project me.
 // Jab tak aap apna Firebase config nahi dete, ek bhi byte cloud par nahi jata.
 // Firebase SDK yahan sirf tab load hota hai jab sync chalta hai (dynamic import).
 
@@ -30,16 +30,16 @@ export async function fbSync(cfg: FirebaseCfg, data: SyncPayload): Promise<strin
     ...data,
     history: data.history.slice(0, 300),
     updatedAt: serverTimestamp(),
-    device: "tez-browser",
+    device: "orbit-browser",
   };
-  await setDoc(doc(getFirestore(app), "tezBrowser", "sync"), payload);
+  await setDoc(doc(getFirestore(app), "orbitBrowser", "sync"), payload);
   return "Sync complete — data aapke Firebase project me save ho gaya";
 }
 
 export async function fbRestore(cfg: FirebaseCfg): Promise<Partial<SyncPayload> | null> {
   const app = await fbApp(cfg);
   const { getFirestore, doc, getDoc } = await import("firebase/firestore");
-  const snap = await getDoc(doc(getFirestore(app), "tezBrowser", "sync"));
+  const snap = await getDoc(doc(getFirestore(app), "orbitBrowser", "sync"));
   if (!snap.exists()) return null;
   return snap.data() as Partial<SyncPayload>;
 }

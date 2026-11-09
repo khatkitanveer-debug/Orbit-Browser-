@@ -1,4 +1,4 @@
-// Tez Browser — tiny SSE reader for streaming AI responses
+// Orbit Browser — tiny SSE reader for streaming AI responses
 
 export async function readSSE(res: Response, onEvent: (data: Record<string, unknown>) => void): Promise<void> {
   if (!res.body) throw new Error("Response body empty");

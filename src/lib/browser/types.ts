@@ -1,10 +1,10 @@
-// Tez Browser — shared types
+// Orbit Browser — shared types
 
-export const NEWTAB = "tez://newtab";
+export const NEWTAB = "orbit://newtab";
 
 export interface Tab {
   id: string;
-  url: string; // 'tez://newtab' | 'tez://search?q=...' | 'tez://settings' | https URL
+  url: string; // 'orbit://newtab' | 'orbit://search?q=...' | 'orbit://settings' | https URL
   title: string;
   loading: boolean;
   history: string[];
@@ -40,12 +40,15 @@ export interface FirebaseCfg {
   appId: string;
 }
 
-export interface TezSettingsData {
+export interface OrbitSettingsData {
   theme?: "light" | "dark" | "system";
-  searchEngine?: "tez-ai" | "duckduckgo";
+  searchEngine?: "orbit-ai" | "duckduckgo";
   firebase?: FirebaseCfg | null;
   session?: { tabs: Tab[]; activeTabId: string } | null;
 }
+
+/** @deprecated purana naam — compatibility ke liye */
+export type TezSettingsData = OrbitSettingsData;
 
 export interface ChatMsg {
   role: "user" | "assistant" | "system";

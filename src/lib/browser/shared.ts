@@ -1,4 +1,4 @@
-// Tez Browser — shared client helpers
+// Orbit Browser — shared client helpers
 
 import { NEWTAB } from "./types";
 
@@ -8,14 +8,14 @@ export function uid(): string {
 
 export function titleFor(url: string): string {
   if (url === NEWTAB) return "New Tab";
-  if (url.startsWith("tez://search")) {
-    const q = decodeURIComponent(url.replace("tez://search?q=", "")).trim();
-    return q ? `Tez AI: ${q.slice(0, 28)}` : "Tez AI Search";
+  if (url.startsWith("orbit://search")) {
+    const q = decodeURIComponent(url.replace("orbit://search?q=", "")).trim();
+    return q ? `Orbit AI: ${q.slice(0, 28)}` : "Orbit AI Search";
   }
-  if (url.startsWith("tez://history")) return "History";
-  if (url.startsWith("tez://bookmarks")) return "Bookmarks";
-  if (url.startsWith("tez://settings")) return "Settings";
-  if (url.startsWith("tez://about")) return "About Tez";
+  if (url.startsWith("orbit://history")) return "History";
+  if (url.startsWith("orbit://bookmarks")) return "Bookmarks";
+  if (url.startsWith("orbit://settings")) return "Settings";
+  if (url.startsWith("orbit://about")) return "About Orbit";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -61,16 +61,17 @@ export function letterOf(seed: string): string {
 export function normalizeInput(input: string): string {
   const t = input.trim();
   if (!t) return NEWTAB;
-  if (/^tez:\/\//i.test(t)) return t;
+  if (/^orbit:\/\//i.test(t)) return t;
+  if (/^tez:\/\//i.test(t)) return t.replace(/^tez:\/\//i, "orbit://"); // purana scheme
   if (/^https?:\/\//i.test(t)) return t;
   if (/^localhost(:\d+)?([\/?#].*)?$/i.test(t)) return "http://" + t;
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?([\/?#].*)?$/i.test(t)) return "https://" + t;
-  return "tez://search?q=" + encodeURIComponent(t);
+  return "orbit://search?q=" + encodeURIComponent(t);
 }
 
 export function searchQueryOf(url: string): string {
   try {
-    const u = new URL(url.replace("tez://", "http://tez.internal/"));
+    const u = new URL(url.replace(/^orbit:\/\//i, "http://orbit.internal/").replace(/^tez:\/\//i, "http://orbit.internal/"));
     return u.searchParams.get("q") ?? "";
   } catch {
     return "";
