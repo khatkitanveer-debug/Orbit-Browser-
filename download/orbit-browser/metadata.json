@@ -1,0 +1,6 @@
+{
+  "name": "Orbit Browser",
+  "description": "Orbit — ultra-fast, high-privacy mobile browser with Orbit Shield ad-blocking, background media playback, ECC key generator and private Firebase cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
