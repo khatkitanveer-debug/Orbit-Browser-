@@ -84,11 +84,16 @@ Waise hi milega:
 3. Download complete → screen par **sirf INSTALL** button wala dialog
 4. Install dabao — purana version replace (data safe), do apps nahi bante
 
+> **Signing note:** APK hamesha repo me committed `android/orbit.keystore` se sign hota hai
+> (local + CI dono) — isliye har naya version purane ke **upar** install hota hai.
+> Ek baar v1.0.2 ya usse purane release se update karte waqt "App not installed" aaye to
+> purana Orbit uninstall karke v1.0.3 fresh install karo — uske baad updates hamesha seamless.
+
 ### Naya version release karna (maintainer flow)
 
 1. `android/app/build.gradle.kts` me `versionCode`/`versionName` badhao
 2. `ota/update.json` me version + **GitHub Release APK URL** likho
-3. Commit karke `vX.Y.Z` tag push karo — GitHub Actions khud APK build karke Release me attach kar dega
+3. Commit karke `vX.Y.Z` tag push karo — GitHub Actions khud APK build karke Release me attach kar dega (wahi committed `orbit.keystore` se sign hota hai)
 4. Installed apps agle launch par silent download karke Install dialog dikhayengi
 
 ## Firebase Cloud Sync setup (2 minute)
