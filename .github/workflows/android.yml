@@ -33,20 +33,20 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
-      - name: Build Debug APK
+      - name: Build Release APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleRelease --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: orbit-browser-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
 
       # Tag push (v*) par GitHub Release — APK wahan se koi bhi download kar sakta hai
       - name: Rename APK for release
         if: startsWith(github.ref, 'refs/tags/v')
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk orbit-browser-${GITHUB_REF_NAME#v}.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk orbit-browser-${GITHUB_REF_NAME#v}.apk
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')

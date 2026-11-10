@@ -46,6 +46,7 @@ import android.widget.Toast
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
 import java.io.ByteArrayInputStream
+import java.io.File
 
 /**
  * Orbit Browser — native Android browser, CHROME ANDROID PARITY (v1.1.0):
@@ -1155,28 +1156,80 @@ class MainActivity : Activity() {
      * Fully silent auto-update — launch par bhi, menu check par bhi same flow:
      * update mila → background download (Orbit ke cache me) → sirf INSTALL wala
      * dialog. Koi "Update karo?" puchha-woochha nahi, koi Chrome/Downloads nahi.
+     * v1.2.1: downloaded APK pehle se validated + signature pre-checked aata hai
+     * (UpdateChecker me) — isliye yahan kabhi adhoora APK ya doomed install nahi
+     * pahunchta. Har dialog me "Chrome me APK kholo" escape hatch bhi hai.
      */
     private fun runAutoUpdate(manual: Boolean) {
-        UpdateChecker.autoUpdate(this, manual) { info ->
+        UpdateChecker.autoUpdate(this, manual) { info, apk, compatible ->
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
+                if (!compatible) {
+                    // signing mismatch — install attempt bekaar hai, seedha migration
+                    showMigrationDialog(info, apk)
+                    return@runOnUiThread
+                }
                 AlertDialog.Builder(this, R.style.OrbitDialog)
                     .setTitle("Orbit ${info.versionName} ready hai")
                     .setMessage("Install dabao — purana version replace ho jayega (aapka data safe rahega).")
                     .setPositiveButton("Install") { _, _ ->
-                        // cached APK izzat se use karo; missing ho to SILENT no-op
-                        // NAHI — user ko batao aur download dobara shuru karo
-                        val apk = UpdateChecker.cachedApk(this, info.versionName)
-                        if (apk != null) {
-                            UpdateChecker.installWithStatus(this, apk)
-                        } else {
-                            Toast.makeText(this, "APK cache me nahi mila — dobara download ho raha hai…", Toast.LENGTH_LONG).show()
-                            runAutoUpdate(manual = true)
-                        }
+                        UpdateChecker.installWithStatus(this, apk)
                     }
+                    .setNeutralButton("Chrome me APK kholo") { _, _ ->
+                        UpdateChecker.openApkInBrowser(this, info.apkUrl)
+                    }
+                    .setNegativeButton("Baad me", null)
                     .show()
             }
         }
+    }
+
+    /**
+     * Signature mismatch (purana version alag key se bana) — Android iske upar
+     * naya version install nahi hone dega. One-time migration: APK Downloads me
+     * save (uninstall se cache mar jata hai, Downloads nahi) → uninstall →
+     * Downloads me APK kholo. Iske baad ke saare updates khud install honge.
+     */
+    private fun showMigrationDialog(info: UpdateChecker.UpdateInfo, apk: File) {
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Orbit ${info.versionName} — ek baar migration chahiye")
+            .setMessage(
+                "Purana Orbit alag build key se bana hai, isliye Android naya version uske UPAR " +
+                    "install nahi hone dega (isliye 'Install' ke baad kuch nahi hota tha).\n\n" +
+                    "1. Neeche 'APK Downloads me save karo' dabao\n" +
+                    "2. 'Purana uninstall karo' dabao\n" +
+                    "3. Files/Downloads app me saved APK kholke install karo\n\n" +
+                    "Ye SIRF IS EK BAAR hai — iske baad saare updates khud install honge.",
+            )
+            .setPositiveButton("APK Downloads me save karo") { _, _ ->
+                Thread {
+                    val path = UpdateChecker.saveApkToDownloads(this, apk)
+                    runOnUiThread {
+                        if (isFinishing) return@runOnUiThread
+                        if (path == null) {
+                            Toast.makeText(
+                                this,
+                                "Save nahi hua — Chrome me APK seedha download karo: ${info.apkUrl}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            AlertDialog.Builder(this, R.style.OrbitDialog)
+                                .setTitle("APK save ho gaya")
+                                .setMessage("$path\n\nAb purana Orbit uninstall karein?")
+                                .setPositiveButton("Haan, uninstall karo") { _, _ ->
+                                    UpdateChecker.uninstallSelf(this)
+                                }
+                                .setNegativeButton("Baad me", null)
+                                .show()
+                        }
+                    }
+                }.start()
+            }
+            .setNeutralButton("Chrome me APK kholo") { _, _ ->
+                UpdateChecker.openApkInBrowser(this, info.apkUrl)
+            }
+            .setNegativeButton("Baad me", null)
+            .show()
     }
 
     // ---------------------------------------------------------------- helpers

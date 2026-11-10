@@ -1,7 +1,7 @@
 {
-  "versionCode": 9,
-  "versionName": "1.2.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.0/orbit-browser-1.2.0.apk",
-  "notes": "World-class browser modules: Brave Shields (ads/trackers network-level block + badge), Edge Sleeping Tabs (5 min inactive = battery save), DuckDuckGo Fire Button (sab data ek tap me clear), Chrome omnibox suggestions, Firefox anti-fingerprinting (canvas noise + hardware spoof), Opera RAM limiter (max 6 live tabs).",
+  "versionCode": 10,
+  "versionName": "1.2.1",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.1/orbit-browser-1.2.1.apk",
+  "notes": "Install 100% pakka: APK download verify hota hai (adhoora/corrupt kabhi install nahi karega), install se pehle signing check (mismatch par seedha one-time migration dialog), har update dialog me 'Chrome me APK kholo' escape hatch. Wahi v1.2.0 features — Brave Shields, Sleeping Tabs, Fire Button, omnibox suggestions, anti-fingerprinting, RAM limiter.",
   "minVersionCode": 1
 }
