@@ -10,7 +10,11 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -22,9 +26,12 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebViewDatabase
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
@@ -37,6 +44,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.webkit.WebViewCompat
+import java.io.ByteArrayInputStream
 
 /**
  * Orbit Browser — native Android browser, CHROME ANDROID PARITY (v1.1.0):
@@ -56,6 +65,10 @@ class MainActivity : Activity() {
         var isIncognito: Boolean = false
         var desktopSite: Boolean = false
         var thumb: Bitmap? = null
+        var blockedCount: Int = 0      // Brave Shields — is page par kitne blocked
+        var sleeping: Boolean = false  // Edge sleeping tabs — WebView frozen
+        var evicted: Boolean = false   // Opera RAM limiter — WebView destroy hua, select par recreate
+        var lastActive: Long = System.currentTimeMillis()
     }
 
     private val tabs = mutableListOf<Tab>()
@@ -79,6 +92,11 @@ class MainActivity : Activity() {
 
     private var aiJob: Thread? = null
     private var menuPopup: PopupWindow? = null
+    private var suggestPopup: PopupWindow? = null
+    private lateinit var shieldBadge: TextView
+
+    // EDGE MODULE — sleeping tabs ka timer
+    private val sleeper = Handler(Looper.getMainLooper())
 
     /** System WebView ka REAL UA — "; wv" token hata kar. Fake/stale UA (purana
      *  Chrome/126 claim) Google ka bot-detection trigger karta tha — login/search
@@ -121,6 +139,24 @@ class MainActivity : Activity() {
         findBar = findViewById(R.id.find_bar)
         findInput = findViewById(R.id.find_input)
         findCount = findViewById(R.id.find_count)
+        shieldBadge = findViewById(R.id.shield_badge)
+
+        // Brave Shields badge click — is page ke block stats
+        shieldBadge.setOnClickListener { showShieldStats() }
+
+        // CHROME MODULE — omnibox typing par history/bookmark suggestions
+        omnibox.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                if (omnibox.hasFocus()) showSuggestions(s?.toString() ?: "")
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+        omnibox.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) suggestPopup?.dismiss()
+        }
 
         omnibox.setOnEditorActionListener { _, actionId, event ->
             if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
@@ -171,6 +207,8 @@ class MainActivity : Activity() {
 
         // pehla tab — clean new tab screen
         newTab()
+        // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
+        sleeper.postDelayed(sleepCheck, 30_000)
         // silent auto-update: naya version mila to background me khud download,
         // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
         runAutoUpdate(manual = false)
@@ -253,10 +291,18 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun selectTab(id: Long) {
         val tab = tabs.first { it.id == id }
-        // outgoing tab ka thumbnail capture — switcher cards me dikhega
-        if (activeTab != null && activeTab !== tab) captureThumb(activeTab!!)
+        // outgoing tab: lastActive abhi set + thumbnail capture — switcher cards me dikhega
+        activeTab?.let {
+            it.lastActive = System.currentTimeMillis()
+            captureThumb(it)
+        }
         if (tab.webView == null) {
             tab.webView = buildWebView(tab)
+            // OPERA MODULE — evicted tab wapas aaya to URL dobara load (WebView fresh hai)
+            if (tab.evicted) {
+                tab.evicted = false
+                if (!tab.isInternal && tab.url != NEWTAB) tab.webView?.loadUrl(tab.url)
+            }
         }
         container.removeAllViews()
         tab.webView?.let {
@@ -268,8 +314,16 @@ class MainActivity : Activity() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 ),
             )
+            // EDGE MODULE — sleeping tab ko jagao
+            if (tab.sleeping) {
+                it.onResume()
+                tab.sleeping = false
+            }
         }
         activeTab = tab
+        tab.lastActive = System.currentTimeMillis()
+        // OPERA MODULE — RAM limit: sabse zyada purane inactive WebViews freeze/destroy
+        evictExcessTabs()
         refreshChrome()
         if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
         if (tab.isInternal && tab.url == NEWTAB) {
@@ -343,6 +397,13 @@ class MainActivity : Activity() {
         wv.settings.loadWithOverviewMode = true
         wv.settings.useWideViewPort = true
         wv.addJavascriptInterface(Bridge(tab), "OrbitBridge")
+        // FIREFOX MODULE — anti-fingerprinting: document-start pe script inject
+        // (kisi bhi page script se PEHLE) — canvas noise + hardware spoof
+        if (antiFpEnabled()) {
+            runCatching {
+                WebViewCompat.addDocumentStartJavaScript(wv, FINGERPRINT_SHIELD_JS, setOf("*"))
+            }
+        }
         wv.webViewClient = OrbitWebViewClient(tab)
         wv.webChromeClient = object : WebChromeClient() {
             override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -529,6 +590,17 @@ class MainActivity : Activity() {
     }
 
     private inner class OrbitWebViewClient(val tab: Tab) : WebViewClient() {
+        // BRAVE MODULE — matched ad/tracker request server tak jaane se PEHLE drop
+        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+            val url = request?.url?.toString() ?: return null
+            if (shieldsEnabled() && AdBlocker.shouldBlock(url)) {
+                tab.blockedCount++
+                AdBlocker.countBlock()
+                return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+            }
+            return null
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val url = request?.url ?: return false
             val scheme = url.scheme?.lowercase() ?: return false
@@ -549,6 +621,7 @@ class MainActivity : Activity() {
 
         override fun onPageFinished(view: WebView?, url: String?) {
             pullRefresh.isRefreshing = false
+            updateShieldBadge()
             if (view == null || url.isNullOrEmpty() || tab.isInternal) return
             tab.url = url
             tab.title = view.title?.ifBlank { null } ?: domainOf(url)
@@ -630,7 +703,9 @@ class MainActivity : Activity() {
                 setPadding(dp(4), dp(6), dp(0), dp(0))
             }
             val title = TextView(this).apply {
-                text = if (tab.isIncognito) "[Incognito] ${tab.title.ifBlank { domainOf(tab.url) }}" else tab.title.ifBlank { domainOf(tab.url) }
+                text = (if (tab.sleeping) "😴 " else "") +
+                    (if (tab.isIncognito) "[Incognito] " else "") +
+                    tab.title.ifBlank { domainOf(tab.url) }
                 textSize = 11f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -698,6 +773,9 @@ class MainActivity : Activity() {
             null, // divider
             Item(R.drawable.ic_desktop, if (tab?.desktopSite == true) "✓ Desktop site" else "Desktop site") { toggleDesktopSite() },
             Item(R.drawable.ic_share, "Share karo") { sharePage() },
+            Item(R.drawable.ic_shield, if (shieldsEnabled()) "✓ Shields (ads block)" else "Shields (ads block)") { toggleShields(); renderSwitcherCards() },
+            Item(R.drawable.ic_lock, if (antiFpEnabled()) "✓ Anti-fingerprint" else "Anti-fingerprint") { toggleAntiFp() },
+            Item(R.drawable.ic_fire, "Fire Button (sab data clear)") { fireButton() },
             null, // divider
             Item(R.drawable.ic_update, "Check update") { runAutoUpdate(manual = true) },
             Item(R.drawable.ic_settings, "Settings") { showSettings() },
@@ -791,6 +869,204 @@ class MainActivity : Activity() {
             putExtra(Intent.EXTRA_SUBJECT, tab.title)
         }
         runCatching { startActivity(Intent.createChooser(i, "Share karo")) }
+    }
+
+    // ---------------------------------------------------------------- modules (v1.2.0)
+
+    private fun shieldsEnabled(): Boolean = LocalStore.getSetting(this, "shields", "on") != "off"
+
+    private fun antiFpEnabled(): Boolean = LocalStore.getSetting(this, "antiFp", "on") != "off"
+
+    private fun toggleShields() {
+        val on = shieldsEnabled()
+        LocalStore.setSetting(this, "shields", if (on) "off" else "on")
+        Toast.makeText(this, if (on) "Shields OFF — ads dikhenge" else "Shields ON — ads/trackers block", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun toggleAntiFp() {
+        val on = antiFpEnabled()
+        LocalStore.setSetting(this, "antiFp", if (on) "off" else "on")
+        Toast.makeText(
+            this,
+            if (on) "Anti-fingerprint OFF (naye tabs me)" else "Anti-fingerprint ON (naye tabs me)",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    /** Brave Shields badge — omnibox pill me blocked count */
+    private fun updateShieldBadge() {
+        val n = activeTab?.blockedCount ?: 0
+        runOnUiThread {
+            if (isFinishing) return@runOnUiThread
+            if (n > 0 && shieldsEnabled()) {
+                shieldBadge.text = "🛡 $n"
+                shieldBadge.visibility = View.VISIBLE
+            } else {
+                shieldBadge.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun showShieldStats() {
+        val tab = activeTab
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("🛡 Orbit Shields")
+            .setMessage(
+                "Is page par ${tab?.blockedCount ?: 0} ads/trackers block hue.\n" +
+                    "Is session me total ${AdBlocker.totalBlocked} blocked.\n\n" +
+                    "Network-level blocking — matched requests server tak jaane se pehle drop hote hain.",
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    /** DDG FIRE BUTTON — cookies + cache + storage + history, sab ek jhatke me */
+    private fun fireButton() {
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("🔥 Fire Button")
+            .setMessage("Cookies, cache, site data aur history — SAB clear ho jayega, sab tabs band. Pakka?")
+            .setPositiveButton("🔥 Jala do") { _, _ -> doFire() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doFire() {
+        val root = findViewById<ViewGroup>(R.id.root)
+        val flash = View(this).apply { setBackgroundColor(0xFFFF5252.toInt()); alpha = 0f }
+        root.addView(flash, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        flash.animate().alpha(0.85f).setDuration(180).withEndAction {
+            runCatching {
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+            }
+            runCatching { WebStorage.getInstance().deleteAllData() }
+            runCatching { WebViewDatabase.getInstance(this).clearFormData() }
+            runCatching { WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword() }
+            runCatching { LocalStore.clearHistory(this) }
+            AdBlocker.resetStats()
+            tabs.toList().forEach { tab ->
+                tab.webView?.clearCache(true)
+                closeTabInternal(tab)
+            }
+            tabs.clear()
+            flash.animate().alpha(0f).setDuration(320)
+                .withEndAction { (flash.parent as? ViewGroup)?.removeView(flash) }.start()
+            newTab()
+            Toast.makeText(this, "🔥 Sab data jala diya — fresh start", Toast.LENGTH_SHORT).show()
+        }.start()
+    }
+
+    /** OPERA MODULE lite — max live WebViews, baaki oldest ka WebView destroy
+     *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai) */
+    private fun evictExcessTabs() {
+        var live = tabs.filter { it !== activeTab && it.webView != null }
+        for (tab in live.sortedBy { it.lastActive }) {
+            if (live.size < MAX_LIVE_WEBVIEWS) break
+            captureThumb(tab)
+            tab.webView?.apply {
+                stopLoading()
+                (parent as? ViewGroup)?.removeView(this)
+                destroy()
+            }
+            tab.webView = null
+            tab.evicted = true
+            live = tabs.filter { it !== activeTab && it.webView != null }
+        }
+    }
+
+    /** EDGE MODULE — har 30s check: 5 min se inactive WebViews freeze (onPause)
+     *  — JS/timers/battery sab ruk jata hai. Select karte hi onResume. */
+    private val sleepCheck = object : Runnable {
+        override fun run() {
+            val now = System.currentTimeMillis()
+            for (tab in tabs) {
+                if (tab === activeTab || tab.sleeping || tab.webView == null || tab.isInternal) continue
+                if (now - tab.lastActive > SLEEP_AFTER_MS) {
+                    tab.webView?.onPause()
+                    tab.sleeping = true
+                }
+            }
+            sleeper.postDelayed(this, 30_000)
+        }
+    }
+
+    /** CHROME MODULE — omnibox suggestions: history + bookmarks, ranking ke saath */
+    private fun showSuggestions(q: String) {
+        val query = q.trim().lowercase()
+        if (suggestPopup?.isShowing == true) suggestPopup?.dismiss()
+        if (query.length < 2) return
+        val merged = LinkedHashMap<String, Pair<String, Boolean>>() // url -> (title, isBookmark)
+        runCatching {
+            LocalStore.listBookmarks(this).forEach { b ->
+                if (b.url.lowercase().contains(query) || b.title.lowercase().contains(query)) {
+                    merged[b.url] = Pair(b.title.ifBlank { b.url }, true)
+                }
+            }
+            LocalStore.listHistory(this).forEach { h ->
+                if (merged.size >= 6) return@forEach
+                if (h.url.lowercase().contains(query) || h.title.lowercase().contains(query)) {
+                    merged.putIfAbsent(h.url, Pair(h.title.ifBlank { h.url }, false))
+                }
+            }
+        }
+        if (merged.isEmpty()) return
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = getDrawable(R.drawable.menu_bg)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        for ((url, meta) in merged.entries.take(6)) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+            }
+            val iv = ImageView(this).apply {
+                setImageResource(if (meta.second) R.drawable.ic_star else R.drawable.ic_history)
+                setColorFilter(0xFF9AA0A6.toInt())
+                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+            }
+            val col = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(14)
+                }
+            }
+            val t = TextView(this).apply {
+                text = meta.first
+                textSize = 14f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(0xFFE8EAED.toInt())
+            }
+            val u = TextView(this).apply {
+                text = url
+                textSize = 11f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(0xFF9AA0A6.toInt())
+            }
+            col.addView(t)
+            col.addView(u)
+            row.addView(iv)
+            row.addView(col)
+            row.setOnClickListener {
+                suggestPopup?.dismiss()
+                omnibox.clearFocus()
+                val tab = activeTab ?: return@setOnClickListener
+                navigate(tab.id, url)
+            }
+            content.addView(row)
+        }
+        suggestPopup = PopupWindow(content, omnibox.width, ViewGroup.LayoutParams.WRAP_CONTENT, false).apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            elevation = dp(10).toFloat()
+            isOutsideTouchable = true
+            showAsDropDown(omnibox, 0, dp(2))
+        }
     }
 
     /** AI search optional hai — menu se. Default search Google hai. */
@@ -927,5 +1203,29 @@ class MainActivity : Activity() {
         const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/131.0.0.0 Safari/537.36"
+
+        // OPERA MODULE — isse zyada live WebViews nahi (RAM limit)
+        const val MAX_LIVE_WEBVIEWS = 6
+
+        // EDGE MODULE — 5 min inactive = WebView freeze (battery bachao)
+        const val SLEEP_AFTER_MS = 5 * 60_000L
+
+        /** FIREFOX MODULE — anti-fingerprinting preload (document-start).
+         *  Canvas toDataURL/getImageData me 1-bit random noise + hardware spoof —
+         *  fingerprint hamesha ALAG aata hai, sites pehchan nahi paati. */
+        const val FINGERPRINT_SHIELD_JS =
+            "(function(){try{" +
+                "var n=function(c){try{var x=c.getContext('2d');if(!x)return;" +
+                "var w=Math.min(c.width||1,16),h=Math.min(c.height||1,16);if(w<1||h<1)return;" +
+                "var d=x.getImageData(0,0,w,h);for(var i=0;i<d.data.length;i+=4){d.data[i]=d.data[i]^1;}" +
+                "x.putImageData(d,0,0);}catch(e){}};" +
+                "var t=HTMLCanvasElement.prototype.toDataURL;" +
+                "HTMLCanvasElement.prototype.toDataURL=function(){n(this);return t.apply(this,arguments);};" +
+                "var g=CanvasRenderingContext2D.prototype.getImageData;" +
+                "CanvasRenderingContext2D.prototype.getImageData=function(){var r=g.apply(this,arguments);" +
+                "try{for(var i=0;i<r.data.length;i+=997){r.data[i]=r.data[i]^1;}}catch(e){}return r;};" +
+                "Object.defineProperty(navigator,'hardwareConcurrency',{get:function(){return 8;}});" +
+                "Object.defineProperty(navigator,'deviceMemory',{get:function(){return 8;}});" +
+                "}catch(e){}})();"
     }
 }

@@ -52,6 +52,21 @@
                 android:maxLines="1"
                 android:importantForAutofill="no" />
 
+            <!-- Brave Shields badge — is page par kitne ads/trackers block hue -->
+            <TextView
+                android:id="@+id/shield_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="44dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textColor="#81C995"
+                android:visibility="gone"
+                android:text="🛡 0" />
+
             <ImageButton
                 android:id="@+id/btn_reload"
                 android:layout_width="32dp"

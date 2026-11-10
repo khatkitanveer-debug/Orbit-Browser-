@@ -1,7 +1,7 @@
 {
-  "versionCode": 8,
-  "versionName": "1.1.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.1.0/orbit-browser-1.1.0.apk",
-  "notes": "Chrome overhaul: Chrome-jaisa toolbar (omnibox pill + tab counter), Chrome tab switcher (cards + FAB), Incognito tab, pull-to-refresh, find in page, desktop site, share. FIX: Google services (login/search/YouTube) ab kaam karte hain — real browser UA + third-party cookies.",
+  "versionCode": 9,
+  "versionName": "1.2.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.0/orbit-browser-1.2.0.apk",
+  "notes": "World-class browser modules: Brave Shields (ads/trackers network-level block + badge), Edge Sleeping Tabs (5 min inactive = battery save), DuckDuckGo Fire Button (sab data ek tap me clear), Chrome omnibox suggestions, Firefox anti-fingerprinting (canvas noise + hardware spoof), Opera RAM limiter (max 6 live tabs).",
   "minVersionCode": 1
 }
