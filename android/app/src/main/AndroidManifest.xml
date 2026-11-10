@@ -35,5 +35,16 @@
                 <data android:scheme="http" />
             </intent-filter>
         </activity>
+
+        <!-- OTA update: downloaded APK ko system installer ko securely dene ke liye -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

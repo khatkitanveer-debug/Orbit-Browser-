@@ -1,21 +1,27 @@
 package com.orbit.browser
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
-import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
  * Orbit OTA updater — repo ke [ota/update.json] ko check karta hai
- * (raw.githubusercontent.com se). Naya version mila to APK download karke
- * installer prompt dikhata hai. Poori tarah GitHub par based — koi extra server nahi.
+ * (raw.githubusercontent.com se).
+ *
+ * Naya flow (user ko sirf INSTALL dabana hai):
+ *   1. "Update karo" dabate hi APK BACKGROUND me download hota hai (app ke cache me)
+ *   2. Download complete hote hi system installer KAHD KHUD khul jata hai
+ *   3. User sirf INSTALL dabaye — same applicationId + same signature hone se
+ *      purana version REPLACE ho jata hai (aapka data bana rehta hai),
+ *      Downloads folder me koi APK kachra nahi.
  */
 object UpdateChecker {
 
@@ -31,8 +37,10 @@ object UpdateChecker {
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    private val main = Handler(Looper.getMainLooper())
 
     fun fetchLatest(): UpdateInfo? {
         return runCatching {
@@ -54,41 +62,48 @@ object UpdateChecker {
     fun isUpdateAvailable(latest: UpdateInfo): Boolean =
         latest.versionCode > BuildConfig.VERSION_CODE
 
-    /** APK download (DownloadManager) — complete hone par installer prompt */
+    /** Background download → installer prompt khud khulta hai */
     fun downloadAndInstall(ctx: Context, info: UpdateInfo) {
-        val dm = ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val fileName = "orbit-browser-${info.versionName}.apk"
-        val req = DownloadManager.Request(Uri.parse(info.apkUrl)).apply {
-            setTitle("Orbit Browser ${info.versionName}")
-            setDescription("Orbit update download ho raha hai...")
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            setMimeType("application/vnd.android.package-archive")
-        }
-        val id = dm.enqueue(req)
-        Toast.makeText(ctx, "Orbit ${info.versionName} download ho raha hai...", Toast.LENGTH_SHORT).show()
-
-        ctx.registerReceiver(
-            object : BroadcastReceiver() {
-                override fun onReceive(c: Context?, intent: Intent?) {
-                    val doneId = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                    if (doneId == id) {
-                        val uri = dm.getUriForDownloadedFile(id)
-                        if (uri != null) {
-                            val install = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, "application/vnd.android.package-archive")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            runCatching { c?.startActivity(install) }
-                                .onFailure {
-                                    Toast.makeText(c, "Install prompt nahi khula — Downloads se APK install karo", Toast.LENGTH_LONG).show()
-                                }
-                        }
+        toast(ctx, "Orbit ${info.versionName} background me download ho raha hai…")
+        Thread {
+            val apk: File? = runCatching {
+                val req = Request.Builder().url(info.apkUrl).build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                    val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
+                    // purana pending update file clear — hamesha fresh download
+                    dir.listFiles()?.forEach { it.delete() }
+                    val out = File(dir, "orbit-${info.versionName}.apk")
+                    val body = resp.body ?: error("empty body")
+                    body.byteStream().use { input ->
+                        out.outputStream().use { output -> input.copyTo(output) }
                     }
-                    runCatching { ctx.unregisterReceiver(this) }
+                    out
                 }
-            },
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-        )
+            }.getOrNull()
+
+            if (apk == null || apk.length() < 100_000) {
+                toast(ctx, "Download fail ho gaya — internet check karke dobara try karo")
+                return@Thread
+            }
+            toast(ctx, "Download complete — Install dabao")
+            promptInstall(ctx, apk)
+        }.start()
+    }
+
+    private fun promptInstall(ctx: Context, apk: File) {
+        val uri: Uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", apk)
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { ctx.startActivity(intent) }
+            .onFailure {
+                toast(ctx, "Installer nahi khula — Settings me 'Install unknown apps' allow karo")
+            }
+    }
+
+    private fun toast(ctx: Context, msg: String) {
+        main.post { Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show() }
     }
 }

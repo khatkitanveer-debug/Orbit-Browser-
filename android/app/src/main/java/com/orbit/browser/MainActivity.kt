@@ -3,6 +3,7 @@ package com.orbit.browser
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,7 @@ import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -258,7 +260,7 @@ class MainActivity : Activity() {
                 val looksLikeUrl = !x.contains(" ") &&
                     (x.contains(".") || x.contains(":")) &&
                     !x.endsWith(".")
-                if (looksLikeUrl) "https://$x" else "orbit://search?q=$x"
+                if (looksLikeUrl) "https://$x" else GOOGLE_SEARCH + java.net.URLEncoder.encode(x, "UTF-8")
             }
         }
     }
@@ -307,26 +309,11 @@ class MainActivity : Activity() {
     private fun loadUrlInTab(tab: Tab, url: String) {
         tab.isInternal = false
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
-        if (ProxyEngine.isPrivateHost(url)) {
-            wv.loadUrl(url)
-            return
-        }
-        // content-type pata karne ke liye pehle proxy fetch — HTML ho to transform
-        Thread {
-            val res = ProxyEngine.fetch(url)
-            runOnUiThread {
-                if (isFinishing || tab.webView == null) return@runOnUiThread
-                when {
-                    res.ok && res.html != null -> {
-                        wv.loadDataWithBaseURL(url, res.html, "text/html", "UTF-8", url)
-                        if (!privateMode) LocalStore.addHistory(this, url, domainOf(url))
-                    }
-                    res.ok && res.html == null -> wv.loadUrl(url) // image/pdf direct
-                    else -> showErrorPage(wv, url, res.error ?: "Page load nahi hua")
-                }
-                refreshOmnibox()
-            }
-        }.start()
+        // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
+        // native browser jaisa chalega. (Purana proxy-fetch approach Google jaise
+        // JS-heavy sites ko todta tha — browser browser ki tarah chalna chahiye.)
+        wv.loadUrl(url)
+        refreshOmnibox()
     }
 
     private fun showErrorPage(wv: WebView, url: String, reason: String) {
@@ -374,7 +361,10 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun search(q: String) {
-            runOnUiThread { navigate(tab.id, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8")) }
+            // newtab search bar — default GOOGLE search (browser ki tarah)
+            runOnUiThread {
+                navigate(tab.id, GOOGLE_SEARCH + java.net.URLEncoder.encode(q, "UTF-8"))
+            }
         }
 
         @JavascriptInterface
@@ -393,14 +383,36 @@ class MainActivity : Activity() {
 
     private inner class OrbitWebViewClient(val tab: Tab) : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-            // proxy-rendered pages me sab kuch hum handle karte hain
-            return false
+            val url = request?.url ?: return false
+            val scheme = url.scheme?.lowercase() ?: return false
+            // tel:/mailto:/market: jaise external schemes — system app me bhejo
+            if (scheme !in setOf("http", "https", "about", "data", "javascript", "blob")) {
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, url)) }
+                return true
+            }
+            return false // http(s) WebView (Chromium) me hi khulega — real browser
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             if (!url.isNullOrEmpty() && url != "https://orbit.local/" && !url.startsWith("data:")) {
                 tab.url = url
                 refreshOmnibox()
+            }
+        }
+
+        override fun onPageFinished(view: WebView?, url: String?) {
+            if (view == null || url.isNullOrEmpty() || tab.isInternal) return
+            tab.url = url
+            tab.title = view.title?.ifBlank { null } ?: domainOf(url)
+            refreshOmnibox()
+            renderTabStrip()
+            if (!privateMode) LocalStore.addHistory(this@MainActivity, url, tab.title)
+        }
+
+        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+            // sirf main frame — subresource errors page todte nahi
+            if (request?.isForMainFrame == true) {
+                showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page load nahi hua")
             }
         }
     }
@@ -440,19 +452,36 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu() {
-        val opts = arrayOf("New tab", "Bookmarks", "History", "Settings", "Check update", "About Orbit")
+        val opts = arrayOf("New tab", "AI Search", "Bookmarks", "History", "Settings", "Check update", "About Orbit")
         AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle("Orbit")
             .setItems(opts) { _, which ->
                 when (which) {
                     0 -> newTab()
-                    1 -> showBookmarks()
-                    2 -> showHistory()
-                    3 -> showSettings()
-                    4 -> checkForUpdate(silent = false)
-                    5 -> showAbout()
+                    1 -> showAiSearchPrompt()
+                    2 -> showBookmarks()
+                    3 -> showHistory()
+                    4 -> showSettings()
+                    5 -> checkForUpdate(silent = false)
+                    6 -> showAbout()
                 }
             }
+            .show()
+    }
+
+    /** AI search optional hai — menu se. Default search Google hai. */
+    private fun showAiSearchPrompt() {
+        val input = EditText(this)
+        input.hint = "AI se kya poochna hai?"
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Orbit AI Search")
+            .setView(input)
+            .setPositiveButton("Search") { _, _ ->
+                val q = input.text.toString().trim()
+                val tab = activeTab ?: return@setPositiveButton
+                if (q.isNotEmpty()) navigate(tab.id, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
@@ -511,10 +540,10 @@ class MainActivity : Activity() {
             .setTitle("Orbit Browser")
             .setMessage(
                 "Orbit — Fast. Private. Aapka.\n\n" +
-                    "• Chrome-jaisa browsing, 100% native Android\n" +
+                    "• Real browser: Chromium engine, Google search built-in\n" +
                     "• Aapka data device par hi — koi server nahi\n" +
-                    "• AI search aapke apne backend se (Settings me set karo)\n" +
-                    "• OTA updates seedha GitHub se\n\n" +
+                    "• AI search optional (menu -> AI Search, Settings me backend set karo)\n" +
+                    "• OTA updates: background download, ek tap install\n\n" +
                     "v${BuildConfig.VERSION_NAME}",
             )
             .setPositiveButton("OK", null)
@@ -532,7 +561,11 @@ class MainActivity : Activity() {
                 if (UpdateChecker.isUpdateAvailable(latest)) {
                     AlertDialog.Builder(this, R.style.OrbitDialog)
                         .setTitle("Orbit ${latest.versionName} available hai")
-                        .setMessage(latest.notes.ifBlank { "Naya version download karein?" })
+                        .setMessage(
+                            (latest.notes.ifBlank { "Naya version ready hai." }) +
+                                "\n\n• Background me download hoga, phir INSTALL ka button khud khul jayega\n" +
+                                "• Install hote hi purana version REPLACE ho jayega (aapka data safe rahega)",
+                        )
                         .setPositiveButton("Update karo") { _, _ -> UpdateChecker.downloadAndInstall(this, latest) }
                         .setNegativeButton("Baad me", null)
                         .show()
@@ -560,6 +593,7 @@ class MainActivity : Activity() {
 
     companion object {
         const val NEWTAB = "orbit://newtab"
+        const val GOOGLE_SEARCH = "https://www.google.com/search?q="
         const val DEFAULT_AI_BACKEND = "https://orbit-browser.vercel.app"
     }
 }

@@ -1,7 +1,7 @@
 {
-  "versionCode": 2,
-  "versionName": "1.0.1",
-  "apkUrl": "https://raw.githubusercontent.com/khatkitanveer-debug/Orbit-Browser-/main/ota/orbit-browser-1.0.1.apk",
-  "notes": "Fix: status bar ab Chrome-jaisa — toolbar niche, kuch overlap nahi. Naya logo: sirf official Orbit wordmark, jiske O me satellite dot ki orbit animation ab saaf dikhti hai.",
+  "versionCode": 3,
+  "versionName": "1.0.2",
+  "apkUrl": "https://raw.githubusercontent.com/khatkitanveer-debug/Orbit-Browser-/main/ota/orbit-browser-1.0.2.apk",
+  "notes": "Real browser fix: ab DIRECT browsing (Chromium engine) — Google search built-in, har site sahi khulegi. Update flow: background download ke baad Install button khud khulta hai, purana version replace ho jata hai.",
   "minVersionCode": 1
 }

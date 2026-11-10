@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OTA update APK app ke cache me download hota hai — system installer ko
+     FileProvider ke through secure access milta hai. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>
