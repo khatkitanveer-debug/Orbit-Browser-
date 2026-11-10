@@ -8,10 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #000; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
   .wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
-  .logo-dot { animation: orbit-rotate 8s linear infinite; transform-origin: 128px 128px; }
-  @keyframes orbit-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .logo-dot { animation: none; } }
-  .wordmark { margin-top: 18px; opacity: .95; }
+  .logo { margin-bottom: 6px; }
   form { width: 100%; max-width: 560px; margin-top: 42px; }
   .bar { display: flex; align-items: center; height: 52px; padding: 0 22px; border-radius: 26px;
          background: #0e0e10; border: 1px solid #262626; transition: border-color .2s; }
@@ -22,27 +19,21 @@
 </head>
 <body>
 <div class="wrap">
-  <!-- Orbit official logo — ring + orbiting satellite dot -->
-  <svg width="96" height="96" viewBox="0 0 256 256" aria-label="Orbit">
-    <defs>
-      <linearGradient id="g" x1="1" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#a8a8a8"/>
-      </linearGradient>
-    </defs>
-    <circle cx="128" cy="128" r="78" fill="none" stroke="url(#g)" stroke-width="16" stroke-linecap="round"/>
-    <g class="logo-dot"><circle cx="47.4" cy="178.4" r="13.5" fill="#ffffff"/></g>
-  </svg>
-
-  <!-- Wordmark -->
-  <svg class="wordmark" height="30" viewBox="26 40 612 240" aria-label="Orbit">
+  <!-- Orbit official logo — EK hi wordmark: "O" ring hai, satellite dot uske
+       around SMIL se orbit karta hai (WebView me CSS transform-origin se
+       zyada reliable). Koi alag bada O nahi, koi spinner-jaisa double circle nahi. -->
+  <svg class="logo" height="68" viewBox="26 40 612 240" aria-label="Orbit">
     <defs>
       <linearGradient id="wg" x1="1" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#a8a8a8"/>
       </linearGradient>
     </defs>
     <circle cx="132" cy="158" r="78" fill="none" stroke="url(#wg)" stroke-width="16" stroke-linecap="round"/>
-    <circle cx="47.4" cy="178.4" r="13.5" fill="#ffffff"/>
     <path id="wm" fill="#ffffff"/>
+    <g>
+      <circle cx="47.4" cy="178.4" r="13.5" fill="#ffffff"/>
+      <animateTransform attributeName="transform" type="rotate" from="0 132 158" to="360 132 158" dur="6s" repeatCount="indefinite"/>
+    </g>
   </svg>
 
   <form onsubmit="return go()">
@@ -52,8 +43,14 @@
   </form>
 </div>
 <script>
-// wordmark glyphs build-time pe inject hote hain (__WORDMARK_D__)
-document.getElementById('wm').setAttribute('d', window.__WORDMARK_D__ || '');
+// wordmark glyphs build-time pe is string me inject hote hain (build script dekho)
+var WORDMARK_D = "__WORDMARK_D__";
+document.getElementById('wm').setAttribute('d', WORDMARK_D);
+// reduced-motion users ke liye dot ka orbit band
+if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  var at = document.querySelector('.logo animateTransform');
+  if (at) at.remove();
+}
 function go(){
   var v = document.getElementById('q').value.trim();
   if (v) { try { OrbitBridge.search(v); } catch(e) {} }

@@ -1,7 +1,7 @@
 {
-  "versionCode": 1,
-  "versionName": "1.0.0",
-  "apkUrl": "https://raw.githubusercontent.com/khatkitanveer-debug/Orbit-Browser-/main/ota/orbit-browser-1.0.0.apk",
-  "notes": "Pehla official Orbit Browser Android release — Chrome-jaisa native browser: tabs, omnibox, bookmarks, history, AI search, OTA updates.",
+  "versionCode": 2,
+  "versionName": "1.0.1",
+  "apkUrl": "https://raw.githubusercontent.com/khatkitanveer-debug/Orbit-Browser-/main/ota/orbit-browser-1.0.1.apk",
+  "notes": "Fix: status bar ab Chrome-jaisa — toolbar niche, kuch overlap nahi. Naya logo: sirf official Orbit wordmark, jiske O me satellite dot ki orbit animation ab saaf dikhti hai.",
   "minVersionCode": 1
 }

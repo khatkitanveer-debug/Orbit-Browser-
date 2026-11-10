@@ -4,11 +4,13 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -55,6 +57,22 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — isliye Chrome-jaisa
+        // insets handling: toolbar status bar ke NEECHE baithega, status bar area me
+        // window ka black background dikhega (koi overlap nahi). Keyboard (IME) ke
+        // saath bhi content resize hota hai. API 26-29 me theme ka black statusBarColor
+        // pehle se kaam karta hai.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val root = findViewById<View>(R.id.root)
+            root.setOnApplyWindowInsetsListener { v, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                val ime = insets.getInsets(WindowInsets.Type.ime())
+                v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+                WindowInsets.CONSUMED
+            }
+        }
 
         container = findViewById(R.id.container)
         omnibox = findViewById(R.id.omnibox)
