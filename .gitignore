@@ -31,3 +31,6 @@ next-env.d.ts
 db/*.db
 prisma/*.db
 
+
+# SSH deploy key — KABHI commit/push mat karna
+.deploy-key/
