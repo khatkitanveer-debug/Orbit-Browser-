@@ -16,7 +16,7 @@ interface TabBarProps {
 export function TabBar({ tabs, activeTabId, privateMode, onSelect, onClose, onNew }: TabBarProps) {
   return (
     <div className="flex items-center gap-1 bg-muted/70 px-2 pt-1.5 border-b border-border/40" role="tablist" aria-label="Browser tabs">
-      <div className="flex items-center gap-1 flex-1 overflow-x-auto tez-scroll">
+      <div className="flex items-center gap-1 flex-1 overflow-x-auto orbit-scroll">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
           const external = isExternal(tab.url);

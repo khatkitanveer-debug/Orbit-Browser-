@@ -4,7 +4,7 @@ import { ShieldCheck, Database, CloudCog, Github, Zap, Server, Info } from "luci
 
 export function AboutPage() {
   return (
-    <div className="h-full overflow-y-auto tez-scroll bg-background">
+    <div className="h-full overflow-y-auto orbit-scroll bg-background">
       <div className="max-w-2xl mx-auto px-6 py-8 space-y-5">
         <div className="flex items-center gap-2">
           <Info className="w-5 h-5 text-emerald-600" />
@@ -13,7 +13,7 @@ export function AboutPage() {
 
         <section className="p-5 rounded-xl border border-emerald-600/30 bg-emerald-600/[0.04]">
           <h2 className="flex items-center gap-2 text-sm font-semibold mb-2">
-            <Zap className="w-4 h-4 text-emerald-600" /> Tez Browser — Fast. Private. Aapka.
+            <Zap className="w-4 h-4 text-emerald-600" /> Orbit Browser — Fast. Private. Aapka.
           </h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Ye ek Chrome-jaisa, privacy-first browser hai jo <b>GLM 5.3</b> AI ke saath bana hai. Design philosophy simple hai:
@@ -35,7 +35,7 @@ export function AboutPage() {
               favicon services nahi — tab icons pure locally generate hote hain (letter tiles).
             </li>
             <li>
-              <b className="text-foreground">Search:</b> Tez AI Search me query sirf answer banane ke liye process hoti hai —
+              <b className="text-foreground">Search:</b> Orbit AI Search me query sirf answer banane ke liye process hoti hai —
               Google ko nahi jati. Search history sirf aapke device me.
             </li>
             <li>
@@ -71,7 +71,7 @@ export function AboutPage() {
 {`rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
-    match /tezBrowser/{doc} {
+    match /orbitBrowser/{doc} {
       allow read, write: if true; // personal project — sirf aap use kar rahe ho
     }
   }
@@ -99,7 +99,7 @@ service cloud.firestore {
             GitHub repo bana kar push karein, aur khode (self-host) kaise karein.
           </p>
           <pre className="p-3 rounded-lg bg-muted text-xs font-mono overflow-x-auto">
-{`git remote add origin https://github.com/AAPKA-USERNAME/tez-browser.git
+{`git remote add origin https://github.com/AAPKA-USERNAME/orbit-browser.git
 git push -u origin main`}
           </pre>
         </section>
@@ -125,7 +125,7 @@ git push -u origin main`}
         </section>
 
         <p className="text-center text-xs text-muted-foreground pb-4">
-          Tez Browser v1.0 &#183; GLM 5.3 &#183; Local-first &#183; Built with Next.js + shadcn/ui
+          Orbit Browser v1.0 &#183; GLM 5.3 &#183; Local-first &#183; Built with Next.js + shadcn/ui
         </p>
       </div>
     </div>

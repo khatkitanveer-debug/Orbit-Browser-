@@ -2,13 +2,12 @@
 // Jab tak aap apna Firebase config nahi dete, ek bhi byte cloud par nahi jata.
 // Firebase SDK yahan sirf tab load hota hai jab sync chalta hai (dynamic import).
 
-import { Bookmark, FirebaseCfg, HistoryItem, SpeedDialItem } from "./types";
+import { Bookmark, FirebaseCfg, HistoryItem } from "./types";
 import { ExportBundle } from "./localStore";
 
 export interface SyncPayload {
   bookmarks: Bookmark[];
   history: HistoryItem[];
-  speeddial: SpeedDialItem[];
 }
 
 async function fbApp(cfg: FirebaseCfg) {
@@ -48,6 +47,5 @@ export function bundleToPayload(bundle: ExportBundle): SyncPayload {
   return {
     bookmarks: bundle.bookmarks,
     history: bundle.history,
-    speeddial: bundle.speeddial,
   };
 }

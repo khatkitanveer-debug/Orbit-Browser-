@@ -249,7 +249,7 @@ export function BrowserApp() {
         if (activeTab) closeTab(activeTab.id);
       } else if (k === "h") {
         e.preventDefault();
-        if (activeTab) navigate(activeTab.id, "tez://history");
+        if (activeTab) navigate(activeTab.id, "orbit://history");
       } else if (k === "d") {
         e.preventDefault();
         handleToggleBookmark();

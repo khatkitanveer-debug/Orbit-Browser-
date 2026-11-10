@@ -1,4 +1,4 @@
-// Tez Browser — GLM 5.3 AI chat (backend proxy)
+// Orbit Browser — GLM 5.3 AI chat (backend proxy)
 // Client ki history yahan store NAHI hoti — sirf relay hoti hai.
 
 import { NextRequest } from "next/server";
@@ -7,7 +7,7 @@ import ZAI from "z-ai-web-dev-sdk";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `You are "Tez AI", the built-in assistant of Tez Browser — a fast, privacy-first browser.
+const SYSTEM_PROMPT = `You are "Orbit AI", the built-in assistant of Orbit Browser — a fast, privacy-first browser.
 You are powered by GLM 5.3. Rules:
 - Reply in the user's language. If the user writes Hinglish/Hindi, reply in Hinglish (Roman script Hindi).
 - Be concise, helpful and use markdown when useful.

@@ -1,4 +1,4 @@
-// Tez Browser — page proxy
+// Orbit Browser — page proxy
 // External websites ko sandboxed iframe ke andar dikhane ke liye HTML fetch karke
 // rewrite karta hai (CSP/frame-block headers hatata hai, <base> inject karta hai).
 // Fail hone par AI page_reader se "Reader Mode" fallback, uske baad error page.
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 45;
 
 const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 TezBrowser/1.0";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 OrbitBrowser/1.0";
 
 function isPrivateHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
@@ -33,7 +33,7 @@ function injectedScript(tabId: string, baseUrl: string): string {
   const B = JSON.stringify(baseUrl);
   return `<script>(function(){
 var T=${T},BASE=${B};
-function meta(){try{window.parent.postMessage({type:'tez:meta',tabId:T,title:document.title||'',url:BASE},'*')}catch(e){}}
+function meta(){try{window.parent.postMessage({type:'orbit:meta',tabId:T,title:document.title||'',url:BASE},'*')}catch(e){}}
 if(document.readyState==='complete'){setTimeout(meta,0)}else{document.addEventListener('DOMContentLoaded',meta)}
 window.addEventListener('load',meta);
 document.addEventListener('click',function(e){
@@ -43,7 +43,7 @@ if(!href||href.charAt(0)==='#'||href.indexOf('javascript:')===0)return;
 e.preventDefault();e.stopPropagation();
 try{var abs=new URL(href,BASE).href;
 var nt=(el.target==='_blank')||e.ctrlKey||e.metaKey;
-window.parent.postMessage({type:'tez:navigate',tabId:T,url:abs,newTab:nt},'*')}catch(err){}},true);
+window.parent.postMessage({type:'orbit:navigate',tabId:T,url:abs,newTab:nt},'*')}catch(err){}},true);
 document.addEventListener('submit',function(e){
 var f=e.target;if(!f||f.tagName!=='FORM')return;
 var m=(f.getAttribute('method')||'get').toLowerCase();if(m!=='get')return;
@@ -52,7 +52,7 @@ try{var act=f.getAttribute('action')||BASE;var u=new URL(act,BASE);
 var fd=new FormData(f);var qs=new URLSearchParams();
 fd.forEach(function(v,k){if(typeof v==='string')qs.append(k,v)});
 u.search=qs.toString();
-window.parent.postMessage({type:'tez:navigate',tabId:T,url:u.href},'*')}catch(err){}},true);
+window.parent.postMessage({type:'orbit:navigate',tabId:T,url:u.href},'*')}catch(err){}},true);
 })()</script>`;
 }
 
@@ -74,7 +74,7 @@ function errorPage(url: string, reason: string, tabId: string): string {
   const body = `<h1>Ye page yahan nahi khul saka</h1>
 <div class="m">${esc(url)}</div>
 <article><p><b>Wajah:</b> ${esc(reason)}</p>
-<p>Kai websites (login, banking, heavy apps) iframe ke andar khulne se inkar karti hain — ye har browser ki had hai, sirf Tez ki nahi.</p>
+<p>Kai websites (login, banking, heavy apps) iframe ke andar khulne se inkar karti hain — ye har browser ki had hai, sirf Orbit ki nahi.</p>
 <p>Aap is page ko apne real browser ke naye tab me khol sakte hain:</p>
 <p><a class="btn" href="${esc(url)}" target="_blank" rel="noreferrer noopener">Naye tab me kholo &#8599;</a></p></article>`;
   return wrapHtmlPage("Page nahi khula", body, tabId, url);
@@ -185,7 +185,7 @@ export async function GET(req: NextRequest) {
           headers: {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "private, max-age=30",
-            "X-Tez-Mode": "proxy",
+            "X-Orbit-Mode": "proxy",
           },
         });
       }
@@ -226,7 +226,7 @@ export async function GET(req: NextRequest) {
     if (text.trim()) {
       return new Response(readerPage(title, cleanMarkdown(text.slice(0, 40000)), target.href, tabId), {
         status: 200,
-        headers: { "Content-Type": "text/html; charset=utf-8", "X-Tez-Mode": "reader" },
+        headers: { "Content-Type": "text/html; charset=utf-8", "X-Orbit-Mode": "reader" },
       });
     }
   } catch {
@@ -236,6 +236,6 @@ export async function GET(req: NextRequest) {
   // 3) Error page
   return new Response(errorPage(target.href, lastErr || "Site tak nahi pahunch sake", tabId), {
     status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8", "X-Tez-Mode": "error" },
+    headers: { "Content-Type": "text/html; charset=utf-8", "X-Orbit-Mode": "error" },
   });
 }

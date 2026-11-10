@@ -25,12 +25,6 @@ export interface Bookmark {
   ts: number;
 }
 
-export interface SpeedDialItem {
-  id?: number;
-  label: string;
-  url: string;
-}
-
 export interface FirebaseCfg {
   apiKey: string;
   authDomain: string;
@@ -46,9 +40,6 @@ export interface OrbitSettingsData {
   firebase?: FirebaseCfg | null;
   session?: { tabs: Tab[]; activeTabId: string } | null;
 }
-
-/** @deprecated purana naam — compatibility ke liye */
-export type TezSettingsData = OrbitSettingsData;
 
 export interface ChatMsg {
   role: "user" | "assistant" | "system";

@@ -119,14 +119,14 @@ export function AiSidebar({ open, onClose, pageUrl, pageTitle, privateMode }: Ai
     <aside
       className="fixed inset-y-0 right-0 z-40 w-full sm:w-[380px] lg:relative lg:w-[380px] lg:shrink-0 bg-background border-l border-border flex flex-col shadow-xl lg:shadow-none"
       role="complementary"
-      aria-label="Tez AI assistant"
+      aria-label="Orbit AI assistant"
     >
       <div className="flex items-center gap-2 px-4 h-12 border-b border-border/40 shrink-0">
         <span className="flex items-center justify-center w-6 h-6 rounded-md bg-emerald-600 text-white">
           <Sparkles className="w-3.5 h-3.5" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold leading-none">Tez AI</div>
+          <div className="text-sm font-semibold leading-none">Orbit AI</div>
           <div className="text-[10px] text-muted-foreground mt-0.5">GLM 5.3 &#183; private assistant</div>
         </div>
         <button aria-label="Chat clear karo" onClick={clearChat} className="p-1.5 rounded hover:bg-muted">
@@ -144,14 +144,14 @@ export function AiSidebar({ open, onClose, pageUrl, pageTitle, privateMode }: Ai
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto tez-scroll px-3 py-3 space-y-3">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto orbit-scroll px-3 py-3 space-y-3">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center px-4 gap-3">
             <span className="flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-600/10 text-emerald-600">
               <Sparkles className="w-6 h-6" />
             </span>
             <div>
-              <div className="font-medium text-sm">Tez AI se pucho kuch bhi</div>
+              <div className="font-medium text-sm">Orbit AI se pucho kuch bhi</div>
               <div className="text-xs text-muted-foreground mt-1">
                 Page summarize, koi sawaal, research — sab kuch. Chat sirf aapke device me rehti hai.
               </div>
@@ -184,7 +184,7 @@ export function AiSidebar({ open, onClose, pageUrl, pageTitle, privateMode }: Ai
         {streaming && messages[messages.length - 1]?.content === "" && (
           <div className="flex items-center gap-2 text-muted-foreground text-xs px-2">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Tez AI soch raha hai...
+            Orbit AI soch raha hai...
           </div>
         )}
       </div>
@@ -204,7 +204,7 @@ export function AiSidebar({ open, onClose, pageUrl, pageTitle, privateMode }: Ai
                 send(input);
               }
             }}
-            placeholder="Tez AI se pucho..."
+            placeholder="Orbit AI se pucho..."
             aria-label="AI message"
             className="min-h-[44px] max-h-32 resize-none text-sm"
             rows={1}

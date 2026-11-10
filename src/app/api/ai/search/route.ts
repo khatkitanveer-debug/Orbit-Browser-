@@ -1,4 +1,4 @@
-// Tez Browser — Tez AI Search (web search + GLM 5.3 answer, SSE stream)
+// Orbit Browser — Orbit AI Search (web search + GLM 5.3 answer, SSE stream)
 // Protocol: {type:'sources'} -> {type:'delta'}* -> {type:'done'} | {type:'error'}
 
 import { NextRequest } from "next/server";
@@ -104,7 +104,7 @@ ${context}`;
                 {
                   role: "system",
                   content:
-                    "You are Tez AI Search inside Tez Browser, powered by GLM 5.3. Summarize web results faithfully with citations. Reply in Hinglish unless the query is in pure English — then reply in simple English. Never invent facts beyond sources.",
+                    "You are Orbit AI Search inside Orbit Browser, powered by GLM 5.3. Summarize web results faithfully with citations. Reply in Hinglish unless the query is in pure English — then reply in simple English. Never invent facts beyond sources.",
                 },
                 { role: "user", content: prompt },
               ],

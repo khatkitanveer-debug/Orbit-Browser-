@@ -14,11 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tez Browser — Fast & Private",
+  title: "Orbit Browser — Fast & Private",
   description:
     "Chrome-jaisa, privacy-first browser with built-in GLM 5.3 AI. Aapka saara data sirf aapke paas — local-first, zero tracking.",
-  keywords: ["Tez Browser", "private browser", "GLM 5.3", "AI browser", "privacy", "local-first"],
-  authors: [{ name: "Tez Browser" }],
+  keywords: ["Orbit Browser", "private browser", "GLM 5.3", "AI browser", "privacy", "local-first"],
+  authors: [{ name: "Orbit Browser" }],
   icons: {
     icon: "/logo.svg",
   },

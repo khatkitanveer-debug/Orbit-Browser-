@@ -169,7 +169,7 @@ export function Toolbar(props: ToolbarProps) {
           />
           {display && (
             <span className="hidden md:inline text-[10px] text-muted-foreground/70 shrink-0 truncate max-w-[140px]">
-              {external ? domainOf(tab.url) : "tez://internal"}
+              {external ? domainOf(tab.url) : "orbit://internal"}
             </span>
           )}
           <button
@@ -224,8 +224,8 @@ export function Toolbar(props: ToolbarProps) {
         <EyeOff className="w-4 h-4" />
       </button>
       <button
-        aria-label="Tez AI sidebar"
-        title="Tez AI (GLM 5.3)"
+        aria-label="Orbit AI sidebar"
+        title="Orbit AI (GLM 5.3)"
         onClick={props.onToggleAi}
         className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
           props.aiOpen ? "bg-emerald-600 text-white hover:bg-emerald-700" : "hover:bg-muted"

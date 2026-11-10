@@ -1,6 +1,8 @@
-# Tez Browser — Fast & Private (Chrome-jaisa, GLM 5.3 AI ke saath)
+# 🪐 Orbit Browser — Fast & Private (Chrome-jaisa, GLM 5.3 AI ke saath)
 
 **Fast. Private. Aapka.** — Ek privacy-first browser jo Chrome jaisa lagta hai, built-in **GLM 5.3 AI** search + assistant deta hai, aur aapka saara data **sirf aapke paas** rakhta hai.
+
+Main screen bilkul clean hai — sirf **Orbit ka logo** aur **ek search bar**. Bas.
 
 ---
 
@@ -8,9 +10,10 @@
 
 | Feature | Detail |
 | --- | --- |
-| Chrome-jaisa UI | Multi-tabs, omnibox (URL + search), back/forward/reload, bookmarks, speed dial |
-| Tez AI Search | Web search + GLM 5.3 ka streaming AI answer, citations ke saath |
-| Tez AI Sidebar | Chat, page summarize — GLM 5.3 powered |
+| Chrome-jaisa UI | Multi-tabs, omnibox (URL + search), back/forward/reload, bookmarks |
+| Clean main screen | Sirf Orbit logo + search bar — kuch aur nahi |
+| Orbit AI Search | Web search + GLM 5.3 ka streaming AI answer, citations ke saath |
+| Orbit AI Sidebar | Chat, page summarize — GLM 5.3 powered |
 | Private Mode | Toolbar ke eye-off button se — history/chat kuch bhi save nahi hoti |
 | Local-first data | History, bookmarks, AI chat — sab **IndexedDB** me (aapka device), koi server nahi |
 | Zero tracking | Koi analytics/ads/third-party favicon service nahi |
@@ -20,8 +23,8 @@
 
 ## Privacy ka sach (honest breakdown)
 
-- **Kabhi nahi jata kahin:** history, bookmarks, speed dial, saved Firebase config, AI chat history — ye sab aapke device ke IndexedDB me hi rehte hain.
-- **AI answer ke liye process hota hai:** Tez AI Search ki query aur AI chat ke messages, GLM 5.3 API (Z.ai) se process hote hain — bina iske AI answer possible nahi. Browsing history is API ko **kabhi nahi** bheji jati.
+- **Kabhi nahi jata kahin:** history, bookmarks, saved Firebase config, AI chat history — ye sab aapke device ke IndexedDB me hi rehte hain.
+- **AI answer ke liye process hota hai:** Orbit AI Search ki query aur AI chat ke messages, GLM 5.3 API (Z.ai) se process hote hain — bina iske AI answer possible nahi. Browsing history is API ko **kabhi nahi** bheji jati.
 - **Cloud sync 100% optional:** default OFF. On karo to data sirf us Firebase project me jata hai jiska API key AAP dete ho — matlab sirf aap access kar sakte ho.
 
 ## Chalane ka tarika (local dev)
@@ -33,21 +36,21 @@ bun run dev     # http://localhost:3000
 
 ## GitHub par push karna (step-by-step)
 
-1. GitHub par naya repo banao (jaise `tez-browser`) — **Private** rakhna best hai.
+1. GitHub par naya repo banao (jaise `orbit-browser`) — **Private** rakhna best hai.
 2. Phir terminal me:
 
 ```bash
 git init
 git add .
-git commit -m "Tez Browser v1.0 — fast & private"
+git commit -m "Orbit Browser v1.0 — fast & private"
 git branch -M main
-git remote add origin https://github.com/AAPKA-USERNAME/tez-browser.git
+git remote add origin https://github.com/AAPKA-USERNAME/orbit-browser.git
 git push -u origin main
 ```
 
-3. (Optional) GitHub Pages/Vercel pe deploy karo — Vercel me bas repo import karo, Next.js auto-detect ho jayega.
+3. (Optional) Vercel pe deploy karo — Vercel me bas repo import karo, Next.js auto-detect ho jayega.
 
-> ** zaroori:** `.gitignore` me `.z-ai-config`, `.env*`, `dev.log` already hain — ye secrets wali files repo me kabhi nahi jani chahiye.
+> **Zaroori:** `.gitignore` me `.z-ai-config`, `.env*`, `dev.log` already hain — ye secrets wali files repo me kabhi nahi jani chahiye. Push se pehle `git status` me in files ka dikhna **nahi** chahiye.
 
 ## Firebase Cloud Sync setup (2 minute)
 
@@ -59,7 +62,7 @@ git push -u origin main
 rules_version = '2';
 service cloud.firestore {
   match /databases/{db}/documents {
-    match /tezBrowser/{doc} {
+    match /orbitBrowser/{doc} {
       allow read, write: if true; // personal project ke liye
     }
   }
@@ -67,13 +70,13 @@ service cloud.firestore {
 ```
 
 4. **Project Settings → Your apps → Web app** banao → `firebaseConfig` ke values copy karo.
-5. Tez Browser → Settings → **Firebase Cloud Sync** me paste karke **Config save karo → Sync Now**.
+5. Orbit Browser → Settings → **Firebase Cloud Sync** me paste karke **Config save karo → Sync Now**.
 
-Data ab `tezBrowser/sync` document me hai — sirf aapke project me. Restore button se kisi bhi device par wapas la sakte ho.
+Data ab `orbitBrowser/sync` document me hai — sirf aapke project me. Restore button se kisi bhi device par wapas la sakte ho.
 
 ## Tech stack
 
-- **Next.js 16 + TypeScript + Tailwind CSS 4 + shadcn/ui** — UI framework
+- **Next.js + TypeScript + Tailwind CSS 4 + shadcn/ui** — UI framework
 - **GLM 5.3** (z-ai-web-dev-sdk) — AI search, chat, summarize (backend API routes me, safe)
 - **IndexedDB** — local data store (zero server)
 - **Firebase JS SDK (optional)** — sirf aapke apne project me sync

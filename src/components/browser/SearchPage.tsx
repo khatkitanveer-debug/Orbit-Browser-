@@ -68,13 +68,13 @@ export function SearchPage({ q, onNavigate }: SearchPageProps) {
   }, [q]);
 
   return (
-    <div className="h-full overflow-y-auto tez-scroll bg-background">
+    <div className="h-full overflow-y-auto orbit-scroll bg-background">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex items-center gap-2 mb-1">
           <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-600 text-white">
             <Sparkles className="w-4 h-4" />
           </span>
-          <h1 className="text-lg font-semibold">Tez AI Search</h1>
+          <h1 className="text-lg font-semibold">Orbit AI Search</h1>
           <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
             <ShieldCheck className="w-3 h-3 text-emerald-600" />
             Query sirf answer ke liye use hoti hai

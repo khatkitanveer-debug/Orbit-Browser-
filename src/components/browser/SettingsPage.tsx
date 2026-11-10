@@ -84,7 +84,7 @@ export function SettingsPage({ onThemeChange, onNavigate }: SettingsPageProps) {
     setSyncing(true);
     try {
       const [h, b] = await Promise.all([listHistory(), listBookmarks()]);
-      const msg = await fbSync(fb, { bookmarks: b, history: h, speeddial: [] });
+      const msg = await fbSync(fb, { bookmarks: b, history: h });
       toast.success(msg);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Sync fail";
@@ -134,7 +134,7 @@ export function SettingsPage({ onThemeChange, onNavigate }: SettingsPageProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `tez-browser-data-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `orbit-browser-data-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success("Data export ho gaya — file sirf aapke device par download hui");
@@ -150,7 +150,7 @@ export function SettingsPage({ onThemeChange, onNavigate }: SettingsPageProps) {
   };
 
   return (
-    <div className="h-full overflow-y-auto tez-scroll bg-background">
+    <div className="h-full overflow-y-auto orbit-scroll bg-background">
       <div className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         <div className="flex items-center gap-2">
           <SettingsIcon className="w-5 h-5 text-emerald-600" />
@@ -226,7 +226,7 @@ export function SettingsPage({ onThemeChange, onNavigate }: SettingsPageProps) {
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground mt-3">
-            Firebase console me Firestore rules set karna zaroori hai — steps <button onClick={() => onNavigate("tez://about")} className="text-emerald-600 underline">About & Privacy</button> page me hain.
+            Firebase console me Firestore rules set karna zaroori hai — steps <button onClick={() => onNavigate("orbit://about")} className="text-emerald-600 underline">About & Privacy</button> page me hain.
           </p>
         </section>
 

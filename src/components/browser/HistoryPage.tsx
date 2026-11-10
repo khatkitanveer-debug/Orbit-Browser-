@@ -52,7 +52,7 @@ export function HistoryPage({ onNavigate, refreshKey }: HistoryPageProps) {
   };
 
   return (
-    <div className="h-full overflow-y-auto tez-scroll bg-background">
+    <div className="h-full overflow-y-auto orbit-scroll bg-background">
       <div className="max-w-3xl mx-auto px-6 py-8">
         <div className="flex items-center gap-2 mb-4">
           <HistoryIcon className="w-5 h-5 text-emerald-600" />

@@ -1,8 +1,8 @@
 // Orbit Browser — 100% local storage (IndexedDB).
-// History / bookmarks / settings / speed-dial / AI chat:
+// History / bookmarks / settings / AI chat:
 // SAB kuch aapke device par hi rehta hai, kisi company ke server par nahi jata.
 
-import { Bookmark, ChatMsg, HistoryItem, SpeedDialItem } from "./types";
+import { Bookmark, ChatMsg, HistoryItem } from "./types";
 
 const DB_NAME = "orbit-browser";
 const DB_VERSION = 1;
@@ -141,36 +141,6 @@ export async function toggleBookmark(url: string, title: string): Promise<boolea
   return true;
 }
 
-// ---------- speed dial ----------
-
-export function listSpeedDial(): Promise<SpeedDialItem[]> {
-  return lsGetAll<SpeedDialItem>("speeddial");
-}
-
-export async function addSpeedDial(label: string, url: string): Promise<void> {
-  await lsPut("speeddial", { label, url });
-}
-
-export async function removeSpeedDial(id: number): Promise<void> {
-  await lsDelete("speeddial", id);
-}
-
-export async function ensureDefaultSpeedDial(): Promise<void> {
-  const items = await listSpeedDial();
-  if (items.length > 0) return;
-  const defaults: Array<[string, string]> = [
-    ["Wikipedia", "https://en.wikipedia.org"],
-    ["GitHub", "https://github.com"],
-    ["MDN Docs", "https://developer.mozilla.org"],
-    ["Hacker News", "https://news.ycombinator.com"],
-    ["Wayback", "https://web.archive.org"],
-    ["Example", "https://example.com"],
-  ];
-  for (const [label, url] of defaults) {
-    await addSpeedDial(label, url);
-  }
-}
-
 // ---------- AI chat (local-only) ----------
 
 export async function saveChatMessages(messages: ChatMsg[]): Promise<void> {
@@ -189,15 +159,13 @@ export interface ExportBundle {
   app: string;
   history: HistoryItem[];
   bookmarks: Bookmark[];
-  speeddial: SpeedDialItem[];
   aiChat: ChatMsg[];
 }
 
 export async function exportAllData(): Promise<ExportBundle> {
-  const [history, bookmarks, speeddial, aiChat] = await Promise.all([
+  const [history, bookmarks, aiChat] = await Promise.all([
     listHistory(),
     listBookmarks(),
-    listSpeedDial(),
     loadChatMessages(),
   ]);
   return {
@@ -205,7 +173,6 @@ export async function exportAllData(): Promise<ExportBundle> {
     exportedAt: new Date().toISOString(),
     history,
     bookmarks,
-    speeddial,
     aiChat,
   };
 }
