@@ -42,3 +42,8 @@ upload/
 .zscripts/
 scripts/
 agent-ctx/
+
+# Android toolchain (local)
+.android-sdk/
+.gradle-dist/
+.jdk17/

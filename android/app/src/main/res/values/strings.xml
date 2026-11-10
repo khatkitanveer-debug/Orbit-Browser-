@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Orbit</string>
+    <string name="back">Wapas</string>
+    <string name="forward">Aage</string>
+    <string name="reload">Reload</string>
+    <string name="search_hint">Search karo ya URL likho</string>
+    <string name="bookmark">Bookmark</string>
+    <string name="private_mode">Private mode</string>
+    <string name="tabs">Tabs</string>
+    <string name="menu">Menu</string>
+    <string name="backend_label">Orbit AI backend URL (apna deployed Orbit web app)</string>
+</resources>

@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/orbit_black">
+
+    <!-- Toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:background="@color/orbit_surface">
+
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_back"
+            android:contentDescription="@string/back"
+            android:tint="@color/orbit_white" />
+
+        <ImageButton
+            android:id="@+id/btn_fwd"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_forward"
+            android:contentDescription="@string/forward"
+            android:tint="@color/orbit_white" />
+
+        <ImageButton
+            android:id="@+id/btn_reload"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_refresh"
+            android:contentDescription="@string/reload"
+            android:tint="@color/orbit_white" />
+
+        <EditText
+            android:id="@+id/omnibox"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="38dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:background="@drawable/omnibox_bg"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textSize="14sp"
+            android:textColor="@color/orbit_white"
+            android:textColorHint="@color/orbit_hint"
+            android:hint="@string/search_hint"
+            android:inputType="textUri"
+            android:imeOptions="actionGo"
+            android:maxLines="1"
+            android:importantForAutofill="no" />
+
+        <ImageButton
+            android:id="@+id/btn_bookmark"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_star"
+            android:contentDescription="@string/bookmark"
+            android:tint="@color/orbit_white" />
+
+        <ImageButton
+            android:id="@+id/btn_private"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_private"
+            android:contentDescription="@string/private_mode"
+            android:tint="@color/orbit_white" />
+
+        <ImageButton
+            android:id="@+id/btn_tabs"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_tabs"
+            android:contentDescription="@string/tabs"
+            android:tint="@color/orbit_white" />
+
+        <ImageButton
+            android:id="@+id/btn_menu"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_menu"
+            android:contentDescription="@string/menu"
+            android:tint="@color/orbit_white" />
+    </LinearLayout>
+
+    <!-- Tab strip -->
+    <HorizontalScrollView
+        android:id="@+id/tab_strip"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:scrollbars="none"
+        android:background="@color/orbit_surface"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <LinearLayout
+            android:id="@+id/tab_strip_row"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical" />
+    </HorizontalScrollView>
+
+    <!-- Content -->
+    <FrameLayout
+        android:id="@+id/container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+</LinearLayout>

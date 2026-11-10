@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Orbit" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/orbit_black</item>
+        <item name="android:statusBarColor">@color/orbit_black</item>
+        <item name="android:navigationBarColor">@color/orbit_black</item>
+        <item name="android:colorAccent">@color/orbit_white</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="OrbitDialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/orbit_white</item>
+    </style>
+</resources>

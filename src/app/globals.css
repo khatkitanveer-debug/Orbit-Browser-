@@ -155,8 +155,13 @@ iframe {
 .orbit-spin {
   animation: orbit-rotate 16s linear infinite;
 }
+/* official logo ka satellite dot — O ring ke around 8s me poora chakkar */
+.orbit-dot-spin {
+  animation: orbit-rotate 8s linear infinite;
+}
 @media (prefers-reduced-motion: reduce) {
-  .orbit-spin {
+  .orbit-spin,
+  .orbit-dot-spin {
     animation: none;
   }
 }

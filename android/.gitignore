@@ -1,0 +1,7 @@
+# Android build artifacts — repo me kabhi nahi
+.gradle/
+build/
+app/build/
+local.properties
+*.apk.idsig
+.cxx/

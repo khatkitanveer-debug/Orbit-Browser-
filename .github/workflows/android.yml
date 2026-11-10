@@ -1,0 +1,39 @@
+name: Android Build (OTA)
+
+# Orbit ka OTA pipeline: android/ me push hote hi APK build hota hai.
+# Artifact me APK milta hai; tag (v*) push karne par GitHub Release bhi banta hai.
+
+on:
+  push:
+    paths:
+      - "android/**"
+      - "ota/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17 setup
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle setup
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Build Debug APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-browser-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

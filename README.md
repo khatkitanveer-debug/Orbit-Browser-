@@ -52,6 +52,32 @@ git push -u origin main
 
 > **Zaroori:** `.gitignore` me `.z-ai-config`, `.env*`, `dev.log` already hain — ye secrets wali files repo me kabhi nahi jani chahiye. Push se pehle `git status` me in files ka dikhna **nahi** chahiye.
 
+## Android APK (native) 📱
+
+Orbit sirf web app nahi hai — **native Android app** bhi hai (`android/` folder):
+
+- **Chrome-jaisa native browser**: multi-tabs, omnibox, back/forward/reload, bookmarks, history, private mode — sab Kotlin me
+- **Standalone APK**: kisi browser ya server par depend nahi karta — install karo aur chalao
+- **Bilkul clean main screen**: sirf Orbit logo (O ke andar satellite dot ki orbit animation) + search bar
+- **100% local data**: history/bookmarks device ke andar (JSON files), koi cloud nahi
+- **AI search**: Settings me apna Orbit web backend URL daalo (jaise Vercel deployment) — query sirf answer ke liye process hoti hai
+- **OTA updates**: app khud GitHub se `ota/update.json` check karke naya APK download karke install prompt dikhata hai
+
+### APK build karna
+
+```bash
+cd android
+gradle assembleDebug          # APK: app/build/outputs/apk/debug/app-debug.apk
+```
+
+Ready-made APK repo ke `ota/` folder me bhi hai — ya GitHub Actions artifact se download karo (push par auto-build hota hai).
+
+### OTA update kaise kaam karta hai
+
+1. `ota/update.json` me versionCode/versionName/apkUrl hota hai
+2. Naya version release karna: APK build karke `ota/` me daalo, update.json me versionCode badhao, push karo
+3. Installed app agle launch par update dikhayegi → download → install prompt
+
 ## Firebase Cloud Sync setup (2 minute)
 
 1. [console.firebase.google.com](https://console.firebase.google.com) → apna project banao.
