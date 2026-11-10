@@ -34,3 +34,11 @@ prisma/*.db
 
 # SSH deploy key — KABHI commit/push mat karna
 .deploy-key/
+
+# Sandbox folders — repo ka hissa nahi
+skills/
+download/
+upload/
+.zscripts/
+scripts/
+agent-ctx/
