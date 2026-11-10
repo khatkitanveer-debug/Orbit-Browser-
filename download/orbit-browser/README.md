@@ -1,83 +1,89 @@
-<div align="center">
+# 🪐 Orbit Browser — Fast & Private (Chrome-jaisa, GLM 5.3 AI ke saath)
 
-# 🪐 Orbit Browser
+**Fast. Private. Aapka.** — Ek privacy-first browser jo Chrome jaisa lagta hai, built-in **GLM 5.3 AI** search + assistant deta hai, aur aapka saara data **sirf aapke paas** rakhta hai.
 
-**Ultra-fast, high-privacy mobile browser** — Orbit Shield ad-blocking, background media playback, ECC encryption tools aur apne khud ke Firebase project me cloud sync ke saath.
-
-</div>
+Main screen bilkul clean hai — sirf **Orbit ka logo** aur **ek search bar**. Bas.
 
 ---
 
-## Features
+## Kya-kya milta hai
 
 | Feature | Detail |
 | --- | --- |
-| Chrome-jaisa UI | Multi-tabs, omnibox (URL + search), tab switcher, find-in-page |
-| Orbit Shield | Tracker/ads blocking, HTTPS upgrade, fingerprint protection, bandwidth stats |
-| Background Media | Video/audio background me chalta rehta hai (MediaSession service) |
-| History / Bookmarks / Downloads | Sab synced — aapke khud ke Firebase project me (Firestore) |
-| ECC Key Generator | Settings me — P-256/P-384/P-521 ECDH/ECDSA key pairs (Web Crypto API, 100% local) |
-| Lock Screen | Browser par lock — private |
-| Private/Incognito tabs | Incognito tab ka data sync nahi hota |
-| Android app | `android/` folder me native wrapper (MainActivity, TabManager, PrivacyEngine, AdBlocker) |
-| Cloud build | `.github/workflows/android-build-release.yml` se APK auto-build |
+| Chrome-jaisa UI | Multi-tabs, omnibox (URL + search), back/forward/reload, bookmarks |
+| Clean main screen | Sirf Orbit logo + search bar — kuch aur nahi |
+| Orbit AI Search | Web search + GLM 5.3 ka streaming AI answer, citations ke saath |
+| Orbit AI Sidebar | Chat, page summarize — GLM 5.3 powered |
+| Private Mode | Toolbar ke eye-off button se — history/chat kuch bhi save nahi hoti |
+| Local-first data | History, bookmarks, AI chat — sab **IndexedDB** me (aapka device), koi server nahi |
+| Zero tracking | Koi analytics/ads/third-party favicon service nahi |
+| Optional Cloud Sync | Sirf **aapke apne Firebase project** me — aapki permission se |
+| Data export | Poora data JSON me download — aapka data, aapki file |
+| Keyboard shortcuts | Ctrl+T (naya tab), Ctrl+W (band), Ctrl+L (omnibox), Ctrl+H (history), Ctrl+D (bookmark), Ctrl+Shift+I (private) |
 
-## Tech Stack
+## Privacy ka sach (honest breakdown)
 
-- **React 19 + TypeScript + Vite 8 + Tailwind CSS 4** (frontend)
-- **Firebase** (Auth + Firestore) — cloud sync **sirf aapke apne project** me
-- **Express + tsx** (dev/production server)
-- **Web Crypto API** (ECC — koi third-party crypto library nahi)
+- **Kabhi nahi jata kahin:** history, bookmarks, saved Firebase config, AI chat history — ye sab aapke device ke IndexedDB me hi rehte hain.
+- **AI answer ke liye process hota hai:** Orbit AI Search ki query aur AI chat ke messages, GLM 5.3 API (Z.ai) se process hote hain — bina iske AI answer possible nahi. Browsing history is API ko **kabhi nahi** bheji jati.
+- **Cloud sync 100% optional:** default OFF. On karo to data sirf us Firebase project me jata hai jiska API key AAP dete ho — matlab sirf aap access kar sakte ho.
 
 ## Chalane ka tarika (local dev)
 
 ```bash
-npm install          # ya: bun install
-npm run dev          # http://localhost:3000
+bun install     # dependencies
+bun run dev     # http://localhost:3000
 ```
 
-Production build:
+## GitHub par push karna (step-by-step)
+
+1. GitHub par naya repo banao (jaise `orbit-browser`) — **Private** rakhna best hai.
+2. Phir terminal me:
 
 ```bash
-npm run build        # dist/ me ban jata hai
-npm start            # static server (port 3000)
+git init
+git add .
+git commit -m "Orbit Browser v1.0 — fast & private"
+git branch -M main
+git remote add origin https://github.com/AAPKA-USERNAME/orbit-browser.git
+git push -u origin main
 ```
 
-## Firebase setup (apna private sync)
+3. (Optional) Vercel pe deploy karo — Vercel me bas repo import karo, Next.js auto-detect ho jayega.
 
-1. [console.firebase.google.com](https://console.firebase.google.com) → apna project banao
-2. **Build → Firestore Database** create karo
-3. **Authentication → Sign-in method → Google** enable karo
-4. `firebase-applet-config.json` me apne project ki values daalo (Project settings → Web app)
-5. `firestore.rules` file ke rules Firestore me publish karo
+> **Zaroori:** `.gitignore` me `.z-ai-config`, `.env*`, `dev.log` already hain — ye secrets wali files repo me kabhi nahi jani chahiye. Push se pehle `git status` me in files ka dikhna **nahi** chahiye.
 
-> **Privacy note:** Data sirf ISI project me jata hai jiska config AAP dete ho. Apna config daalo → data aapka. Apna config na do → cloud sync kaam nahi karegi, sab kuch device par rahega.
+## Firebase Cloud Sync setup (2 minute)
 
-## Android app build
-
-```bash
-# GitHub par push karo — Actions workflow khud APK bana dega
-# Ya locally: android/ folder Android Studio me kholo
-```
-
-## AI Studio me chalana
-
-Ye app Google AI Studio template par bana hai. `GEMINI_API_KEY` AI Studio **Secrets panel** se aata hai (`.env.example` dekho). AI Studio me "Run" dabao — bas.
-
-## Project structure
+1. [console.firebase.google.com](https://console.firebase.google.com) → apna project banao.
+2. **Build → Firestore Database → Create database.**
+3. **Rules** tab me ye paste karke Publish karo:
 
 ```
-src/
-  App.tsx                  # Main browser app (tabs, shield, modals)
-  components/              # AppBar, Omnibox, WebViewport, OrbitShieldModal, ...
-  lib/
-    firebase.ts            # Firestore sync (bookmarks/history/downloads/prefs)
-    eccCrypto.ts           # ECC keys — Web Crypto (local-only)
-  types/browser.ts         # Browser types
-android/                   # Native Android wrapper (Kotlin)
-firestore.rules            # Firebase security rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    match /orbitBrowser/{doc} {
+      allow read, write: if true; // personal project ke liye
+    }
+  }
+}
 ```
 
----
+4. **Project Settings → Your apps → Web app** banao → `firebaseConfig` ke values copy karo.
+5. Orbit Browser → Settings → **Firebase Cloud Sync** me paste karke **Config save karo → Sync Now**.
 
-**Orbit Browser v1.0** — Fast. Private. Aapka. 🪐
+Data ab `orbitBrowser/sync` document me hai — sirf aapke project me. Restore button se kisi bhi device par wapas la sakte ho.
+
+## Tech stack
+
+- **Next.js + TypeScript + Tailwind CSS 4 + shadcn/ui** — UI framework
+- **GLM 5.3** (z-ai-web-dev-sdk) — AI search, chat, summarize (backend API routes me, safe)
+- **IndexedDB** — local data store (zero server)
+- **Firebase JS SDK (optional)** — sirf aapke apne project me sync
+- **Page proxy** — sites sandboxed iframe me render hoti hain; block hone par AI **Reader Mode** fallback
+
+## Honest limitations
+
+- Ye ek **web-based browser** hai — sites proxy + sandboxed iframe se dikhti hain. Login/banking/Google jaisi sites iframe block karti hain (har web-browser-ke-andar-browser ki yahi had hai) — unke liye "naye tab me kholo" button hai.
+- Full native browser chahiye (real Chrome engine) to is UI ko **Electron** ya **Tauri** me wrap karna hoga — structure already component-based hai, port karna aasan hai.
+- Proxied pages me kuch site scripts opaque-origin sandbox ki wajah se weak ho sakti hain — Reader Mode fallback rakha gaya hai.

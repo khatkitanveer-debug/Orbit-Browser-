@@ -1,8 +1,33 @@
+# dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
 build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
+
+# secrets — YE KABHI PUSH MAT KARNA
+.z-ai-config
+.env
+.env.*
 !.env.example
+
+# logs
+dev.log
+server.log
+*.log
+
+# misc
+.DS_Store
+*.pem
+.turbo/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# db
+db/*.db
+prisma/*.db
+
