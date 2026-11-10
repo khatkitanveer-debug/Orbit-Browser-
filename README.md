@@ -56,12 +56,11 @@ git push -u origin main
 
 Orbit sirf web app nahi hai — **native Android app** bhi hai (`android/` folder):
 
-- **Chrome-jaisa native browser**: multi-tabs, omnibox, back/forward/reload, bookmarks, history, private mode — sab Kotlin me
-- **Standalone APK**: kisi browser ya server par depend nahi karta — install karo aur chalao
-- **Bilkul clean main screen**: sirf Orbit logo (O ke andar satellite dot ki orbit animation) + search bar
+- **Real browser (Chromium engine)**: har site DIRECT khulti hai — cookies, JS, login, redirects sab native browser jaisa
+- **Google search built-in**: omnibox/newtab me kuch bhi likho → Google results. AI search optional hai (menu -> AI Search)
 - **100% local data**: history/bookmarks device ke andar (JSON files), koi cloud nahi
-- **AI search**: Settings me apna Orbit web backend URL daalo (jaise Vercel deployment) — query sirf answer ke liye process hoti hai
-- **OTA updates**: app khud GitHub se `ota/update.json` check karke naya APK download karke install prompt dikhata hai
+- **AI search (optional)**: Settings me apna Orbit web backend URL daalo (jaise Vercel deployment) — query sirf answer ke liye process hoti hai
+- **OTA updates**: app khud GitHub se `ota/update.json` check karti hai → APK BACKGROUND me download hota hai → Install button khud khul jata hai → install par purana version REPLACE (data safe)
 
 ### APK build karna
 
