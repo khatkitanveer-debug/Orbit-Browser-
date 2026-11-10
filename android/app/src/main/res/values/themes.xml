@@ -11,4 +11,10 @@
     <style name="OrbitDialog" parent="android:Theme.Material.Dialog.Alert">
         <item name="android:colorAccent">@color/orbit_white</item>
     </style>
+
+    <!-- Chrome-jaisa 3-dot menu — top-right se slide + fade hoke khulta hai -->
+    <style name="OrbitPopupAnim">
+        <item name="android:windowEnterAnimation">@anim/menu_in</item>
+        <item name="android:windowExitAnimation">@anim/menu_out</item>
+    </style>
 </resources>

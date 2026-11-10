@@ -1,7 +1,7 @@
 {
-  "versionCode": 6,
-  "versionName": "1.0.5",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.5/orbit-browser-1.0.5.apk",
-  "notes": "Chrome-jaisa new tab: clean search bar (Google G + Lens camera), Gemini button, aur shortcuts row — YouTube, GitHub, Instagram, WhatsApp, Gmail, Google. Sab tap se seedha khulta hai.",
+  "versionCode": 7,
+  "versionName": "1.0.6",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.6/orbit-browser-1.0.6.apk",
+  "notes": "Install fix: system installer ab pakka khulta hai (kuch devices par naya install method silently fail ho raha tha). Naya Chrome-jaisa 3-dot menu — ab button ke neeche se slide hoke khulta hai, icons ke saath.",
   "minVersionCode": 1
 }

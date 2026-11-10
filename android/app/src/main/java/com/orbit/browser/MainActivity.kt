@@ -5,6 +5,8 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
@@ -24,7 +26,9 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 
@@ -453,22 +457,67 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /** Chrome-jaisa 3-dot menu — btn_menu ke neeche se slide hoke khulta hai, right-aligned. */
     private fun showMenu() {
-        val opts = arrayOf("New tab", "AI Search", "Bookmarks", "History", "Settings", "Check update", "About Orbit")
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Orbit")
-            .setItems(opts) { _, which ->
-                when (which) {
-                    0 -> newTab()
-                    1 -> showAiSearchPrompt()
-                    2 -> showBookmarks()
-                    3 -> showHistory()
-                    4 -> showSettings()
-                    5 -> runAutoUpdate(manual = true)
-                    6 -> showAbout()
+        val anchor = findViewById<View>(R.id.btn_menu)
+        val content = layoutInflater.inflate(R.layout.popup_menu, null)
+        val list = content.findViewById<LinearLayout>(R.id.menu_items)
+
+        val items = listOf(
+            Triple(R.drawable.ic_newtab, "New tab") { newTab() },
+            Triple(R.drawable.ic_ai, "AI Search") { showAiSearchPrompt() },
+            Triple(R.drawable.ic_star, "Bookmarks") { showBookmarks() },
+            Triple(R.drawable.ic_history, "History") { showHistory() },
+            Triple(R.drawable.ic_settings, "Settings") { showSettings() },
+            Triple(R.drawable.ic_update, "Check update") { runAutoUpdate(manual = true) },
+            Triple(R.drawable.ic_about, "About Orbit") { showAbout() },
+        )
+
+        var popup: PopupWindow? = null
+        for ((icon, label, action) in items) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(20), 0, dp(20), 0)
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46))
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                isFocusable = true
+            }
+            val iv = ImageView(this).apply {
+                setImageResource(icon)
+                setColorFilter(0xFFE8EAE9.toInt())
+                layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
+            }
+            val tv = TextView(this).apply {
+                text = label
+                setTextColor(0xFFE8EAE9.toInt())
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(20)
                 }
             }
-            .show()
+            row.addView(iv)
+            row.addView(tv)
+            row.setOnClickListener {
+                popup?.dismiss()
+                action()
+            }
+            list.addView(row)
+        }
+
+        popup = PopupWindow(
+            content,
+            dp(248),
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            true,
+        ).apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT)) // rounded bg dikhne ke liye
+            elevation = dp(12).toFloat()
+            animationStyle = R.style.OrbitPopupAnim
+            isOutsideTouchable = true
+            showAsDropDown(anchor, -dp(2), dp(2), Gravity.END)
+        }
     }
 
     /** AI search optional hai — menu se. Default search Google hai. */

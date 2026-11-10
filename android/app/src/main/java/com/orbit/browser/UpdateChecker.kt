@@ -1,10 +1,8 @@
 package com.orbit.browser
 
-import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -142,40 +140,13 @@ object UpdateChecker {
     const val ACTION_INSTALL_STATUS = "com.orbit.browser.INSTALL_STATUS"
 
     /**
-     * PackageInstaller-based install — fail hone par REASON milta hai
-     * (ACTION_INSTALL_PACKAGE sirf "App not installed" bolta tha, wajah nahi).
-     *
-     * Status [InstallStatusReceiver] me aata hai:
-     *   PENDING_USER_ACTION → system confirmation screen khulta hai
-     *   SUCCESS             → "Orbit update ho gaya"
-     *   FAILURE_CONFLICT    → signature mismatch dialog + "APK Downloads me save" (one-time migration)
-     *   other failures      → reason ke saath dialog
+     * Install — PROVEN PATH: ACTION_INSTALL_PACKAGE (system installer + FileProvider).
+     * Pehle PackageInstaller session try kiya tha lekin kuch devices (OEM installers)
+     * par confirmation screen silently nahi khulti — "Install dabaya, kuch nahi hua".
+     * ACTION_INSTALL_PACKAGE har device par installer UI kholta hai (v1.0.2 me verified).
      */
     fun installWithStatus(ctx: Context, apk: File) {
-        try {
-            val installer = ctx.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            val sessionId = installer.createSession(params)
-            installer.openSession(sessionId).use { session ->
-                apk.inputStream().use { input ->
-                    session.openWrite("orbit-update.apk", 0, apk.length()).use { out ->
-                        input.copyTo(out)
-                        session.fsync(out)
-                    }
-                }
-                val statusIntent = Intent(ACTION_INSTALL_STATUS)
-                    .setPackage(ctx.packageName)
-                    .putExtra("apkPath", apk.absolutePath)
-                val sender = PendingIntent.getBroadcast(
-                    ctx, sessionId, statusIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                )
-                session.commit(sender.intentSender)
-            }
-        } catch (e: Exception) {
-            // PackageInstaller na chale to purana wala prompt (wajah pata nahi chalegi)
-            promptInstall(ctx, apk)
-        }
+        promptInstall(ctx, apk)
     }
 
     /** APK public Downloads me copy — uninstall ke baad bhi zinda rehta hai (cache wipe ho jata hai) */
