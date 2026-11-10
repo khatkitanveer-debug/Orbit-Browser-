@@ -36,6 +36,19 @@
             </intent-filter>
         </activity>
 
+        <!-- OTA update: PackageInstaller session ka status (fail reason ke saath) -->
+        <receiver
+            android:name=".InstallStatusReceiver"
+            android:exported="false" />
+
+        <!-- Install fail hone par wajah + migration steps dikhane wala dialog -->
+        <activity
+            android:name=".UpdateStatusActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- OTA update: downloaded APK ko system installer ko securely dene ke liye -->
         <provider
             android:name="androidx.core.content.FileProvider"

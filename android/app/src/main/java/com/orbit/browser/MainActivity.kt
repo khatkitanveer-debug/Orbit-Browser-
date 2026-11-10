@@ -566,7 +566,7 @@ class MainActivity : Activity() {
                     .setMessage("Install dabao — purana version replace ho jayega (aapka data safe rahega).")
                     .setPositiveButton("Install") { _, _ ->
                         UpdateChecker.cachedApk(this, info.versionName)
-                            ?.let { UpdateChecker.promptInstall(this, it) }
+                            ?.let { UpdateChecker.installWithStatus(this, it) }
                     }
                     .show()
             }

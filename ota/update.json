@@ -1,7 +1,7 @@
 {
-  "versionCode": 4,
-  "versionName": "1.0.3",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.3/orbit-browser-1.0.3.apk",
-  "notes": "Silent auto-update: naya version aate hi APK background me khud download hota hai (Orbit ke andar) — screen par sirf INSTALL button aata hai. Chrome updater jaisa flow.",
+  "versionCode": 5,
+  "versionName": "1.0.4",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.4/orbit-browser-1.0.4.apk",
+  "notes": "Install fail hone par ab Orbit khud wajah batata hai: purani key wale versions ke liye 'APK Downloads me save karo' button + step-by-step migration. Install success par 'Orbit update ho gaya' confirm bhi aata hai.",
   "minVersionCode": 1
 }

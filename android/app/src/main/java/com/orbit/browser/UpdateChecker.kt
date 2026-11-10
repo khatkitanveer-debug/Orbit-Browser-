@@ -1,10 +1,16 @@
 package com.orbit.browser
 
+import android.app.PendingIntent
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import okhttp3.OkHttpClient
@@ -131,6 +137,70 @@ object UpdateChecker {
             .onFailure {
                 toast(ctx, "Installer nahi khula — Settings me 'Install unknown apps' allow karo")
             }
+    }
+
+    const val ACTION_INSTALL_STATUS = "com.orbit.browser.INSTALL_STATUS"
+
+    /**
+     * PackageInstaller-based install — fail hone par REASON milta hai
+     * (ACTION_INSTALL_PACKAGE sirf "App not installed" bolta tha, wajah nahi).
+     *
+     * Status [InstallStatusReceiver] me aata hai:
+     *   PENDING_USER_ACTION → system confirmation screen khulta hai
+     *   SUCCESS             → "Orbit update ho gaya"
+     *   FAILURE_CONFLICT    → signature mismatch dialog + "APK Downloads me save" (one-time migration)
+     *   other failures      → reason ke saath dialog
+     */
+    fun installWithStatus(ctx: Context, apk: File) {
+        try {
+            val installer = ctx.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite("orbit-update.apk", 0, apk.length()).use { out ->
+                        input.copyTo(out)
+                        session.fsync(out)
+                    }
+                }
+                val statusIntent = Intent(ACTION_INSTALL_STATUS)
+                    .setPackage(ctx.packageName)
+                    .putExtra("apkPath", apk.absolutePath)
+                val sender = PendingIntent.getBroadcast(
+                    ctx, sessionId, statusIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                )
+                session.commit(sender.intentSender)
+            }
+        } catch (e: Exception) {
+            // PackageInstaller na chale to purana wala prompt (wajah pata nahi chalegi)
+            promptInstall(ctx, apk)
+        }
+    }
+
+    /** APK public Downloads me copy — uninstall ke baad bhi zinda rehta hai (cache wipe ho jata hai) */
+    fun saveApkToDownloads(ctx: Context, apk: File): String? {
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val resolver = ctx.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, apk.name)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("insert fail")
+                resolver.openOutputStream(uri)?.use { out -> apk.inputStream().use { it.copyTo(out) } }
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                "Downloads/${apk.name}"
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                dir.mkdirs()
+                apk.copyTo(File(dir, apk.name), overwrite = true).absolutePath
+            }
+        }.getOrNull()
     }
 
     private fun toast(ctx: Context, msg: String) {
