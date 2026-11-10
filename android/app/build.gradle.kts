@@ -19,6 +19,19 @@ android {
     namespace = "com.orbit.browser"
     compileSdk = 35
 
+    // STABLE signing — repo me committed orbit.keystore. Har build (local + CI)
+    // SAME key se sign hota hai, isliye naya version purane ke UPAR install hota
+    // hai (data safe). Bina iske CI ka ephemeral debug key har release me badal
+    // jata tha aur OTA upgrade fail ho jata tha ("App not installed").
+    signingConfigs {
+        create("orbit") {
+            storeFile = rootProject.file("orbit.keystore")
+            storePassword = "orbitbrowser"
+            keyAlias = "orbit"
+            keyPassword = "orbitbrowser"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.orbit.browser"
         minSdk = 26
@@ -29,8 +42,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("orbit")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("orbit")
         }
     }
 
