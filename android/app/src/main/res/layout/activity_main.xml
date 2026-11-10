@@ -4,90 +4,91 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/orbit_black">
+    android:background="@color/chrome_bg">
 
-    <!-- Toolbar -->
+    <!-- Chrome Android toolbar: [omnibox pill][tab count][3-dot] -->
     <LinearLayout
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="52dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
-        android:background="@color/orbit_surface">
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:background="@color/chrome_bg">
 
-        <ImageButton
-            android:id="@+id/btn_back"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_back"
-            android:contentDescription="@string/back"
-            android:tint="@color/orbit_white" />
-
-        <ImageButton
-            android:id="@+id/btn_fwd"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_forward"
-            android:contentDescription="@string/forward"
-            android:tint="@color/orbit_white" />
-
-        <ImageButton
-            android:id="@+id/btn_reload"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_refresh"
-            android:contentDescription="@string/reload"
-            android:tint="@color/orbit_white" />
-
-        <EditText
-            android:id="@+id/omnibox"
+        <!-- Omnibox pill: lock + URL + reload (Chrome jaisa reload pill ke andar) -->
+        <FrameLayout
             android:layout_width="0dp"
             android:layout_weight="1"
-            android:layout_height="38dp"
+            android:layout_height="40dp"
             android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:background="@drawable/omnibox_bg"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:textSize="14sp"
-            android:textColor="@color/orbit_white"
-            android:textColorHint="@color/orbit_hint"
-            android:hint="@string/search_hint"
-            android:inputType="textUri"
-            android:imeOptions="actionGo"
-            android:maxLines="1"
-            android:importantForAutofill="no" />
+            android:layout_marginEnd="2dp"
+            android:background="@drawable/omnibox_bg">
 
-        <ImageButton
-            android:id="@+id/btn_bookmark"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_star"
-            android:contentDescription="@string/bookmark"
-            android:tint="@color/orbit_white" />
+            <ImageView
+                android:id="@+id/omni_icon"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="12dp"
+                android:src="@drawable/ic_lock"
+                android:tint="@color/chrome_text_dim"
+                android:importantForAccessibility="no" />
 
-        <ImageButton
-            android:id="@+id/btn_private"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_private"
-            android:contentDescription="@string/private_mode"
-            android:tint="@color/orbit_white" />
+            <EditText
+                android:id="@+id/omnibox"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:background="@android:color/transparent"
+                android:paddingStart="34dp"
+                android:paddingEnd="44dp"
+                android:textSize="14sp"
+                android:textColor="@color/chrome_text"
+                android:textColorHint="@color/chrome_text_dim"
+                android:hint="@string/search_hint"
+                android:inputType="textUri"
+                android:imeOptions="actionGo"
+                android:maxLines="1"
+                android:importantForAutofill="no" />
 
-        <ImageButton
+            <ImageButton
+                android:id="@+id/btn_reload"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="5dp"
+                android:background="@drawable/btn_ripple"
+                android:src="@drawable/ic_refresh"
+                android:contentDescription="@string/reload"
+                android:tint="@color/chrome_text_dim" />
+        </FrameLayout>
+
+        <!-- Chrome tab-count button: rounded square + number -->
+        <FrameLayout
             android:id="@+id/btn_tabs"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_tabs"
-            android:contentDescription="@string/tabs"
-            android:tint="@color/orbit_white" />
+            android:contentDescription="@string/tabs">
+
+            <FrameLayout
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:background="@drawable/tab_count_bg">
+
+                <TextView
+                    android:id="@+id/tab_count"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/chrome_text"
+                    android:text="1" />
+            </FrameLayout>
+        </FrameLayout>
 
         <ImageButton
             android:id="@+id/btn_menu"
@@ -96,31 +97,171 @@
             android:background="@drawable/btn_ripple"
             android:src="@drawable/ic_menu"
             android:contentDescription="@string/menu"
-            android:tint="@color/orbit_white" />
+            android:tint="@color/chrome_text" />
     </LinearLayout>
 
-    <!-- Tab strip -->
-    <HorizontalScrollView
-        android:id="@+id/tab_strip"
+    <!-- Chrome loading progress — toolbar ke theek neeche patli blue line -->
+    <ProgressBar
+        android:id="@+id/progress"
+        style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="34dp"
-        android:scrollbars="none"
-        android:background="@color/orbit_surface"
+        android:layout_height="3dp"
+        android:progressTint="@color/chrome_blue"
+        android:progressBackgroundTint="@android:color/transparent"
+        android:max="100"
+        android:visibility="gone" />
+
+    <!-- Find in page bar (Chrome jaisa, toolbar ke neeche) -->
+    <LinearLayout
+        android:id="@+id/find_bar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingStart="8dp"
-        android:paddingEnd="8dp">
+        android:paddingEnd="8dp"
+        android:background="@color/chrome_surface"
+        android:visibility="gone">
 
-        <LinearLayout
-            android:id="@+id/tab_strip_row"
+        <EditText
+            android:id="@+id/find_input"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="38dp"
+            android:background="@drawable/omnibox_bg"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:textSize="14sp"
+            android:textColor="@color/chrome_text"
+            android:textColorHint="@color/chrome_text_dim"
+            android:hint="@string/find_in_page"
+            android:inputType="text"
+            android:imeOptions="actionGo"
+            android:maxLines="1" />
+
+        <TextView
+            android:id="@+id/find_count"
             android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical" />
-    </HorizontalScrollView>
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:minWidth="44dp"
+            android:gravity="center"
+            android:textSize="13sp"
+            android:textColor="@color/chrome_text_dim"
+            android:text="0/0" />
 
-    <!-- Content -->
-    <FrameLayout
-        android:id="@+id/container"
+        <ImageButton
+            android:id="@+id/find_prev"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_up"
+            android:tint="@color/chrome_text"
+            android:contentDescription="Upar" />
+
+        <ImageButton
+            android:id="@+id/find_next"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_down"
+            android:tint="@color/chrome_text"
+            android:contentDescription="Neeche" />
+
+        <ImageButton
+            android:id="@+id/find_close"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_close"
+            android:tint="@color/chrome_text"
+            android:contentDescription="Band karo" />
+    </LinearLayout>
+
+    <!-- Content + Chrome pull-to-refresh -->
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/pull_refresh"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1" />
+        android:layout_weight="1">
+
+        <FrameLayout
+            android:id="@+id/container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+    <!-- Chrome tab switcher: cards grid + FAB -->
+    <FrameLayout
+        android:id="@+id/tab_switcher"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/chrome_bg"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="20dp"
+                android:paddingEnd="12dp">
+
+                <TextView
+                    android:id="@+id/switcher_title"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/chrome_text"
+                    android:text="Tabs" />
+
+                <TextView
+                    android:id="@+id/btn_close_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:gravity="center"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:background="@drawable/btn_ripple"
+                    android:textSize="14sp"
+                    android:textColor="@color/chrome_blue"
+                    android:text="@string/close_all" />
+            </LinearLayout>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none">
+
+                <GridLayout
+                    android:id="@+id/switcher_grid"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:columnCount="2"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:paddingBottom="90dp" />
+            </ScrollView>
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/btn_new_tab_fab"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="20dp"
+            android:layout_marginBottom="24dp"
+            android:background="@drawable/fab_bg"
+            android:src="@drawable/ic_newtab"
+            android:tint="@color/chrome_text"
+            android:contentDescription="@string/tabs" />
+    </FrameLayout>
 </LinearLayout>

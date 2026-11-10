@@ -14,7 +14,7 @@ object ProxyEngine {
 
     const val UA =
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/126.0.0.0 Mobile Safari/537.36"
+            "Chrome/131.0.0.0 Mobile Safari/537.36"
 
     val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)

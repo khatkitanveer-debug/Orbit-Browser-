@@ -1,7 +1,7 @@
 {
-  "versionCode": 7,
-  "versionName": "1.0.6",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.6/orbit-browser-1.0.6.apk",
-  "notes": "Install fix: system installer ab pakka khulta hai (kuch devices par naya install method silently fail ho raha tha). Naya Chrome-jaisa 3-dot menu — ab button ke neeche se slide hoke khulta hai, icons ke saath.",
+  "versionCode": 8,
+  "versionName": "1.1.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.1.0/orbit-browser-1.1.0.apk",
+  "notes": "Chrome overhaul: Chrome-jaisa toolbar (omnibox pill + tab counter), Chrome tab switcher (cards + FAB), Incognito tab, pull-to-refresh, find in page, desktop site, share. FIX: Google services (login/search/YouTube) ab kaam karte hain — real browser UA + third-party cookies.",
   "minVersionCode": 1
 }

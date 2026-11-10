@@ -6,8 +6,14 @@
     <string name="reload">Reload</string>
     <string name="search_hint">Search karo ya URL likho</string>
     <string name="bookmark">Bookmark</string>
-    <string name="private_mode">Private mode</string>
+    <string name="private_mode">Incognito</string>
     <string name="tabs">Tabs</string>
     <string name="menu">Menu</string>
     <string name="backend_label">Orbit AI backend URL (apna deployed Orbit web app)</string>
+    <string name="find_in_page">Page me dhoondo</string>
+    <string name="desktop_site">Desktop site</string>
+    <string name="share">Share karo</string>
+    <string name="incognito_tab">Incognito tab</string>
+    <string name="close_all">Sab band karo</string>
+    <string name="not_secure">Not secure</string>
 </resources>
