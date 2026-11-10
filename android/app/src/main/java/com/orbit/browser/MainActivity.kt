@@ -101,7 +101,9 @@ class MainActivity : Activity() {
 
         // pehla tab — clean new tab screen
         newTab()
-        checkForUpdate(silent = true)
+        // silent auto-update: naya version mila to background me khud download,
+        // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
+        runAutoUpdate(manual = false)
     }
 
     override fun onBackPressed() {
@@ -462,7 +464,7 @@ class MainActivity : Activity() {
                     2 -> showBookmarks()
                     3 -> showHistory()
                     4 -> showSettings()
-                    5 -> checkForUpdate(silent = false)
+                    5 -> runAutoUpdate(manual = true)
                     6 -> showAbout()
                 }
             }
@@ -550,30 +552,25 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun checkForUpdate(silent: Boolean) {
-        Thread {
-            val latest = UpdateChecker.fetchLatest()
+    /**
+     * Fully silent auto-update — launch par bhi, menu check par bhi same flow:
+     * update mila → background download (Orbit ke cache me) → sirf INSTALL wala
+     * dialog. Koi "Update karo?" puchha-woochha nahi, koi Chrome/Downloads nahi.
+     */
+    private fun runAutoUpdate(manual: Boolean) {
+        UpdateChecker.autoUpdate(this, manual) { info ->
             runOnUiThread {
-                if (latest == null) {
-                    if (!silent) Toast.makeText(this, "Update check nahi ho paya (network?)", Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
-                }
-                if (UpdateChecker.isUpdateAvailable(latest)) {
-                    AlertDialog.Builder(this, R.style.OrbitDialog)
-                        .setTitle("Orbit ${latest.versionName} available hai")
-                        .setMessage(
-                            (latest.notes.ifBlank { "Naya version ready hai." }) +
-                                "\n\n• Background me download hoga, phir INSTALL ka button khud khul jayega\n" +
-                                "• Install hote hi purana version REPLACE ho jayega (aapka data safe rahega)",
-                        )
-                        .setPositiveButton("Update karo") { _, _ -> UpdateChecker.downloadAndInstall(this, latest) }
-                        .setNegativeButton("Baad me", null)
-                        .show()
-                } else if (!silent) {
-                    Toast.makeText(this, "Orbit up-to-date hai (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
-                }
+                if (isFinishing) return@runOnUiThread
+                AlertDialog.Builder(this, R.style.OrbitDialog)
+                    .setTitle("Orbit ${info.versionName} ready hai")
+                    .setMessage("Install dabao — purana version replace ho jayega (aapka data safe rahega).")
+                    .setPositiveButton("Install") { _, _ ->
+                        UpdateChecker.cachedApk(this, info.versionName)
+                            ?.let { UpdateChecker.promptInstall(this, it) }
+                    }
+                    .show()
             }
-        }.start()
+        }
     }
 
     // ---------------------------------------------------------------- helpers

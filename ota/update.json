@@ -1,7 +1,7 @@
 {
-  "versionCode": 3,
-  "versionName": "1.0.2",
-  "apkUrl": "https://raw.githubusercontent.com/khatkitanveer-debug/Orbit-Browser-/main/ota/orbit-browser-1.0.2.apk",
-  "notes": "Real browser fix: ab DIRECT browsing (Chromium engine) — Google search built-in, har site sahi khulegi. Update flow: background download ke baad Install button khud khulta hai, purana version replace ho jata hai.",
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.0.3/orbit-browser-1.0.3.apk",
+  "notes": "Silent auto-update: naya version aate hi APK background me khud download hota hai (Orbit ke andar) — screen par sirf INSTALL button aata hai. Chrome updater jaisa flow.",
   "minVersionCode": 1
 }

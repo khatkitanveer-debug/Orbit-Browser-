@@ -16,12 +16,13 @@ import java.util.concurrent.TimeUnit
  * Orbit OTA updater — repo ke [ota/update.json] ko check karta hai
  * (raw.githubusercontent.com se).
  *
- * Naya flow (user ko sirf INSTALL dabana hai):
- *   1. "Update karo" dabate hi APK BACKGROUND me download hota hai (app ke cache me)
- *   2. Download complete hote hi system installer KAHD KHUD khul jata hai
- *   3. User sirf INSTALL dabaye — same applicationId + same signature hone se
- *      purana version REPLACE ho jata hai (aapka data bana rehta hai),
- *      Downloads folder me koi APK kachra nahi.
+ * FULLY SILENT AUTO-UPDATE (Chrome updater jaisa):
+ *   1. App launch par khud check hota hai — update mila to koi puchha-woochha nahi,
+ *      APK BACKGROUND me khud download hona shuru (app ke apne cache me —
+ *      na Chrome kholta hai, na Downloads folder, na notification)
+ *   2. Download complete hote hi screen par sirf INSTALL button wala dialog aata hai
+ *   3. Install dabao — same applicationId + signature se purana version REPLACE,
+ *      aapka data bana rehta hai
  */
 object UpdateChecker {
 
@@ -62,36 +63,65 @@ object UpdateChecker {
     fun isUpdateAvailable(latest: UpdateInfo): Boolean =
         latest.versionCode > BuildConfig.VERSION_CODE
 
-    /** Background download → installer prompt khud khulta hai */
-    fun downloadAndInstall(ctx: Context, info: UpdateInfo) {
-        toast(ctx, "Orbit ${info.versionName} background me download ho raha hai…")
+    /**
+     * Silent auto-update: update mila to background me khud download,
+     * complete hone par [onReady] — app sirf INSTALL dialog dikhayegi.
+     * manual=true (menu se check) par chhote status toast bhi dikhte hain.
+     */
+    fun autoUpdate(ctx: Context, manual: Boolean, onReady: (UpdateInfo) -> Unit) {
         Thread {
-            val apk: File? = runCatching {
-                val req = Request.Builder().url(info.apkUrl).build()
-                client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                    val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
-                    // purana pending update file clear — hamesha fresh download
-                    dir.listFiles()?.forEach { it.delete() }
-                    val out = File(dir, "orbit-${info.versionName}.apk")
-                    val body = resp.body ?: error("empty body")
-                    body.byteStream().use { input ->
-                        out.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    out
-                }
-            }.getOrNull()
-
-            if (apk == null || apk.length() < 100_000) {
-                toast(ctx, "Download fail ho gaya — internet check karke dobara try karo")
+            val latest = fetchLatest()
+            if (latest == null) {
+                if (manual) toast(ctx, "Update check nahi ho paya (network?)")
                 return@Thread
             }
-            toast(ctx, "Download complete — Install dabao")
-            promptInstall(ctx, apk)
+            if (!isUpdateAvailable(latest)) {
+                if (manual) toast(ctx, "Orbit up-to-date hai (v${BuildConfig.VERSION_NAME})")
+                return@Thread
+            }
+            // pehle se downloaded hai (pichhli baar)? — download skip, seedha Install
+            val cached = cachedApk(ctx, latest.versionName)
+            if (cached != null) {
+                main.post { onReady(latest) }
+                return@Thread
+            }
+            if (manual) toast(ctx, "Orbit ${latest.versionName} background me download ho raha hai…")
+            val apk = download(ctx, latest)
+            if (apk == null) {
+                if (manual) toast(ctx, "Download fail ho gaya — thodi der me dobara try karo")
+                return@Thread
+            }
+            main.post { onReady(latest) }
         }.start()
     }
 
-    private fun promptInstall(ctx: Context, apk: File) {
+    /** Pehle se downloaded valid APK hai? (cache/updates/orbit-<v>.apk) */
+    fun cachedApk(ctx: Context, versionName: String): File? {
+        val f = File(File(ctx.cacheDir, "updates"), "orbit-$versionName.apk")
+        return if (f.exists() && f.length() > 100_000) f else null
+    }
+
+    /** SILENT download — Orbit ke cache me. Koi Chrome/DownloadManager/notification nahi. */
+    private fun download(ctx: Context, info: UpdateInfo): File? {
+        return runCatching {
+            val req = Request.Builder().url(info.apkUrl).build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
+                // purane pending update files clear — hamesha fresh
+                dir.listFiles()?.forEach { it.delete() }
+                val out = File(dir, "orbit-${info.versionName}.apk")
+                val body = resp.body ?: error("empty body")
+                body.byteStream().use { input ->
+                    out.outputStream().use { output -> input.copyTo(output) }
+                }
+                out.takeIf { it.length() > 100_000 }
+            }
+        }.getOrNull()
+    }
+
+    /** System installer prompt khud khulta hai — user sirf INSTALL dabaye */
+    fun promptInstall(ctx: Context, apk: File) {
         val uri: Uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", apk)
         val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")

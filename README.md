@@ -77,11 +77,19 @@ Waise hi milega:
 - Repo ke `ota/` folder me APK + `update.json` (yehi link app ki OTA pipeline check karti hai)
 - GitHub Actions artifacts (push par auto-build hota hai)
 
-### OTA update kaise kaam karta hai
+### OTA update kaise kaam karta hai (fully silent — Chrome updater jaisa)
 
-1. `ota/update.json` me versionCode/versionName/apkUrl hota hai
-2. Naya version release karna: APK build karke `ota/` me daalo, update.json me versionCode badhao, push karo
-3. Installed app agle launch par update dikhayegi → download → install prompt
+1. App launch par khud `ota/update.json` check hota hai
+2. Naya version dikha to APK **background me khud download** hota hai — Orbit ke apne cache me (na Chrome, na Downloads folder, na notification)
+3. Download complete → screen par **sirf INSTALL** button wala dialog
+4. Install dabao — purana version replace (data safe), do apps nahi bante
+
+### Naya version release karna (maintainer flow)
+
+1. `android/app/build.gradle.kts` me `versionCode`/`versionName` badhao
+2. `ota/update.json` me version + **GitHub Release APK URL** likho
+3. Commit karke `vX.Y.Z` tag push karo — GitHub Actions khud APK build karke Release me attach kar dega
+4. Installed apps agle launch par silent download karke Install dialog dikhayengi
 
 ## Firebase Cloud Sync setup (2 minute)
 
