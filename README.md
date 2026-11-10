@@ -70,7 +70,13 @@ cd android
 gradle assembleDebug          # APK: app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Ready-made APK repo ke `ota/` folder me bhi hai — ya GitHub Actions artifact se download karo (push par auto-build hota hai).
+### APK download (sabse aasan)
+
+**[Releases page](https://github.com/khatkitanveer-debug/Orbit-Browser-/releases)** se latest `orbit-browser-<version>.apk` download karo → install karo (Unknown sources allow karna hoga pehli baar).
+
+Waise hi milega:
+- Repo ke `ota/` folder me APK + `update.json` (yehi link app ki OTA pipeline check karti hai)
+- GitHub Actions artifacts (push par auto-build hota hai)
 
 ### OTA update kaise kaam karta hai
 

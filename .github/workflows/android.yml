@@ -5,11 +5,16 @@ name: Android Build (OTA)
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
     paths:
       - "android/**"
       - "ota/**"
       - ".github/workflows/android.yml"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -37,3 +42,14 @@ jobs:
         with:
           name: orbit-browser-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      # Tag push (v*) par GitHub Release — APK wahan se koi bhi download kar sakta hai
+      - name: Rename APK for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk orbit-browser-${GITHUB_REF_NAME#v}.apk
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" orbit-browser-*.apk --title "Orbit Browser $GITHUB_REF_NAME" --generate-notes
