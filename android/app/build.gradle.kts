@@ -36,8 +36,8 @@ android {
         applicationId = "com.orbit.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.2.4"
+        versionCode = 14
+        versionName = "1.2.5"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 
@@ -68,5 +68,6 @@ dependencies {
     implementation("androidx.core:core:1.13.1") // FileProvider (OTA installer)
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0") // Chrome pull-to-refresh
     implementation("androidx.webkit:webkit:1.11.0") // document-start JS (anti-fingerprinting)
+    implementation("com.google.zxing:core:3.5.3") // LENS scanner — QR/barcode LOCAL decode (pure Java, offline)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

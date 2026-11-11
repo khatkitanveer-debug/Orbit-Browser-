@@ -77,7 +77,7 @@
       </svg>
       <input id="q" placeholder="Search Google ya URL likho" autocomplete="off" spellcheck="false" enterkeyhint="search">
       <!-- Google Lens -->
-      <button type="button" class="lensbtn" onclick="nav('https://lens.google.com/', false)" aria-label="Lens">
+      <button type="button" class="lensbtn" onclick="try{OrbitBridge.lensScan()}catch(e){nav('https://lens.google.com/', false)}" aria-label="Lens">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path fill="#9aa0a6" d="M9 3h6l1.8 2H20a2 2 0 0 1 2 2v3h-2V7h-3.4l-1.8-2H9.2L7.4 7H4v11h6v2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3.2L9 3z"/>
           <path fill="#4285F4" d="M12 9a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zm0 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z"/>

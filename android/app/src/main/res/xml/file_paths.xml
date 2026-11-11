@@ -3,4 +3,6 @@
      FileProvider ke through secure access milta hai. -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- LENS scanner — camera capture ka temp jpg system camera app ko dene ke liye -->
+    <cache-path name="lens" path="lens/" />
 </paths>

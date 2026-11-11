@@ -1,7 +1,7 @@
 {
-  "versionCode": 13,
-  "versionName": "1.2.4",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.4/orbit-browser-1.2.4.apk",
-  "notes": "LAUNCH-CRASH PAKKA FIX: tumhari v1.2.3 crash-report ne exact wajah batayi — toolbar ka tab-button (square + number) XML me FrameLayout hai, code use ImageButton me cast kar raha tha = ClassCastException. Isi liye app pichhle 4 updates (v1.1 se) har device par launch par crash thi. Ab fixed + naya safety: CI me layout-audit gate, aisi galti ab build se pehle pakdi jayegi.",
+  "versionCode": 14,
+  "versionName": "1.2.5",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.5/orbit-browser-1.2.5.apk",
+  "notes": "3 naye fixes: (1) Pull-to-refresh ab SIRF page ke bilkul top par kaam karta hai — page end se upar scroll karne par reload nahi hoga. (2) New tab page par omnibox ab bilkul CLEAN — pichhli khuli link ka URL kabhi nahi dikhega. (3) Google Lens button ab CAMERA kholta hai — photo lo, QR/UPI/barcode phone par hi decode hoga (bina internet): UPI QR par seedha payment app khulega. QR na mile to Google Lens image-search. versionCode 14",
   "minVersionCode": 1
 }

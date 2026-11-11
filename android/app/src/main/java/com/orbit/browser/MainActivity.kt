@@ -8,8 +8,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
@@ -18,6 +20,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.net.Uri
+import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -26,6 +30,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -48,8 +53,16 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.GlobalHistogramBinarizer
+import com.google.zxing.common.HybridBinarizer
 import java.io.ByteArrayInputStream
 import java.io.File
 
@@ -97,6 +110,9 @@ class MainActivity : Activity() {
     private lateinit var findCount: TextView
 
     private var aiJob: Thread? = null
+
+    // LENS scanner — capture ke waqt ka temp file (onActivityResult me wapas milta hai)
+    private var lensCaptureFile: File? = null
     private var menuPopup: PopupWindow? = null
     private var suggestPopup: PopupWindow? = null
     private lateinit var shieldBadge: TextView
@@ -222,6 +238,13 @@ class MainActivity : Activity() {
         pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
         pullRefresh.setOnRefreshListener {
             activeTab?.webView?.reload()
+        }
+        // PTR SIRF PAGE-TOP PAR — end se upar scroll karne par reload NAHI.
+        // SwipeRefreshLayout ka default canChildScrollUp() seedhe container
+        // FrameLayout ko check karta hai (jo kabhi scroll nahi hota) — isliye
+        // WebView ki REAL scroll position se decide karo.
+        pullRefresh.setOnChildScrollUpCallback { _, _ ->
+            activeTab?.webView?.canScrollVertically(-1) == true
         }
 
         // Chrome tab switcher
@@ -513,7 +536,17 @@ class MainActivity : Activity() {
         val tab = activeTab ?: return
         tabCount.text = tabs.size.coerceAtMost(99).toString()
         // user omnibox me TYPING ho to overwrite mat karo (Chrome jaisa)
-        if (!omnibox.hasFocus()) {
+        if (tab.isInternal) {
+            // INTERNAL pages (NTP) par omnibox CLEAN — pichhle page ka URL kabhi
+            // nahi dikhega. (Stale-text bug: new-tab par omnibox focused rehta tha,
+            // isliye purana URL ruk jata tha.) Force-clear + keyboard hide.
+            omnibox.setText("")
+            omnibox.clearFocus()
+            runCatching {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.hideSoftInputFromWindow(omnibox.windowToken, 0)
+            }
+        } else if (!omnibox.hasFocus()) {
             omnibox.setText(tab.url)
             omnibox.clearFocus()
         }
@@ -780,6 +813,208 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun version(): String = BuildConfig.VERSION_NAME
+
+        /** NTP ka Lens button — CAMERA scanner (QR/UPI/barcode local decode) */
+        @JavascriptInterface
+        fun lensScan() {
+            runOnUiThread { startLensScan() }
+        }
+    }
+
+    // ---------------------------------------------------------------- lens scanner
+
+    /** Google Lens button (NTP) — CAMERA kholta hai: photo lo → QR/UPI/barcode
+     *  LOCAL decode (bina internet, bina Google — privacy promise) → link/UPI/
+     *  text action. QR na mile to photo Google app (Lens) ko bhejo, warna
+     *  lens.google.com. System camera use karte hain = CAMERA permission ki
+     *  zaroorat nahi, camera quirks ka risk nahi. */
+    private fun startLensScan() {
+        val dir = File(cacheDir, "lens")
+        runCatching { dir.mkdirs() }
+        val file = File(dir, "capture.jpg")
+        val uri = runCatching {
+            if (file.exists()) file.delete()
+            file.createNewFile()
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        }.getOrNull()
+        if (uri == null) {
+            activeTab?.id?.let { navigate(it, LENS_WEB) }
+            return
+        }
+        lensCaptureFile = file
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("capture", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        // camera app na ho / block ho — seedha Lens website (pehle jaisa behavior)
+        val ok = runCatching { startActivityForResult(intent, REQ_LENS_CAPTURE); true }.getOrDefault(false)
+        if (!ok) {
+            lensCaptureFile = null
+            activeTab?.id?.let { navigate(it, LENS_WEB) }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_LENS_CAPTURE) return
+        val file = lensCaptureFile ?: return
+        lensCaptureFile = null
+        if (resultCode != RESULT_OK) {
+            runCatching { file.delete() }
+            return
+        }
+        // kuch camera apps EXTRA_OUTPUT ignore karte hain — thumbnail fallback
+        val thumb = data?.extras?.get("data") as? Bitmap
+        Thread {
+            val text = runCatching {
+                if (file.exists() && file.length() > 0) decodeQrFromJpeg(file) else thumb?.let { decodeQrBitmap(it) }
+            }.getOrNull()
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (!text.isNullOrBlank()) {
+                    runCatching { file.delete() }
+                    showLensResult(text)
+                } else {
+                    lensImageFallback(file)
+                }
+            }
+        }.start()
+    }
+
+    /** Decode: downscale (memory) — 4 rotations × Hybrid/Global binarizer, taaki
+     *  EXIF-orientation ke bina bhi QR pakka mile. Background thread par hi. */
+    private fun decodeQrFromJpeg(file: File): String? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1600) sample *= 2
+        val bmp = BitmapFactory.decodeFile(
+            file.absolutePath,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: return null
+        return decodeQrBitmap(bmp)
+    }
+
+    private fun decodeQrBitmap(source: Bitmap): String? {
+        val reader = MultiFormatReader()
+        reader.setHints(
+            mapOf(
+                DecodeHintType.TRY_HARDER to true,
+                DecodeHintType.POSSIBLE_FORMATS to listOf(
+                    BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX, BarcodeFormat.AZTEC,
+                    BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.EAN_13,
+                    BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.ITF,
+                ),
+            ),
+        )
+        var cur = source
+        var rotated = false
+        try {
+            repeat(4) {
+                runCatching {
+                    val w = cur.width
+                    val h = cur.height
+                    val px = IntArray(w * h)
+                    cur.getPixels(px, 0, w, 0, 0, w, h)
+                    val lum = RGBLuminanceSource(w, h, px)
+                    for (bin in listOf(HybridBinarizer(lum), GlobalHistogramBinarizer(lum))) {
+                        try {
+                            return reader.decodeWithState(BinaryBitmap(bin)).text
+                        } catch (e: Exception) {
+                            reader.reset()
+                        }
+                    }
+                }
+                val m = Matrix()
+                m.postRotate(90f)
+                val r = runCatching { Bitmap.createBitmap(cur, 0, 0, cur.width, cur.height, m, true) }
+                    .getOrNull() ?: return@repeat
+                if (rotated) cur.recycle() // sirf purane rotated bitmaps — source kabhi nahi
+                cur = r
+                rotated = true
+            }
+        } finally {
+            reader.reset()
+            if (rotated) cur.recycle()
+        }
+        return null
+    }
+
+    /** Scan result ka action dialog — QR content ke hisaab se smart */
+    private fun showLensResult(text: String) {
+        val t = text.trim()
+        val lower = t.lowercase()
+        val isUrl = lower.startsWith("http://") || lower.startsWith("https://")
+        val isUpi = lower.startsWith("upi://") || lower.startsWith("tez://")
+        val title = when {
+            isUpi -> "UPI QR scan ho gaya"
+            isUrl -> "Link scan ho gaya"
+            else -> "QR/Barcode scan ho gaya"
+        }
+        val action = when {
+            isUpi -> "Payment app me kholo"
+            isUrl -> "Kholo"
+            else -> "Google par search karo"
+        }
+        runCatching {
+            AlertDialog.Builder(this, R.style.OrbitDialog)
+                .setTitle(title)
+                .setMessage(t.take(600))
+                .setPositiveButton(action) { _, _ ->
+                    when {
+                        isUpi -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(t))) }
+                            .onFailure {
+                                CrashGuard.toast(this, "Payment app nahi mili — copy kar diya")
+                                copyLensText(t)
+                            }
+                        isUrl -> activeTab?.id?.let { navigate(it, t) }
+                        else -> activeTab?.id?.let {
+                            navigate(it, GOOGLE_SEARCH + java.net.URLEncoder.encode(t, "UTF-8"))
+                        }
+                    }
+                }
+                .setNeutralButton("Copy") { _, _ -> copyLensText(t) }
+                .setNegativeButton("Band", null)
+                .show()
+        }
+    }
+
+    private fun copyLensText(text: String) {
+        runCatching {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("orbit-lens", text))
+            CrashGuard.toast(this, "Copy ho gaya")
+        }
+    }
+
+    /** QR nahi mila — photo ko Google app (Lens image-search) me bhejo;
+     *  Google app na ho to lens.google.com (pehle jaisa behavior). */
+    private fun lensImageFallback(file: File) {
+        val uri = runCatching {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        }.getOrNull()
+        val send = if (uri != null) {
+            Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newRawUri("lens", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                setPackage("com.google.android.googlequicksearchbox")
+            }
+        } else null
+        val ok = send != null && runCatching {
+            if (send.resolveActivity(packageManager) != null) {
+                startActivity(send)
+                true
+            } else false
+        }.getOrDefault(false)
+        if (ok) {
+            CrashGuard.toast(this, "Google Lens me khoj rahe hain…")
+        } else {
+            activeTab?.id?.let { navigate(it, LENS_WEB) }
+        }
     }
 
     private inner class OrbitWebViewClient(val tab: Tab) : WebViewClient() {
@@ -806,7 +1041,16 @@ class MainActivity : Activity() {
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-            if (!url.isNullOrEmpty() && url != "https://orbit.local/" && !url.startsWith("data:")) {
+            // BACK-navigate karke NTP/internal entry par wapas aana — Chrome ki
+            // tarah CLEAN omnibox (pichhla URL kabhi nahi dikhega)
+            if (url == NEWTAB || url == "https://orbit.local/") {
+                tab.isInternal = true
+                tab.url = NEWTAB
+                tab.title = "New Tab"
+                refreshChrome()
+                return
+            }
+            if (!url.isNullOrEmpty() && !url.startsWith("data:")) {
                 tab.url = url
                 refreshChrome()
             }
@@ -815,7 +1059,12 @@ class MainActivity : Activity() {
         override fun onPageFinished(view: WebView?, url: String?) {
             pullRefresh.isRefreshing = false
             updateShieldBadge()
-            if (view == null || url.isNullOrEmpty() || tab.isInternal) return
+            // internal entry (back-nav included) — clean chrome, history me kuch nahi
+            if (url == NEWTAB || url == "https://orbit.local/" || tab.isInternal) {
+                refreshChrome()
+                return
+            }
+            if (view == null || url.isNullOrEmpty()) return
             tab.url = url
             tab.title = view.title?.ifBlank { null } ?: domainOf(url)
             refreshChrome()
@@ -1452,6 +1701,10 @@ class MainActivity : Activity() {
         const val NEWTAB = "orbit://newtab"
         const val GOOGLE_SEARCH = "https://www.google.com/search?q="
         const val DEFAULT_AI_BACKEND = "https://orbit-browser.vercel.app"
+
+        // LENS scanner — QR na mile to Google Lens website (fallback)
+        const val LENS_WEB = "https://lens.google.com/"
+        private const val REQ_LENS_CAPTURE = 4201
 
         /** Desktop site toggle ke liye — modern desktop Chrome UA */
         const val DESKTOP_UA =
