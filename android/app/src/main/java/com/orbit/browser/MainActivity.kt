@@ -21,8 +21,10 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Message
 import android.net.Uri
+import android.net.VpnService
 import android.provider.MediaStore
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
@@ -56,6 +58,12 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.webkit.WebViewCompat
+import com.orbit.browser.lens.LensEngine
+import com.orbit.browser.media.PlaybackCoordinator
+import com.orbit.browser.media.PlaybackSink
+import com.orbit.browser.render.MediaWatchBootstrap
+import com.orbit.browser.render.ViewportBootstrap
+import com.orbit.browser.sync.OrbitSync
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -414,6 +422,7 @@ class MainActivity : Activity() {
         runCatching { sleeper.removeCallbacksAndMessages(null) }
         runCatching { menuPopup?.dismiss() }
         runCatching { suggestPopup?.dismiss() }
+        runCatching { PlaybackCoordinator.stopAll() }
         runCatching {
             for (tab in tabs) {
                 tab.webView?.apply {
@@ -475,6 +484,8 @@ class MainActivity : Activity() {
         val idx = tabs.indexOf(tab)
         if (idx < 0) return
         tabs.remove(tab)
+        // MODULE 3 — agar yahi tab media play kar raha tha to service band
+        PlaybackCoordinator.webViewDestroyed(tab.webView)
         tab.webView?.apply {
             stopLoading()
             (parent as? ViewGroup)?.removeView(this)
@@ -613,13 +624,41 @@ class MainActivity : Activity() {
         wv.settings.displayZoomControls = false
         wv.settings.loadWithOverviewMode = true
         wv.settings.useWideViewPort = true
+        // MODULE 1 (render tuning) — Chrome-parity engine settings. KOI VISUAL
+        // CHANGE NAHI: textZoom default fontScale (1.0) par 100 hi rehta hai — bas
+        // system font-scale ka respect ab Chrome jaisa. mediaPlaybackRequiresUserGesture
+        // false — M3 ke lock-screen play/pause control JS ke liye zaroori.
+        wv.settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
+        wv.settings.textZoom = (resources.configuration.fontScale * 100f).toInt().coerceIn(50, 250)
+        wv.settings.mediaPlaybackRequiresUserGesture = false
+        wv.settings.databaseEnabled = true
+        wv.settings.loadsImagesAutomatically = true
+        wv.settings.allowFileAccess = false
+        // MODULE 3 (background playback) — har WebView ka apna media sink.
+        // Document-start bootstrap: viewport (M1) + media-watch (M3) + fingerprint
+        // shield (agar on) SAB EK combined script me — addDocumentStartJavaScript
+        // har call par pichhle scripts REPLACE karta hai, isliye ek hi call.
+        wv.addJavascriptInterface(PlaybackSink(wv), "OrbitMediaSink")
         wv.addJavascriptInterface(Bridge(tab), "OrbitBridge")
-        // FIREFOX MODULE — anti-fingerprinting: document-start pe script inject
-        // (kisi bhi page script se PEHLE) — canvas noise + hardware spoof
-        if (antiFpEnabled()) {
-            runCatching {
-                WebViewCompat.addDocumentStartJavaScript(wv, FINGERPRINT_SHIELD_JS, setOf("*"))
+        val bootstrapJs = buildString {
+            append(ViewportBootstrap.SCRIPT)
+            append("\n;")
+            append(MediaWatchBootstrap.SCRIPT)
+            if (antiFpEnabled()) {
+                // FIREFOX MODULE — anti-fingerprinting: canvas noise + hardware spoof
+                append("\n;")
+                append(FINGERPRINT_SHIELD_JS)
             }
+        }
+        runCatching {
+            WebViewCompat.addDocumentStartJavaScript(wv, bootstrapJs, setOf("*"))
+        }
+        // MODULE 4 (true incognito) — incognito tab ka WebView EPHEMERAL: koi HTTP
+        // cache, koi DOM storage, koi third-party cookies. Normal tab pehle jaisa.
+        if (tab.isIncognito) {
+            wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            wv.settings.domStorageEnabled = false
+            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
         }
         wv.webViewClient = OrbitWebViewClient(tab)
         wv.webChromeClient = object : WebChromeClient() {
@@ -819,6 +858,24 @@ class MainActivity : Activity() {
         fun lensScan() {
             runOnUiThread { startLensScan() }
         }
+
+        /** MODULE 2 — Discover feed ka data: local history (incognito = []) */
+        @JavascriptInterface
+        fun historyJson(): String {
+            if (tab.isIncognito) return "[]"
+            val arr = org.json.JSONArray()
+            runCatching {
+                LocalStore.listHistory(this@MainActivity).take(300).forEach { h ->
+                    arr.put(
+                        org.json.JSONObject()
+                            .put("url", h.url)
+                            .put("title", h.title)
+                            .put("ts", h.ts),
+                    )
+                }
+            }
+            return arr.toString()
+        }
     }
 
     // ---------------------------------------------------------------- lens scanner
@@ -857,6 +914,20 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        // MODULE 4 — Google sync sign-in ka result
+        if (requestCode == OrbitSync.REQ_SIGN_IN) {
+            OrbitSync.handleSignInResult(this, resultCode, data)
+            return
+        }
+        // MODULE 4 — VPN consent ka result
+        if (requestCode == REQ_VPN_CONSENT) {
+            CrashGuard.toast(
+                this,
+                if (resultCode == RESULT_OK) "VPN permission save ho gayi — backend agli update me active hoga"
+                else "VPN permission nahi mili",
+            )
+            return
+        }
         if (requestCode != REQ_LENS_CAPTURE) return
         val file = lensCaptureFile ?: return
         lensCaptureFile = null
@@ -989,9 +1060,39 @@ class MainActivity : Activity() {
         }
     }
 
-    /** QR nahi mila — photo ko Google app (Lens image-search) me bhejo;
-     *  Google app na ho to lens.google.com (pehle jaisa behavior). */
+    /** QR nahi mila — MODULE 3 in-app Lens: photo seedha lens.google.com upload
+     *  → results URL APP KE ANDAR khulta hai. Endpoint drift/network fail ho to
+     *  pehle jaisa: Google app (Lens image-share), warna lens.google.com. */
     private fun lensImageFallback(file: File) {
+        CrashGuard.toast(this, "Google Lens me khoj rahe hain…")
+        Thread {
+            val uploadCopy = File(file.parentFile, "up_${file.name}")
+            var resultsUrl: String? = null
+            runCatching {
+                if (LensEngine.downscale(file, uploadCopy)) resultsUrl = LensEngine.upload(uploadCopy)
+            }
+            // Privacy: upload copy hamesha delete — EXIF/GPS kabhi device se bahar nahi
+            runCatching { uploadCopy.delete() }
+            val url = resultsUrl
+            if (url != null) {
+                // in-app results — original photo bhi delete, kuch cache me nahi bachta
+                runCatching { file.delete() }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    activeTab?.id?.let { navigate(it, url) }
+                }
+            } else {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    shareLensWithGoogleApp(file)
+                }
+            }
+        }.start()
+    }
+
+    /** Pehla fallback — photo ko Google app (Lens image-search) me bhejo;
+     *  Google app na ho to lens.google.com (v1.2.5 behavior). */
+    private fun shareLensWithGoogleApp(file: File) {
         val uri = runCatching {
             FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         }.getOrNull()
@@ -1011,7 +1112,7 @@ class MainActivity : Activity() {
             } else false
         }.getOrDefault(false)
         if (ok) {
-            CrashGuard.toast(this, "Google Lens me khoj rahe hain…")
+            CrashGuard.toast(this, "Google app me khoj rahe hain…")
         } else {
             activeTab?.id?.let { navigate(it, LENS_WEB) }
         }
@@ -1041,6 +1142,8 @@ class MainActivity : Activity() {
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+            // MODULE 3 — main-frame navigation: media wale origin se door gaye to playback band
+            PlaybackCoordinator.onPageNavigatedAway(url ?: "")
             // BACK-navigate karke NTP/internal entry par wapas aana — Chrome ki
             // tarah CLEAN omnibox (pichhla URL kabhi nahi dikhega)
             if (url == NEWTAB || url == "https://orbit.local/") {
@@ -1219,6 +1322,9 @@ class MainActivity : Activity() {
             Item(R.drawable.ic_shield, if (shieldsEnabled()) "✓ Shields (ads block)" else "Shields (ads block)") { toggleShields(); renderSwitcherCards() },
             Item(R.drawable.ic_lock, if (antiFpEnabled()) "✓ Anti-fingerprint" else "Anti-fingerprint") { toggleAntiFp() },
             Item(R.drawable.ic_fire, "Fire Button (sab data clear)") { fireButton() },
+            null, // divider
+            Item(R.drawable.ic_sync, "Orbit Sync (Google)") { showSync() },
+            Item(R.drawable.ic_vpn, "VPN (beta)") { showVpn() },
             null, // divider
             Item(R.drawable.ic_update, "Check update") { runAutoUpdate(manual = true) },
             Item(R.drawable.ic_settings, "Settings") { showSettings() },
@@ -1407,6 +1513,8 @@ class MainActivity : Activity() {
         var live = tabs.filter { it !== activeTab && it.webView != null }
         for (tab in live.sortedBy { it.lastActive }) {
             if (live.size < MAX_LIVE_WEBVIEWS) break
+            // MODULE 3 — evicted WebView media play kar raha tha to service band
+            PlaybackCoordinator.webViewDestroyed(tab.webView)
             runCatching {
                 captureThumb(tab)
                 tab.webView?.apply {
@@ -1586,6 +1694,127 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ---------------------------------------------------------------- MODULE 4 (sync + vpn)
+
+    /** MODULE 4 — Orbit Sync: Google account se bookmarks/history sync
+     *  (Firestore REST — bina google-services.json). Config khali = feature
+     *  honestly "off" bolegi. Dialog bhi existing OrbitDialog style me hi. */
+    private fun showSync() {
+        val pad = dp(20)
+        fun label(s: String) = TextView(this).apply {
+            text = s
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+        }
+        fun field(prefill: String, hint: String) = EditText(this).apply {
+            setText(prefill)
+            this.hint = hint
+            textSize = 13f
+            setTextColor(0xFFE8EAED.toInt())
+            setHintTextColor(0xFF9AA0A6.toInt())
+            background = getDrawable(R.drawable.omnibox_bg)
+            setPadding(dp(14), 0, dp(14), 0)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44),
+            ).apply { topMargin = dp(6) }
+        }
+        val fClient = field(
+            LocalStore.getSetting(this, "syncWebClientId", ""),
+            "Google OAuth Web client ID (…apps.googleusercontent.com)",
+        )
+        val fApi = field(LocalStore.getSetting(this, "syncApiKey", ""), "Firebase Web API key")
+        val fProject = field(LocalStore.getSetting(this, "syncProjectId", ""), "Firebase project ID")
+
+        fun pill(text: String, color: Int, action: () -> Unit) = TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(color)
+            background = getDrawable(R.drawable.btn_ripple)
+            setPadding(0, dp(12), 0, dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
+            )
+            setOnClickListener { action() }
+        }
+
+        fun saveConfig() {
+            LocalStore.setSetting(this@MainActivity, "syncWebClientId", fClient.text.toString().trim())
+            LocalStore.setSetting(this@MainActivity, "syncApiKey", fApi.text.toString().trim())
+            LocalStore.setSetting(this@MainActivity, "syncProjectId", fProject.text.toString().trim())
+        }
+
+        val status = TextView(this).apply {
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(0, dp(14), 0, 0)
+            text = OrbitSync.statusLine(this@MainActivity)
+        }
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(8), pad, 0)
+        }
+        box.addView(label("Firebase config (console → Project settings → Web app):"))
+        box.addView(fClient)
+        box.addView(fApi)
+        box.addView(fProject)
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(14), 0, 0)
+        }
+        actions.addView(pill("Google se sign in", 0xFF8AB4F8.toInt()) {
+            saveConfig()
+            OrbitSync.signIn(this@MainActivity)
+        })
+        actions.addView(pill("Abhi sync karo", 0xFF81C995.toInt()) {
+            saveConfig()
+            OrbitSync.syncNow(this@MainActivity) { _, msg ->
+                CrashGuard.toast(this@MainActivity, msg)
+                status.text = OrbitSync.statusLine(this@MainActivity)
+            }
+        })
+        box.addView(actions)
+        box.addView(status)
+
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Orbit Sync (Google)")
+            .setView(box)
+            .setPositiveButton("Save") { _, _ -> saveConfig() }
+            .setNegativeButton("Band karo", null)
+            .show()
+    }
+
+    /** MODULE 4 — VPN scaffolding: consent + lifecycle ready, routing backend
+     *  agli release me. Honest beta — jhooth bol kar "connected" nahi dikhayenge. */
+    private fun showVpn() {
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Orbit VPN (beta)")
+            .setMessage(
+                "VPN ka structure ready hai: system consent + secure tunnel lifecycle.\n\n" +
+                    "Routing backend (Tor/DNS policy) agli update me aayega — tab tak ye sirf " +
+                    "permission save karta hai, traffic me kuch nahi chhoota.\n\n" +
+                    "Abhi permission de do — agli update me seedha active ho jayega.",
+            )
+            .setPositiveButton("Permission de do") { _, _ ->
+                runCatching {
+                    val intent = VpnService.prepare(this)
+                    if (intent == null) {
+                        CrashGuard.toast(this, "VPN permission pehle se hai — backend agli update me active hoga")
+                    } else {
+                        startActivityForResult(intent, REQ_VPN_CONSENT)
+                    }
+                }.onFailure {
+                    CrashGuard.toast(this, "VPN permission nahi de paye — dobara try karo")
+                }
+            }
+            .setNegativeButton("Band karo", null)
+            .show()
+    }
+
     private fun showAbout() {
         AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle("Orbit Browser")
@@ -1705,6 +1934,9 @@ class MainActivity : Activity() {
         // LENS scanner — QR na mile to Google Lens website (fallback)
         const val LENS_WEB = "https://lens.google.com/"
         private const val REQ_LENS_CAPTURE = 4201
+
+        // MODULE 4 — VPN consent request code
+        private const val REQ_VPN_CONSENT = 4202
 
         /** Desktop site toggle ke liye — modern desktop Chrome UA */
         const val DESKTOP_UA =

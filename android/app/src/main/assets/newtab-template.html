@@ -8,7 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; background: #1a1a1d; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
                -webkit-tap-highlight-color: transparent; }
-  .wrap { height: 100%; display: flex; flex-direction: column; align-items: center;
+  .wrap { min-height: 100%; display: flex; flex-direction: column; align-items: center;
           justify-content: center; padding: 24px; overflow-y: auto; }
   .logo { margin-bottom: 10px; flex-shrink: 0; }
 
@@ -46,6 +46,30 @@
   .sc .c svg { width: 24px; height: 24px; }
   .sc .l { margin-top: 7px; font-size: 11.5px; color: #e8eaed; max-width: 64px;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---- Discover — Module 2 (history-driven, 100% on-device) ----
+     Hero (logo+search+shortcuts) bilkul waisa hi centered rehta hai — ye
+     section sirf USKE NEECHE aata hai (history ho to; na ho to zero height). */
+  #discover { width: 100%; max-width: 560px; margin: 44px auto 0; display: none; }
+  #discover .d-h { margin: 0 2px 10px; }
+  #discover .d-t { font-size: 13px; color: #9aa0a6; }
+  #discover .card { display: flex; gap: 12px; align-items: center; background: #303134;
+                    border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  #discover .card:active { background: #3c4043; }
+  #discover .ava { width: 40px; height: 40px; border-radius: 50%; background: #3c4043;
+                   color: #e8eaed; font-size: 17px; display: flex; align-items: center;
+                   justify-content: center; flex-shrink: 0; }
+  #discover .media { position: relative; width: 66px; height: 44px; border-radius: 8px;
+                     background: #3c4043; flex-shrink: 0; overflow: hidden; display: flex;
+                     align-items: center; justify-content: center; }
+  #discover .media .ava2 { font-size: 16px; color: #e8eaed; }
+  #discover .media img { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                         object-fit: cover; display: none; }
+  #discover .meta { min-width: 0; flex: 1; }
+  #discover .mt { display: block; font-size: 13.5px; color: #e8eaed; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+  #discover .ms { display: block; font-size: 11px; color: #9aa0a6; margin-top: 2px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
@@ -170,9 +194,10 @@
     </button>
   </div>
 </div>
+<div id="discover"></div>
 <script>
 // wordmark glyphs build-time pe is string me inject hote hain (build script dekho)
-var WORDMARK_D = "__WORDMARK_D__";
+var WORDMARK_D = "M269.043137254902 236.0Q266.85490196078433 236.0 265.5176470588235 234.54117647058825Q264.18039215686275 233.08235294117648 264.18039215686275 231.13725490196077V119.53725490196078Q264.18039215686275 117.5921568627451 265.6392156862745 116.13333333333333Q267.0980392156863 114.67450980392157 269.043137254902 114.67450980392157Q271.2313725490196 114.67450980392157 272.5686274509804 116.13333333333333Q273.90588235294115 117.5921568627451 273.90588235294115 119.53725490196078V160.62745098039215L269.7725490196078 166.94901960784313Q269.7725490196078 157.46666666666667 273.05490196078426 147.74117647058824Q276.33725490196076 138.0156862745098 282.65882352941173 129.62745098039215Q288.98039215686276 121.2392156862745 298.0980392156863 116.01176470588234Q307.2156862745098 110.7843137254902 319.1294117647059 110.7843137254902Q322.5333333333333 110.7843137254902 326.42352941176466 111.75686274509803Q330.3137254901961 112.72941176470589 330.3137254901961 116.37647058823529Q330.3137254901961 118.56470588235294 329.0980392156863 120.02352941176471Q327.88235294117646 121.48235294117647 325.9372549019608 121.48235294117647Q324.47843137254904 121.48235294117647 322.4117647058824 120.38823529411765Q320.3450980392157 119.29411764705883 316.4549019607843 119.29411764705883Q308.6745098039216 119.29411764705883 301.1372549019608 123.91372549019607Q293.6 128.53333333333333 287.4 136.1921568627451Q281.2 143.85098039215688 277.55294117647054 152.84705882352944Q273.90588235294115 161.84313725490196 273.90588235294115 170.3529411764706V231.13725490196077Q273.90588235294115 233.08235294117648 272.4470588235294 234.54117647058825Q270.98823529411766 236.0 269.043137254902 236.0Z M408.0627450980393 110.7843137254902Q424.3529411764706 110.7843137254902 436.99607843137255 118.92941176470589Q449.6392156862745 127.07450980392157 457.0549019607843 141.29803921568626Q464.47058823529414 155.52156862745096 464.47058823529414 174.0Q464.47058823529414 192.23529411764707 457.0549019607843 206.8235294117647Q449.6392156862745 221.41176470588235 436.87450980392157 229.921568627451Q424.10980392156864 238.4313725490196 408.0627450980393 238.4313725490196Q400.03921568627453 238.4313725490196 392.6235294117647 236.0Q385.20784313725494 233.5686274509804 378.8862745098039 229.0705882352941Q372.56470588235294 224.57254901960783 367.3372549019608 218.12941176470588Q362.10980392156864 211.68627450980392 358.2196078431373 203.6627450980392L361.38039215686274 200.25882352941176V231.13725490196077Q361.38039215686274 233.08235294117648 360.043137254902 234.54117647058825Q358.7058823529412 236.0 356.51764705882357 236.0Q354.5725490196079 236.0 353.1137254901961 234.54117647058825Q351.65490196078434 233.08235294117648 351.65490196078434 231.13725490196077V61.1843137254902Q351.65490196078434 59.23921568627452 352.9921568627451 57.780392156862746Q354.3294117647059 56.32156862745097 356.51764705882357 56.32156862745097Q358.7058823529412 56.32156862745097 360.043137254902 57.780392156862746Q361.38039215686274 59.23921568627452 361.38039215686274 61.1843137254902V149.2L358.2196078431373 147.49803921568628Q361.6235294117647 138.50196078431372 366.7294117647059 131.69411764705882Q371.8352941176471 124.88627450980393 378.40000000000003 120.26666666666668Q384.964705882353 115.64705882352942 392.5019607843137 113.2156862745098Q400.03921568627453 110.7843137254902 408.0627450980393 110.7843137254902ZM407.57647058823534 120.02352941176471Q393.71764705882356 120.02352941176471 383.1411764705882 126.95294117647059Q372.56470588235294 133.88235294117646 366.48627450980393 146.0392156862745Q360.40784313725493 158.19607843137254 360.40784313725493 174.0Q360.40784313725493 189.80392156862746 366.48627450980393 202.32549019607842Q372.56470588235294 214.8470588235294 383.1411764705882 222.01960784313724Q393.71764705882356 229.1921568627451 407.57647058823534 229.1921568627451Q421.19215686274515 229.1921568627451 431.76862745098043 221.89803921568625Q442.3450980392157 214.60392156862744 448.5450980392157 202.08235294117645Q454.7450980392157 189.5607843137255 454.7450980392157 174.0Q454.7450980392157 158.19607843137254 448.5450980392157 146.0392156862745Q442.3450980392157 133.88235294117646 431.76862745098043 126.95294117647059Q421.19215686274515 120.02352941176471 407.57647058823534 120.02352941176471Z M505.01960784313724 231.13725490196077Q505.01960784313724 233.08235294117648 503.5607843137255 234.54117647058825Q502.10196078431375 236.0 500.15686274509807 236.0Q497.9686274509804 236.0 496.6313725490196 234.54117647058825Q495.29411764705884 233.08235294117648 495.29411764705884 231.13725490196077V115.64705882352942Q495.29411764705884 113.70196078431373 496.7529411764706 112.24313725490197Q498.2117647058824 110.7843137254902 500.15686274509807 110.7843137254902Q502.3450980392157 110.7843137254902 503.6823529411765 112.24313725490197Q505.01960784313724 113.70196078431373 505.01960784313724 115.64705882352942ZM500.15686274509807 94.25098039215686Q496.26666666666665 94.25098039215686 493.956862745098 92.06274509803922Q491.6470588235294 89.87450980392157 491.6470588235294 86.47058823529412V84.52549019607844Q491.6470588235294 81.12156862745098 494.078431372549 78.93333333333334Q496.5098039215686 76.74509803921569 500.40000000000003 76.74509803921569Q503.80392156862746 76.74509803921569 506.1137254901961 78.93333333333334Q508.4235294117647 81.12156862745098 508.4235294117647 84.52549019607844V86.47058823529412Q508.4235294117647 89.87450980392157 506.1137254901961 92.06274509803922Q503.80392156862746 94.25098039215686 500.15686274509807 94.25098039215686Z M532.1960784313726 113.70196078431373H588.6039215686275Q590.5490196078432 113.70196078431373 591.886274509804 115.16078431372549Q593.2235294117647 116.61960784313726 593.2235294117647 118.32156862745099Q593.2235294117647 120.26666666666667 591.886274509804 121.60392156862744Q590.5490196078432 122.94117647058823 588.6039215686275 122.94117647058823H532.1960784313726Q530.4941176470588 122.94117647058823 529.035294117647 121.48235294117647Q527.5764705882353 120.02352941176471 527.5764705882353 118.32156862745099Q527.5764705882353 116.37647058823529 529.035294117647 115.0392156862745Q530.4941176470588 113.70196078431373 532.1960784313726 113.70196078431373ZM556.9960784313726 77.9607843137255Q559.1843137254903 77.9607843137255 560.521568627451 79.41960784313726Q561.8588235294118 80.87843137254902 561.8588235294118 82.8235294117647V209.49803921568628Q561.8588235294118 217.521568627451 563.9254901960785 221.2901960784314Q565.9921568627451 225.05882352941177 569.1529411764707 226.1529411764706Q572.3137254901961 227.24705882352941 575.2313725490196 227.24705882352941Q576.9333333333334 227.24705882352941 578.1490196078432 226.76078431372548Q579.364705882353 226.27450980392157 581.0666666666667 226.27450980392157Q582.7686274509805 226.27450980392157 583.9843137254902 227.61176470588236Q585.2 228.94901960784313 585.2 230.65098039215687Q585.2 232.8392156862745 582.4039215686275 234.41960784313727Q579.6078431372549 236.0 575.4745098039216 236.0Q574.0156862745098 236.0 570.2470588235294 235.87843137254902Q566.478431372549 235.75686274509803 562.2235294117647 233.69019607843137Q557.9686274509804 231.6235294117647 555.0509803921568 226.1529411764706Q552.1333333333333 220.68235294117648 552.1333333333333 209.9843137254902V82.8235294117647Q552.1333333333333 80.87843137254902 553.5921568627451 79.41960784313726Q555.0509803921569 77.9607843137255 556.9960784313726 77.9607843137255Z";
 document.getElementById('wm').setAttribute('d', WORDMARK_D);
 // reduced-motion users ke liye dot ka orbit band
 if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -190,6 +215,105 @@ function nav(url, newTab){
   try { OrbitBridge.navigate(url, newTab); }
   catch(e) { location.href = url; }
 }
+
+// ---------- Discover feed (Module 2 port) — 100% on-device ----------
+// feedEngine.ts ka vanilla-JS port: koi network fetch nahi, koi profiling
+// nahi — sirf local history se category + recency-decay scoring.
+(function () {
+  var MUSIC = ["jiosaavn.com","saavn.com","wynk.in","gaana.com","spotify.com","music.youtube.com","soundcloud.com","hungama.com","music.amazon.in","music.apple.com","pandora.com","resso.com","boomplay.com","raaga.com"];
+  var NEWS = ["news.google.com","ndtv.com","timesofindia.indiatimes.com","indiatoday.in","hindustantimes.com","indianexpress.com","thehindu.com","bbc.com","bbc.co.uk","cnn.com","aajtak.in","amarujala.com","dainikbhaskar.com","livemint.com","economictimes.indiatimes.com","news18.com","republicworld.com","inshorts.com","moneycontrol.com","business-standard.com","financialexpress.com","mid-day.com","india.com","firstpost.com"];
+  var VIDEO = ["youtube.com","youtu.be","vimeo.com","dailymotion.com","hotstar.com","jiohotstar.com","netflix.com","primevideo.com","sonyliv.com","zee5.com","mxplayer.in","twitch.tv","jiocinema.com"];
+  var GRID = { "youtube.com":1, "m.youtube.com":1, "music.youtube.com":1, "jiosaavn.com":1 };
+  var BRANDS = "YouTube|JioSaavn|Netflix|Hotstar|JioHotstar|NDTV|BBC News|CNN|Times of India|Hindustan Times|India Today|The Hindu|Indian Express|News18|Moneycontrol|Livemint|Reuters|CNBC TV18|Aaj Tak|Dainik Bhaskar";
+  var HALF_LIFE_H = 36, MAX_CARDS = 6, MAX_TOPS = 4;
+
+  function hostOf(u){ try { return new URL(u).hostname.replace(/^www\./, ""); } catch(e){ return ""; } }
+  function matches(h, rules){ for (var i=0;i<rules.length;i++){ var r=rules[i]; if (h===r || h.slice(-(r.length+1)) === "."+r) return true; } return false; }
+  function classify(h){ if (!h) return "general"; if (matches(h,MUSIC)) return "music"; if (matches(h,NEWS)) return "news"; if (matches(h,VIDEO)) return "video"; return "general"; }
+  function ytId(u){ var m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : null; }
+  function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;"); }
+  function rel(ts){ var m = Math.floor((Date.now()-ts)/60000); if (m<1) return "Just now"; if (m<60) return m+"m ago"; var h=Math.floor(m/60); if (h<24) return h+"h ago"; var d=Math.floor(h/24); if (d<7) return d+"d ago"; try { return new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric"}); } catch(e){ return ""; } }
+  function pretty(e){
+    var t = (e.title||"").trim(), h = hostOf(e.url);
+    if (!t || t === e.url) return h || "?";
+    try { t = t.replace(new RegExp("\\s+[-\u2013|]\\s+(" + BRANDS + ")\\s*$", "i"), "").trim() || t; } catch(e2){}
+    return t;
+  }
+  function open(u){ try { OrbitBridge.navigate(u, false); } catch(e){ location.href = u; } }
+
+  function render(){
+    var box = document.getElementById("discover");
+    if (!box) return;
+    var raw = "[]";
+    try { raw = OrbitBridge.historyJson() || "[]"; } catch(e){}
+    var entries;
+    try { entries = JSON.parse(raw); } catch(e2){ entries = []; }
+    if (!entries || !entries.length) return; // history nahi = section hidden (pehle jaisa NTP)
+
+    var byUrl = {};
+    for (var i=0;i<entries.length;i++){
+      var e = entries[i]; if (!e || !e.url) continue;
+      var b = byUrl[e.url];
+      if (!b) byUrl[e.url] = { url:e.url, title:e.title||"", ts:e.ts||0, visits:1 };
+      else { b.visits++; if ((e.ts||0) > b.ts){ b.ts = e.ts; b.title = e.title || b.title; } }
+    }
+    var now = Date.now(), buckets = {};
+    for (var k in byUrl){
+      var v = byUrl[k], h = hostOf(v.url); if (!h) continue;
+      var w = v.visits * Math.pow(0.5, Math.max(0,(now - v.ts)/3600000) / HALF_LIFE_H);
+      var key = classify(h) + ":" + h, bk = buckets[key];
+      if (!bk) buckets[key] = { cat:classify(h), host:h, best:v, bestW:w, score:w, visits:v.visits, last:v.ts };
+      else { bk.score += w; bk.visits += v.visits; if (w > bk.bestW){ bk.bestW = w; bk.best = v; } if (v.ts > bk.last) bk.last = v.ts; }
+    }
+    var cards = [], tops = [];
+    for (var kk in buckets){ var b2 = buckets[kk]; if (b2.cat !== "general") cards.push(b2); else if (!GRID[b2.host]) tops.push(b2); }
+    cards.sort(function(a,b){ return b.score - a.score; });
+    tops.sort(function(a,b){ return b.visits - a.visits; });
+    if (!cards.length && !tops.length) return;
+
+    var html = '<div class="d-h"><span class="d-t">Discover</span></div>';
+    var shown = 0;
+    for (var ci=0; ci<cards.length && shown<MAX_CARDS; ci++, shown++){
+      var c = cards[ci];
+      var vid = c.cat === "video" ? ytId(c.best.url) : null;
+      var catLabel = c.cat === "music" ? "Music" : (c.cat === "news" ? "News" : "Video");
+      var lead = vid
+        ? '<span class="media"><span class="ava2">\u25B6</span><img data-yt="'+vid+'" alt=""></span>'
+        : '<span class="ava">'+esc((c.host.charAt(0)||"?").toUpperCase())+'</span>';
+      html += '<div class="card" data-u="'+esc(c.best.url)+'">'+lead+
+        '<span class="meta"><span class="mt">'+esc(pretty(c.best))+'</span>'+
+        '<span class="ms">'+esc(c.host)+' \u00B7 '+catLabel+' \u00B7 '+rel(c.last)+'</span></span></div>';
+    }
+    if (tops.length){
+      html += '<div class="d-h" style="margin-top:18px"><span class="d-t">Often visited</span></div>';
+      for (var ti=0; ti<tops.length && shown<MAX_CARDS+MAX_TOPS && ti<MAX_TOPS; ti++){
+        var t2 = tops[ti];
+        html += '<div class="card" data-u="'+esc(t2.best.url)+'">'+
+          '<span class="ava">'+esc((t2.host.charAt(0)||"?").toUpperCase())+'</span>'+
+          '<span class="meta"><span class="mt">'+esc(pretty(t2.best))+'</span>'+
+          '<span class="ms">'+esc(t2.host)+' \u00B7 '+t2.visits+' visits</span></span></div>';
+      }
+    }
+    box.innerHTML = html;
+    box.style.display = "block";
+
+    var items = box.querySelectorAll(".card");
+    for (var di=0; di<items.length; di++){
+      items[di].addEventListener("click", function(){ var u = this.getAttribute("data-u"); if (u) open(u); });
+    }
+    var imgs = box.querySelectorAll(".media img");
+    for (var ii=0; ii<imgs.length; ii++){
+      (function(img){
+        img.onload = function(){ img.style.display = "block"; };
+        img.onerror = function(){ if (img.parentNode) img.parentNode.removeChild(img); };
+        img.src = "https://i.ytimg.com/vi/" + img.getAttribute("data-yt") + "/mqdefault.jpg";
+      })(imgs[ii]);
+    }
+  }
+
+  if (document.readyState === "complete" || document.readyState === "interactive") render();
+  else document.addEventListener("DOMContentLoaded", render);
+})();
 </script>
 </body>
 </html>

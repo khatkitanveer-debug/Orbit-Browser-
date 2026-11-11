@@ -14,6 +14,10 @@ on:
 
 jobs:
   build-apk:
+    # DISABLED (v1.3.0) — user ka decision: original native app hi main app hai,
+    # is Capacitor shell ki CI builds ki zaroorat nahi. android.yml (OTA pipeline)
+    # hi single source of truth hai. Wapas chalana ho to if: false hatao.
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

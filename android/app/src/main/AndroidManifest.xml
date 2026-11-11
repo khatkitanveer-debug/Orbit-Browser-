@@ -15,6 +15,12 @@
         <package android:name="com.google.android.googlequicksearchbox" />
     </queries>
 
+    <!-- MODULE 3/4 — naye features ke liye permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
@@ -68,5 +74,22 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- MODULE 3: lock-screen / background playback — WebView audio decode
+             chalta rehta hai; ye service MediaSession + media notification own karta hai. -->
+        <service
+            android:name=".media.PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- MODULE 4: VPN scaffolding — system bind apni permission se karta hai. -->
+        <service
+            android:name=".vpn.OrbitVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

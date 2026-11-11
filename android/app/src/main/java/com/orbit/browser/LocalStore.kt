@@ -44,6 +44,20 @@ object LocalStore {
 
     fun clearHistory(ctx: Context) = file(ctx, "history.json").delete()
 
+    /** MODULE 4 (sync) — custom ts ke saath upsert (remote merge apply) */
+    fun putHistory(ctx: Context, url: String, title: String, ts: Long) {
+        val items = listHistory(ctx)
+        val ex = items.firstOrNull { it.url == url }
+        if (ex != null) {
+            if (ts <= ex.ts) return
+            items.remove(ex)
+        }
+        items.add(0, HistoryItem(url, title, ts))
+        val arr = JSONArray()
+        items.take(MAX_HISTORY).forEach { arr.put(JSONObject().put("url", it.url).put("title", it.title).put("ts", it.ts)) }
+        file(ctx, "history.json").writeText(arr.toString())
+    }
+
     // ---------- bookmarks ----------
 
     fun listBookmarks(ctx: Context): MutableList<Bookmark> {
@@ -82,6 +96,29 @@ object LocalStore {
         val arr = JSONArray()
         items.forEach { arr.put(JSONObject().put("url", it.url).put("title", it.title).put("ts", it.ts)) }
         file(ctx, "bookmarks.json").writeText(arr.toString())
+    }
+
+    /** MODULE 4 (sync) — newer-ts upsert (remote merge apply) */
+    fun putBookmark(ctx: Context, url: String, title: String, ts: Long) {
+        val items = listBookmarks(ctx)
+        val ex = items.firstOrNull { it.url == url }
+        if (ex != null) {
+            if (ts <= ex.ts) return
+            items.remove(ex)
+            items.add(0, Bookmark(url, title.ifBlank { url }, ts))
+            saveBookmarks(ctx, items)
+            return
+        }
+        items.add(0, Bookmark(url, title.ifBlank { url }, ts))
+        saveBookmarks(ctx, items)
+    }
+
+    /** MODULE 4 (sync) — tombstone apply (remote deletion) */
+    fun dropBookmark(ctx: Context, url: String) {
+        val items = listBookmarks(ctx)
+        val ex = items.firstOrNull { it.url == url } ?: return
+        items.remove(ex)
+        saveBookmarks(ctx, items)
     }
 
     // ---------- settings ----------
