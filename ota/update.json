@@ -1,7 +1,7 @@
 {
-  "versionCode": 16,
-  "versionName": "1.3.1",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.1/orbit-browser-1.3.1.apk",
-  "notes": "v1.3.1 — YouTube lock-screen fix: ab screen lock karo, video/audio chalti rahegi (ruk-ruk ke chalna band). Naye ad-block hot-patch system se chote fixes ab bina update ke bhi apne aap aayenge. Background me battery/CPU better. versionCode 16",
+  "versionCode": 17,
+  "versionName": "1.3.2",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.2/orbit-browser-1.3.2.apk",
+  "notes": "v1.3.2 — ASLI YouTube fix: pehle wali pause problem ek audio-focus conflict ki wajah se thi (app khud apni video ko pause kara raha tha). Ab poora hata diya — video play karo, screen lock karo, YouTube bina ruke chalega. versionCode 17",
   "minVersionCode": 1
 }
