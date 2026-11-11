@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import com.orbit.browser.render.MediaWatchBootstrap
 import java.lang.ref.WeakReference
 
 /**

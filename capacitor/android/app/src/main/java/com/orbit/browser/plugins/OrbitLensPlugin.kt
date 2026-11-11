@@ -73,16 +73,19 @@ class OrbitLensPlugin : Plugin() {
             return
         }
 
-        val uploadCopy = File(original.parentFile, "up_${original.name}")
+        // cancelled-check ke baad original proven non-null hai, par Kotlin ka
+        // smart-cast boolean-chain se aage nahi badhta — explicit narrowing:
+        val photo = original ?: return
+        val uploadCopy = File(photo.parentFile, "up_${photo.name}")
         Thread {
             var resolved = false
             var resultsUrl: String? = null
-            if (LensEngine.downscale(original, uploadCopy)) {
+            if (LensEngine.downscale(photo, uploadCopy)) {
                 resultsUrl = LensEngine.upload(uploadCopy)
                 resolved = resultsUrl != null
             }
             // Privacy: nothing about the photo stays on disk.
-            original.delete()
+            photo.delete()
             uploadCopy.delete()
 
             val payload = JSObject()

@@ -4,6 +4,10 @@ buildscript {
     
     repositories {
         google()
+        // Maven Central GitHub Actions runners par 429 (Too Many Requests) de deta
+        // hai (Azure shared IPs) — isliye Aliyun mirrors pehle, mavenCentral fallback.
+        maven { url 'https://maven.aliyun.com/repository/central' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
         mavenCentral()
     }
     dependencies {
@@ -21,6 +25,8 @@ apply from: "variables.gradle"
 allprojects {
     repositories {
         google()
+        maven { url 'https://maven.aliyun.com/repository/central' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
         mavenCentral()
     }
 }

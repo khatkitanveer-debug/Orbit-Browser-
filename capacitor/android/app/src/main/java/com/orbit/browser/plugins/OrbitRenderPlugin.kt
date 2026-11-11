@@ -126,7 +126,9 @@ class OrbitRenderPlugin : Plugin() {
      */
     @PluginMethod
     fun setProxy(call: PluginCall) {
-        val rules = call.getArray("rules")?.toList()
+        // JSArray.toList() hai <E> List<E> (unconstrained generic) — E=Any
+        // explicit deta hain warna Kotlin inference fail hota hai.
+        val rules = call.getArray("rules")?.toList<Any>()
             ?.filterIsInstance<String>()
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }

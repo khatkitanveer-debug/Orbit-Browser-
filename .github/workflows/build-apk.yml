@@ -24,11 +24,11 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Setup JDK 17 (AGP 8.7.2 requirement)
+      - name: Setup JDK 21 (Capacitor 7 + AGP 8.7.2 requirement)
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Ensure Android SDK platform 35 + build-tools
         run: |
