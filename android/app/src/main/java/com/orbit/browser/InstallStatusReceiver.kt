@@ -14,6 +14,15 @@ class InstallStatusReceiver : BroadcastReceiver() {
 
     @Suppress("DEPRECATION")
     override fun onReceive(ctx: Context, intent: Intent) {
+        // system callback — kuch bhi odd aaya to APP CRASH nahi hona chahiye
+        CrashGuard.install(ctx.applicationContext)
+        runCatching { handle(ctx, intent) }.onFailure {
+            android.util.Log.e("OrbitInstall", "install status handle fail", it)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun handle(ctx: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {

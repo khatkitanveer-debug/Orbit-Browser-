@@ -239,32 +239,36 @@ object UpdateChecker {
         if (!opened) installViaSession(ctx, apk)
     }
 
-    /** Fallback — ACTION_INSTALL_PACKAGE koi handler na mile to PackageInstaller session */
+    /** Fallback — ACTION_INSTALL_PACKAGE koi handler na mile to PackageInstaller session.
+     *  APK copy ~2MB file I/O hai — MAIN THREAD par ANR deta tha, background Thread me. */
     private fun installViaSession(ctx: Context, apk: File) {
-        val ok = runCatching {
-            val installer = ctx.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            val sessionId = installer.createSession(params)
-            installer.openSession(sessionId).use { session ->
-                apk.inputStream().use { input ->
-                    session.openWrite("orbit-update.apk", 0, apk.length()).use { out ->
-                        input.copyTo(out)
-                        session.fsync(out)
+        val appCtx = ctx.applicationContext
+        Thread {
+            val ok = runCatching {
+                val installer = appCtx.packageManager.packageInstaller
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+                val sessionId = installer.createSession(params)
+                installer.openSession(sessionId).use { session ->
+                    apk.inputStream().use { input ->
+                        session.openWrite("orbit-update.apk", 0, apk.length()).use { out ->
+                            input.copyTo(out)
+                            session.fsync(out)
+                        }
                     }
+                    val statusIntent = Intent(ACTION_INSTALL_STATUS)
+                        .setPackage(appCtx.packageName)
+                        .setClass(appCtx, InstallStatusReceiver::class.java)
+                        .putExtra("apkPath", apk.absolutePath)
+                    val sender = PendingIntent.getBroadcast(
+                        appCtx, sessionId, statusIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    )
+                    session.commit(sender.intentSender)
                 }
-                val statusIntent = Intent(ACTION_INSTALL_STATUS)
-                    .setPackage(ctx.packageName)
-                    .setClass(ctx, InstallStatusReceiver::class.java)
-                    .putExtra("apkPath", apk.absolutePath)
-                val sender = PendingIntent.getBroadcast(
-                    ctx, sessionId, statusIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                )
-                session.commit(sender.intentSender)
-            }
-            true
-        }.getOrDefault(false)
-        if (!ok) toast(ctx, "Install nahi ho paya — Settings me 'Install unknown apps' allow karo, phir dobara try karo")
+                true
+            }.getOrDefault(false)
+            if (!ok) toast(appCtx, "Install nahi ho paya — Settings me 'Install unknown apps' allow karo, phir dobara try karo")
+        }.start()
     }
 
     /** Migration: purana version uninstall (system confirm dialog khud aata hai) */

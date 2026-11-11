@@ -113,6 +113,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // GLOBAL CRASH GUARD — koi bhi uncaught exception crash-log.txt me jata hai;
+        // agle launch par wajah ka dialog dikhta hai (user screenshot bhej sakta hai)
+        CrashGuard.install(this)
+
         // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — Chrome-jaisa
         // insets handling: toolbar status bar ke NEECHE baithega.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -208,6 +212,8 @@ class MainActivity : Activity() {
 
         // pehla tab — clean new tab screen
         newTab()
+        // pichhla crash tha to chhota report dialog (developer ko screenshot bhejne ke liye)
+        CrashGuard.showReportIfAny(this)
         // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
         sleeper.postDelayed(sleepCheck, 30_000)
         // silent auto-update: naya version mila to background me khud download,
@@ -229,9 +235,30 @@ class MainActivity : Activity() {
         if (wv != null && wv.canGoBack()) {
             wv.goBack()
         } else if (tabs.size > 1) {
-            closeTab(activeTab!!.id)
+            activeTab?.let { closeTab(it.id) } ?: super.onBackPressed()
         } else {
             super.onBackPressed()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // cleanup — timers, popups, sab WebViews. Bina iske backgrounded process me
+        // WebView leak + phantom callbacks rehte hain.
+        runCatching { sleeper.removeCallbacksAndMessages(null) }
+        runCatching { menuPopup?.dismiss() }
+        runCatching { suggestPopup?.dismiss() }
+        runCatching {
+            for (tab in tabs) {
+                tab.webView?.apply {
+                    stopLoading()
+                    (parent as? ViewGroup)?.removeView(this)
+                    destroy()
+                }
+                tab.webView = null
+                tab.thumb = null
+            }
+            tabs.clear()
         }
     }
 
@@ -285,13 +312,17 @@ class MainActivity : Activity() {
             (parent as? ViewGroup)?.removeView(this)
             destroy()
         }
+        // NULL karna ZARURI hai — warna AI-stream/JS callbacks destroy hua WebView
+        // use karke crash kar sakte hain
+        tab.webView = null
         if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
         refreshChrome()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun selectTab(id: Long) {
-        val tab = tabs.first { it.id == id }
+        // firstOrNull — band ho chuke tab ka stale id kabhi app crash nahi karega
+        val tab = tabs.firstOrNull { it.id == id } ?: return
         // outgoing tab: lastActive abhi set + thumbnail capture — switcher cards me dikhega
         activeTab?.let {
             it.lastActive = System.currentTimeMillis()
@@ -373,7 +404,9 @@ class MainActivity : Activity() {
             val c = Canvas(bmp)
             c.scale(scale, scale)
             wv.draw(c)
-            tab.thumb?.recycle()
+            // PURANA BITMAP RECYCLE MAT KARO — switcher card me displayed bitmap
+            // recycle hua to "Canvas: trying to use a recycled bitmap" crash aata tha.
+            // Reference replace karo — GC khud saaf kar dega.
             tab.thumb = bmp
         }
     }
@@ -423,19 +456,26 @@ class MainActivity : Activity() {
             }
 
             // target=_blank / window.open — Chrome ki tarah NAYE TAB me
+            // HARDENED: koi bhi system-callback null/odd ho to app crash nahi karegi
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
-                val temp = WebView(view!!.context)
-                temp.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
-                        val url = request?.url?.toString() ?: return false
-                        if (url.startsWith("http")) newTabWithUrl(url)
-                        v?.post { v.destroy() }
-                        return true
+                if (view == null || resultMsg == null) return false
+                val ok = runCatching {
+                    val temp = WebView(this@MainActivity)
+                    temp.webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
+                            val url = request?.url?.toString() ?: return false
+                            if (url.startsWith("http")) {
+                                runOnUiThread { if (!isFinishing) newTabWithUrl(url) }
+                            }
+                            v?.post { runCatching { v.destroy() } }
+                            return true
+                        }
                     }
-                }
-                (resultMsg!!.obj as WebView.WebViewTransport).webView = temp
-                resultMsg.sendToTarget()
-                return true
+                    (resultMsg.obj as? WebView.WebViewTransport)?.webView = temp
+                    resultMsg.sendToTarget()
+                    true
+                }.getOrDefault(false)
+                return ok
             }
         }
         // find-in-page counts
@@ -555,7 +595,9 @@ class MainActivity : Activity() {
 
     private fun postJs(tab: Tab, js: String) {
         runOnUiThread {
-            if (!isFinishing) tab.webView?.evaluateJavascript(js, null)
+            // band/badla hua tab ya finished activity — destroy hua WebView touch nahi
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            tab.webView?.evaluateJavascript(js, null)
         }
     }
 
@@ -756,6 +798,7 @@ class MainActivity : Activity() {
 
     /** Chrome-jaisa 3-dot menu — btn_menu ke neeche se slide hoke khulta hai, right-aligned. */
     private fun showMenu() {
+        if (isFinishing || isDestroyed) return
         if (menuPopup?.isShowing == true) { menuPopup?.dismiss(); return }
         val anchor = findViewById<View>(R.id.btn_menu)
         val content = layoutInflater.inflate(R.layout.popup_menu, null)
@@ -963,11 +1006,13 @@ class MainActivity : Activity() {
         var live = tabs.filter { it !== activeTab && it.webView != null }
         for (tab in live.sortedBy { it.lastActive }) {
             if (live.size < MAX_LIVE_WEBVIEWS) break
-            captureThumb(tab)
-            tab.webView?.apply {
-                stopLoading()
-                (parent as? ViewGroup)?.removeView(this)
-                destroy()
+            runCatching {
+                captureThumb(tab)
+                tab.webView?.apply {
+                    stopLoading()
+                    (parent as? ViewGroup)?.removeView(this)
+                    destroy()
+                }
             }
             tab.webView = null
             tab.evicted = true
@@ -979,11 +1024,13 @@ class MainActivity : Activity() {
      *  — JS/timers/battery sab ruk jata hai. Select karte hi onResume. */
     private val sleepCheck = object : Runnable {
         override fun run() {
+            // activity chali gayi to timer band — dead activity ko callbacks nahi
+            if (isFinishing || isDestroyed) return
             val now = System.currentTimeMillis()
             for (tab in tabs) {
                 if (tab === activeTab || tab.sleeping || tab.webView == null || tab.isInternal) continue
                 if (now - tab.lastActive > SLEEP_AFTER_MS) {
-                    tab.webView?.onPause()
+                    runCatching { tab.webView?.onPause() }
                     tab.sleeping = true
                 }
             }
@@ -993,6 +1040,7 @@ class MainActivity : Activity() {
 
     /** CHROME MODULE — omnibox suggestions: history + bookmarks, ranking ke saath */
     private fun showSuggestions(q: String) {
+        if (isFinishing || isDestroyed) return
         val query = q.trim().lowercase()
         if (suggestPopup?.isShowing == true) suggestPopup?.dismiss()
         if (query.length < 2) return
@@ -1062,11 +1110,12 @@ class MainActivity : Activity() {
             }
             content.addView(row)
         }
-        suggestPopup = PopupWindow(content, omnibox.width, ViewGroup.LayoutParams.WRAP_CONTENT, false).apply {
+        suggestPopup = PopupWindow(content, maxOf(omnibox.width, dp(220)), ViewGroup.LayoutParams.WRAP_CONTENT, false).apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             elevation = dp(10).toFloat()
             isOutsideTouchable = true
-            showAsDropDown(omnibox, 0, dp(2))
+            // window token dead hone par BadTokenException — runCatching me rakho
+            runCatching { showAsDropDown(omnibox, 0, dp(2)) }
         }
     }
 

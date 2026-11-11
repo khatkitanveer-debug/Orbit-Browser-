@@ -86,13 +86,22 @@ object LocalStore {
 
     // ---------- settings ----------
 
+    // SETTINGS CACHE — shouldInterceptRequest HAR subresource request par
+    // getSetting() bulata hai (ek page = 100+ requests). Bina cache ke har
+    // request par disk read + JSON parse hota tha — jank/ANR ka source.
+    private val settingsCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     fun getSetting(ctx: Context, key: String, def: String): String {
+        settingsCache[key]?.let { return it }
         val f = file(ctx, "settings.json")
         if (!f.exists()) return def
-        return runCatching { JSONObject(f.readText()).optString(key, def) }.getOrDefault(def)
+        val v = runCatching { JSONObject(f.readText()).optString(key, def) }.getOrDefault(def)
+        settingsCache[key] = v
+        return v
     }
 
     fun setSetting(ctx: Context, key: String, value: String) {
+        settingsCache[key] = value
         val f = file(ctx, "settings.json")
         val obj = if (f.exists()) runCatching { JSONObject(f.readText()) }.getOrDefault(JSONObject()) else JSONObject()
         obj.put(key, value)

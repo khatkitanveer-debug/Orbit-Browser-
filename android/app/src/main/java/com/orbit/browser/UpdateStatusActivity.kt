@@ -20,6 +20,7 @@ class UpdateStatusActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashGuard.install(this)
         val status = intent.getIntExtra(EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val msg = intent.getStringExtra(EXTRA_MSG).orEmpty()
         val apkPath = intent.getStringExtra(EXTRA_APK)

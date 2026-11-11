@@ -1,7 +1,7 @@
 {
-  "versionCode": 10,
-  "versionName": "1.2.1",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.1/orbit-browser-1.2.1.apk",
-  "notes": "Install 100% pakka: APK download verify hota hai (adhoora/corrupt kabhi install nahi karega), install se pehle signing check (mismatch par seedha one-time migration dialog), har update dialog me 'Chrome me APK kholo' escape hatch. Wahi v1.2.0 features — Brave Shields, Sleeping Tabs, Fire Button, omnibox suggestions, anti-fingerprinting, RAM limiter.",
+  "versionCode": 11,
+  "versionName": "1.2.2",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.2/orbit-browser-1.2.2.apk",
+  "notes": "Crash-fix release: poore code ka safety audit. Fixed — destroyed WebView reuse crash (tab band karne par AI/JS callbacks), recycled bitmap crash (tab switcher), stale tab id crash, target=_blank crash guard, omnibox suggestion popup guard, menu popup guard, install session ab background thread (ANR fix), settings disk-read cache (har network request par file read ho rahi thi — jank). Naya: global crash logger — crash hua to agli launch par wajah ka dialog (screenshot bhejo, turant fix).",
   "minVersionCode": 1
 }
