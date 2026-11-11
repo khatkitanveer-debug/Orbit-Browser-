@@ -1,0 +1,60 @@
+name: Build Orbit APK
+
+# Orbit Browser cloud build — koi local setup nahi chahiye (no git/JDK/SDK needed).
+# - Push of this file  -> auto run (pehli baar khud chalega)
+# - Actions tab -> Run workflow -> manual re-run jab bhi naya build chahiye
+# APK signs with the committed android/orbit.keystore, so it installs OVER any
+# existing Orbit install (data safe) — see capacitor/android/app/build.gradle.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-apk.yml"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun (JS runtime)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup JDK 17 (AGP 8.7.2 requirement)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Ensure Android SDK platform 35 + build-tools
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0" > /dev/null
+
+      - name: Build web assets (React + TypeScript + Vite)
+        working-directory: capacitor
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Capacitor sync (web assets -> android, generates capacitor-cordova-android-plugins)
+        working-directory: capacitor
+        run: bunx cap sync android
+
+      - name: Build debug APK (Gradle)
+        working-directory: capacitor/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orbit-debug-apk-v1.6.0-m4
+          path: capacitor/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
