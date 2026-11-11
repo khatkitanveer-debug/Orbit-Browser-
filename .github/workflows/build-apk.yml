@@ -50,6 +50,7 @@ jobs:
         working-directory: capacitor/android
         run: |
           chmod +x gradlew
+          set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
 
       # Logs sign-in ke peeche hain — failure ka tail PUBLIC job summary me
