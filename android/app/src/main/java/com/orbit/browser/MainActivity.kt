@@ -35,6 +35,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -631,6 +632,14 @@ class MainActivity : Activity() {
         wv.settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
         wv.settings.textZoom = (resources.configuration.fontScale * 100f).toInt().coerceIn(50, 250)
         wv.settings.mediaPlaybackRequiresUserGesture = false
+        // MODULE 3 FIX (screen-lock playback) — Chromium apne MEDIA PIPELINE me
+        // video pause kar deta hai jab screen off / app background hoti hai. Ye
+        // page-JS visibility-lock se NAHI rukta (pipeline-level pause hai).
+        // Renderer ko IMPORTANT + whenVisible=false dene se WebView background
+        // me bhi media chalne deta hai — Chrome/JioSphere parity.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        }
         wv.settings.databaseEnabled = true
         wv.settings.loadsImagesAutomatically = true
         wv.settings.allowFileAccess = false
@@ -1181,6 +1190,46 @@ class MainActivity : Activity() {
                 showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page load nahi hua")
             }
         }
+
+        override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+            // MODULE 3 FIX — background/OOM me renderer kill ho sakta hai; bina
+            // handler ke poora app "WebView renderer crashed" se mar jata hai.
+            // Chrome-parity graceful recover: WebView destroy + tab evicted mark
+            // — select karte hi fresh renderer me page auto-reload ho jata hai.
+            val wv = view ?: return false
+            PlaybackCoordinator.webViewDestroyed(wv)
+            runCatching {
+                (wv.parent as? ViewGroup)?.removeView(wv)
+                wv.destroy()
+            }
+            tab.webView = null
+            tab.evicted = true
+            tab.sleeping = false
+            if (tab === activeTab) rebuildActiveTabRenderer()
+            return true // handled — system ko crash report nahi bhejte
+        }
+    }
+
+    /** Renderer crash recovery — active tab ka WebView turant fresh banao */
+    private fun rebuildActiveTabRenderer() {
+        val tab = activeTab ?: return
+        runCatching {
+            tab.webView = buildWebView(tab)
+            tab.evicted = false
+            if (!tab.isInternal && tab.url != NEWTAB) tab.webView?.loadUrl(tab.url)
+            container.removeAllViews()
+            tab.webView?.let {
+                it.visibility = View.VISIBLE
+                container.addView(
+                    it,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
+            refreshChrome()
+        }
     }
 
     // ---------------------------------------------------------------- chrome (omnibox etc.)
@@ -1510,7 +1559,9 @@ class MainActivity : Activity() {
     /** OPERA MODULE lite — max live WebViews, baaki oldest ka WebView destroy
      *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai) */
     private fun evictExcessTabs() {
-        var live = tabs.filter { it !== activeTab && it.webView != null }
+        // MODULE 3 FIX — media owner tab eviction se OUT: video background me
+        // chal rahi ho to uska WebView kabhi destroy nahi hoga
+        var live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
         for (tab in live.sortedBy { it.lastActive }) {
             if (live.size < MAX_LIVE_WEBVIEWS) break
             // MODULE 3 — evicted WebView media play kar raha tha to service band
@@ -1525,7 +1576,7 @@ class MainActivity : Activity() {
             }
             tab.webView = null
             tab.evicted = true
-            live = tabs.filter { it !== activeTab && it.webView != null }
+            live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
         }
     }
 
@@ -1538,6 +1589,9 @@ class MainActivity : Activity() {
             val now = System.currentTimeMillis()
             for (tab in tabs) {
                 if (tab === activeTab || tab.sleeping || tab.webView == null || tab.isInternal) continue
+                // MODULE 3 FIX — media play karne wala tab KABHI sleep nahi hoga
+                // (user doosre tab par ho tab bhi YouTube background me chalta rahega)
+                if (PlaybackCoordinator.isMediaOwner(tab.webView)) continue
                 if (now - tab.lastActive > SLEEP_AFTER_MS) {
                     runCatching { tab.webView?.onPause() }
                     tab.sleeping = true

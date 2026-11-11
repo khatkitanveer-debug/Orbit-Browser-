@@ -40,6 +40,9 @@ object MediaWatchBootstrap {
               var swallow = function (e) { e.stopImmediatePropagation(); };
               document.addEventListener('visibilitychange', swallow, true);
               document.addEventListener('webkitvisibilitychange', swallow, true);
+              // Page Lifecycle freeze — Chromium hidden page freeze karta hai,
+              // media wale pages par ye event kabhi act nahi hone dena
+              document.addEventListener('freeze', swallow, true);
             } catch (e) {}
 
             // ——— 2. Media watch → native sink ———

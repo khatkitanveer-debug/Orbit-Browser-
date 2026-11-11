@@ -159,7 +159,11 @@ class PlaybackService : Service() {
 
     private fun setPlaying(value: Boolean) {
         playing = value
-        if (value) main.removeCallbacks(resumeChecker)
+        if (value) {
+            main.removeCallbacks(resumeChecker)
+            // resume par wake lock refresh — 6h timeout ke baad bhi safe
+            ensureWake()
+        }
 
         val state = if (value) {
             PlaybackStateCompat.Builder()
@@ -204,11 +208,14 @@ class PlaybackService : Service() {
                 .setOnAudioFocusChangeListener { change ->
                     when (change) {
                         AudioManager.AUDIOFOCUS_LOSS,
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                             PlaybackCoordinator.dispatchPlayPause(false)
                             setPlaying(false)
                             scheduleResumeCheck()
+                        }
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                            // CAN_DUCK (notification ping, lock chime) — pause
+                            // NAHI karte, Chrome parity: media chalta rehta hai
                         }
                         AudioManager.AUDIOFOCUS_GAIN -> {
                             PlaybackCoordinator.dispatchPlayPause(true)
@@ -219,7 +226,11 @@ class PlaybackService : Service() {
                 .build()
         }
         runCatching { audioManager.requestAudioFocus(focusRequest!!) }
+        ensureWake()
+    }
 
+    /** Wake lock lazy-create + acquire (resume par bhi refresh hota hai). */
+    private fun ensureWake() {
         if (wakeLock == null) {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Orbit:Playback")

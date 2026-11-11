@@ -49,6 +49,11 @@ object PlaybackCoordinator {
 
     /* ---------------------------- from page JS ------------------------------ */
 
+    /** Kya ye WebView abhi media chala raha hai? MainActivity isko sleep/
+     *  eviction me skip karne ke liye poochta hai — background video safe. */
+    fun isMediaOwner(webView: WebView?): Boolean =
+        webView != null && service != null && webViewRef?.get() === webView
+
     /** Media started playing (page thread) → start/refresh the FGS. */
     fun onPlaybackStarted(webView: WebView, title: String, url: String) {
         main.post {
