@@ -7,9 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -29,9 +26,18 @@ import com.orbit.browser.R
  *   • keep the process alive with a `mediaPlayback` foreground service,
  *   • own a MediaSession so lockscreen + Android 13 media card controls
  *     work (play/pause routes back into the page via PlaybackCoordinator),
- *   • hold audio focus (other apps can duck/pause us, and we honour them),
  *   • hold a partial wake lock while playing so MSE audio keeps decoding
  *     with the screen off.
+ *
+ * v1.3.2 CRITICAL FIX — AUDIO FOCUS REQUEST POORA HATA DIYA.
+ * Pehle service requestAudioFocus() maangta tha — lekin WebView (Chromium)
+ * ka apna media session khud focus hold karta hai. Hamara request usko
+ * AUDIOFOCUS_LOSS bhejta tha → Chromium video PAUSE kar deta tha; user play
+ * dabata → Chromium phir focus maangta → HUMEIN LOSS → hum phir pause —
+ * infinite pause-war = "ruk ruk ke chalna" + "play par wapas pause" bug.
+ * Ab focus WebView media khud hi own karta hai (calls/music apps ko pause
+ * karna Chromium khud sahi handle karta hai) — hum sirf process-zinda-rakhne
+ * wale FGS + wake lock + controls dete hain.
  *
  * Started by PlaybackCoordinator when page media actually starts — never
  * speculatively, so there is no notification noise for plain browsing.
@@ -39,8 +45,6 @@ import com.orbit.browser.R
 class PlaybackService : Service() {
 
     private lateinit var session: MediaSessionCompat
-    private lateinit var audioManager: AudioManager
-    private var focusRequest: AudioFocusRequest? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val main = Handler(Looper.getMainLooper())
 
@@ -58,7 +62,6 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         PlaybackCoordinator.attachService(this)
-        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         session = MediaSessionCompat(this, "OrbitPlayback").apply {
             setCallback(object : MediaSessionCompat.Callback() {
@@ -107,7 +110,7 @@ class PlaybackService : Service() {
         intent?.getStringExtra(EXTRA_URL)?.let { if (it.isNotBlank()) url = it }
 
         startInForeground()
-        requestFocusAndWake()
+        ensureWake()
         setPlaying(true)
         return START_NOT_STICKY
     }
@@ -196,39 +199,6 @@ class PlaybackService : Service() {
         notifyCompat(buildNotification())
     }
 
-    private fun requestFocusAndWake() {
-        if (focusRequest == null) {
-            focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener { change ->
-                    when (change) {
-                        AudioManager.AUDIOFOCUS_LOSS,
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                            PlaybackCoordinator.dispatchPlayPause(false)
-                            setPlaying(false)
-                            scheduleResumeCheck()
-                        }
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                            // CAN_DUCK (notification ping, lock chime) — pause
-                            // NAHI karte, Chrome parity: media chalta rehta hai
-                        }
-                        AudioManager.AUDIOFOCUS_GAIN -> {
-                            PlaybackCoordinator.dispatchPlayPause(true)
-                            setPlaying(true)
-                        }
-                    }
-                }
-                .build()
-        }
-        runCatching { audioManager.requestAudioFocus(focusRequest!!) }
-        ensureWake()
-    }
-
     /** Wake lock lazy-create + acquire (resume par bhi refresh hota hai). */
     private fun ensureWake() {
         if (wakeLock == null) {
@@ -241,7 +211,6 @@ class PlaybackService : Service() {
     }
 
     private fun abandonFocusAndWake() {
-        focusRequest?.let { runCatching { audioManager.abandonAudioFocusRequest(it) } }
         runCatching {
             if (wakeLock?.isHeld == true) wakeLock?.release()
         }
