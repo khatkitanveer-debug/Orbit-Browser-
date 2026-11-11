@@ -1,8 +1,10 @@
 package com.orbit.browser
 
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.webkit.WebView
 import android.widget.Toast
 import java.io.File
 import java.io.PrintWriter
@@ -40,6 +42,34 @@ object CrashGuard {
 
     private fun logFile(ctx: Context): File = File(ctx.filesDir, "crash-log.txt")
 
+    /** Caught exception ko bhi log karo (try/catch ke andar pakda, par dikhana hai) */
+    fun logCrash(ctx: Context, t: Throwable) {
+        runCatching { writeCrash(ctx.applicationContext, Thread.currentThread(), t) }
+    }
+
+    fun stackOf(t: Throwable): String {
+        val sw = StringWriter()
+        t.printStackTrace(PrintWriter(sw))
+        return sw.toString()
+    }
+
+    /** crash timestamp "yyyy-MM-dd HH:mm:ss" 48h ke andar hai? */
+    fun isFresh(ts: String): Boolean = runCatching {
+        val age = System.currentTimeMillis() -
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).parse(ts)!!.time
+        age in 0..(48 * 3600_000L)
+    }.getOrDefault(false)
+
+    /** Emergency screen ka header — device/app/WebView provider info (screenshot se
+     *  bhi poora context mil jaye) */
+    fun deviceInfo(ctx: Context): String {
+        val wvPkg = runCatching { WebView.getCurrentWebViewPackage() }.getOrNull()
+        return "Orbit v${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE})\n" +
+            "${Build.MANUFACTURER} ${Build.MODEL} — Android ${Build.VERSION.RELEASE} " +
+            "(SDK ${Build.VERSION.SDK_INT})\n" +
+            "WebView: ${wvPkg?.packageName ?: "unknown"} v${wvPkg?.versionName ?: "?"}"
+    }
+
     private fun writeCrash(ctx: Context, thread: Thread, t: Throwable) {
         val sw = StringWriter()
         t.printStackTrace(PrintWriter(sw))
@@ -70,33 +100,6 @@ object CrashGuard {
     /** Crash log file clear — user ne dekh liya to */
     fun clear(ctx: Context) {
         runCatching { logFile(ctx).delete() }
-    }
-
-    /** Startup par: pichhla crash tha to chhota dialog dikhao (screenshot-friendly) */
-    fun showReportIfAny(activity: android.app.Activity) {
-        val crash = lastCrash(activity) ?: return
-        val (ts, first, full) = crash
-        // 48h se purana crash — sab fix ho chuka hoga, chup raho
-        runCatching {
-            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-            val ageMs = System.currentTimeMillis() - sdf.parse(ts)!!.time
-            if (ageMs > 48 * 3600_000L) return
-        }.onFailure { return }
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (activity.isFinishing || activity.isDestroyed) return@postDelayed
-            runCatching {
-                android.app.AlertDialog.Builder(activity, R.style.OrbitDialog)
-                    .setTitle("Orbit pichhli baar crash hua tha")
-                    .setMessage(
-                        "Wakt: $ts\nWajah: $first\n\n" +
-                            "Ye report developer ko bhejo (screenshot) — jaldi fix hoga.\n\n" +
-                            "Poora log:\n${full.take(1200)}",
-                    )
-                    .setPositiveButton("Theek hai") { _, _ -> clear(activity) }
-                    .setNegativeButton("Log rakho", null)
-                    .show()
-            }
-        }, 800)
     }
 
     fun toast(ctx: Context, msg: String) {

@@ -3,11 +3,16 @@ package com.orbit.browser
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -101,21 +106,53 @@ class MainActivity : Activity() {
 
     /** System WebView ka REAL UA — "; wv" token hata kar. Fake/stale UA (purana
      *  Chrome/126 claim) Google ka bot-detection trigger karta tha — login/search
-     *  par "browser not secure" aata tha. Real UA = engine version match. */
+     *  par "browser not secure" aata tha. Real UA = engine version match.
+     *  HARDENED: getDefaultUserAgent kabhi throw kare to fallback UA. */
     private val realUA: String by lazy {
-        WebSettings.getDefaultUserAgent(this).replace("; wv", "")
+        runCatching { WebSettings.getDefaultUserAgent(this).replace("; wv", "") }.getOrDefault(
+            "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; ${Build.MODEL}) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+        )
     }
 
     // ---------------------------------------------------------------- lifecycle
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        // GLOBAL CRASH GUARD — koi bhi uncaught exception crash-log.txt me jata hai;
-        // agle launch par wajah ka dialog dikhta hai (user screenshot bhej sakta hai)
+        // GLOBAL CRASH GUARD — setContentView se PEHLE install, taaki layout-crash
+        // bhi crash-log.txt me pahunch jaye
         CrashGuard.install(this)
+
+        // SURVIVAL MODE — pichhla crash fresh (<48h) hai to seedha crash-report
+        // screen dikhao (programmatic — khud kabhi crash nahi karegi). Screenshot
+        // bhejo = EXACT wajah + device info + WebView version sab mil jayega.
+        val prior = CrashGuard.lastCrash(this)
+        if (prior != null && CrashGuard.isFresh(prior.first)) {
+            showEmergency(prior.first, prior.second, prior.third)
+            return
+        }
+        startNormalMode()
+    }
+
+    /** Normal startup — init me kahin bhi exception aayi to app "keeps stopping"
+     *  NAHI hogi: exception pakdi jayegi, log hoga, emergency report screen
+     *  dikhegi. App HAMESHA khulegi (ya exact wajah dikhayegi). */
+    private fun startNormalMode() {
+        try {
+            initNormal()
+        } catch (t: Throwable) {
+            CrashGuard.logCrash(this, t)
+            showEmergency(
+                "abhi (launch par)",
+                "${t.javaClass.simpleName}: ${t.message}",
+                CrashGuard.stackOf(t),
+            )
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun initNormal() {
+        setContentView(R.layout.activity_main)
 
         // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — Chrome-jaisa
         // insets handling: toolbar status bar ke NEECHE baithega.
@@ -212,8 +249,6 @@ class MainActivity : Activity() {
 
         // pehla tab — clean new tab screen
         newTab()
-        // pichhla crash tha to chhota report dialog (developer ko screenshot bhejne ke liye)
-        CrashGuard.showReportIfAny(this)
         // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
         sleeper.postDelayed(sleepCheck, 30_000)
         // silent auto-update: naya version mila to background me khud download,
@@ -221,7 +256,112 @@ class MainActivity : Activity() {
         runAutoUpdate(manual = false)
     }
 
+    // ---------------------------------------------------------- survival mode
+
+    /** 100% PROGRAMMATIC crash-report screen — koi XML resource, koi WebView,
+     *  koi lateinit field touch nahi hota, isliye YE SCREEN KABHI CRASH NAHI
+     *  KAREGI. Dukh bhara "keeps stopping" band — ab app khud batayegi ki wajah
+     *  kya hai. User screenshot bheje = line-by-line fix possible. */
+    private fun showEmergency(whenStr: String, firstLine: String, full: String) {
+        runCatching {
+            val pad = dp(18)
+            val root = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xFF101418.toInt())
+                setPadding(pad, dp(20), pad, pad)
+            }
+            fun txt(s: String, size: Float, color: Int, bold: Boolean = false, mono: Boolean = false) =
+                TextView(this).apply {
+                    text = s
+                    textSize = size
+                    setTextColor(color)
+                    if (bold) setTypeface(null, Typeface.BOLD)
+                    if (mono) typeface = Typeface.MONOSPACE
+                    setLineSpacing(0f, 1.2f)
+                }
+            fun btn(label: String, bg: Int, fg: Int, action: () -> Unit) {
+                val b = TextView(this).apply {
+                    text = label
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(fg)
+                    gravity = Gravity.CENTER
+                    setPadding(pad, dp(13), pad, dp(13))
+                    background = GradientDrawable().apply {
+                        setColor(bg)
+                        cornerRadius = dp(26).toFloat()
+                    }
+                    setOnClickListener { action() }
+                }
+                root.addView(b, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(9) })
+            }
+
+            root.addView(txt("Orbit crash report", 22f, 0xFFFFFFFF.toInt(), bold = true))
+            root.addView(txt(CrashGuard.deviceInfo(this), 13f, 0xFF9AA0A6.toInt()).apply {
+                setPadding(0, dp(8), 0, 0)
+            })
+
+            // WebView provider gayab/buggy ho to seedha FIX batao
+            if (full.contains("MissingWebViewPackage") || full.contains("WebViewFactory") ||
+                full.contains("WebView provider") || full.contains("WebView has crashed") ||
+                full.contains("UnsupportedOperationException")
+            ) {
+                root.addView(txt(
+                    "FIX: Play Store kholo → 'Android System WebView' search karo → " +
+                        "Update/Enable karo → phone RESTART karo → Orbit kholo.",
+                    14f, 0xFFFBBC05.toInt(), bold = true,
+                ).apply { setPadding(0, dp(8), 0, 0) })
+            }
+
+            root.addView(txt("Wakt: $whenStr", 13f, 0xFF9AA0A6.toInt()).apply {
+                setPadding(0, dp(12), 0, 0)
+            })
+            root.addView(txt(firstLine, 15f, 0xFFFF8A80.toInt(), bold = true).apply {
+                setPadding(0, dp(4), 0, 0)
+            })
+
+            val trace = ScrollView(this)
+            trace.addView(txt(full, 11f, 0xFFBDC1C6.toInt(), mono = true).apply {
+                setPadding(0, dp(8), 0, dp(8))
+            })
+            root.addView(trace, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+            ).apply { topMargin = dp(10); bottomMargin = dp(4) })
+
+            btn("Report copy karo", 0xFF8AB4F8.toInt(), 0xFF101418.toInt()) {
+                runCatching {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(
+                        ClipData.newPlainText("orbit-crash", CrashGuard.deviceInfo(this) + "\n\n" + full),
+                    )
+                    CrashGuard.toast(this, "Copy ho gaya — chat me paste kar do")
+                }
+            }
+            btn("Safe mode me kholo (bina extras)", 0xFF81C995.toInt(), 0xFF101418.toInt()) {
+                safeMode = true
+                CrashGuard.clear(this)
+                startNormalMode()
+            }
+            btn("Normal mode try karo", 0xFF3C4043.toInt(), 0xFFFFFFFF.toInt()) {
+                safeMode = false
+                CrashGuard.clear(this)
+                startNormalMode()
+            }
+
+            setContentView(root)
+        }
+        // runCatching ke bahar kuch nahi — worst case blank dark screen, kabhi
+        // wapas "keeps stopping" dialog nahi aayega
+    }
+
     override fun onBackPressed() {
+        // emergency/survival screen chal rahi hai (init adhoora) — kuch na touch karo
+        if (!this::tabSwitcher.isInitialized) {
+            super.onBackPressed()
+            return
+        }
         if (tabSwitcher.visibility == View.VISIBLE) {
             hideTabSwitcher()
             return
@@ -264,6 +404,8 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent)
+        // emergency screen mode me init adhoora hai — external link ignore karo
+        if (!this::container.isInitialized) return
         // Default browser ban gaya to external links yahan aate hain
         val data = intent?.data?.toString() ?: return
         if (data.startsWith("http")) newTabWithUrl(data)
@@ -420,7 +562,12 @@ class MainActivity : Activity() {
         // GOOGLE SERVICES FIX: real WebView UA (engine version sach me match karta
         // hai) + third-party cookies + multiple windows — bina inke Google login,
         // search aur YouTube ke flows block/broken rehte the.
-        wv.settings.userAgentString = if (tab.desktopSite) DESKTOP_UA else realUA
+        wv.settings.userAgentString = when {
+            tab.desktopSite -> DESKTOP_UA
+            // SURVIVAL safe mode — bilkul vanilla UA, kuch bhi custom nahi
+            safeMode -> runCatching { WebSettings.getDefaultUserAgent(this) }.getOrDefault(realUA)
+            else -> realUA
+        }
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
         wv.settings.javaScriptCanOpenWindowsAutomatically = true
@@ -917,9 +1064,11 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- modules (v1.2.0)
 
-    private fun shieldsEnabled(): Boolean = LocalStore.getSetting(this, "shields", "on") != "off"
+    private fun shieldsEnabled(): Boolean =
+        !safeMode && LocalStore.getSetting(this, "shields", "on") != "off"
 
-    private fun antiFpEnabled(): Boolean = LocalStore.getSetting(this, "antiFp", "on") != "off"
+    private fun antiFpEnabled(): Boolean =
+        !safeMode && LocalStore.getSetting(this, "antiFp", "on") != "off"
 
     private fun toggleShields() {
         val on = shieldsEnabled()
@@ -1308,6 +1457,11 @@ class MainActivity : Activity() {
 
         // OPERA MODULE — isse zyada live WebViews nahi (RAM limit)
         const val MAX_LIVE_WEBVIEWS = 6
+
+        /** SURVIVAL MODE — emergency screen ke "Safe mode" button se ON hota hai.
+         *  Shields/anti-fp/custom-UA sab OFF — pure vanilla WebView. Agar safe
+         *  mode chalta hai par normal nahi, to wajah feature-module me hai. */
+        var safeMode = false
 
         // EDGE MODULE — 5 min inactive = WebView freeze (battery bachao)
         const val SLEEP_AFTER_MS = 5 * 60_000L

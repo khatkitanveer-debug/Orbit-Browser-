@@ -1,7 +1,7 @@
 {
-  "versionCode": 11,
-  "versionName": "1.2.2",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.2/orbit-browser-1.2.2.apk",
-  "notes": "Crash-fix release: poore code ka safety audit. Fixed — destroyed WebView reuse crash (tab band karne par AI/JS callbacks), recycled bitmap crash (tab switcher), stale tab id crash, target=_blank crash guard, omnibox suggestion popup guard, menu popup guard, install session ab background thread (ANR fix), settings disk-read cache (har network request par file read ho rahi thi — jank). Naya: global crash logger — crash hua to agli launch par wajah ka dialog (screenshot bhejo, turant fix).",
+  "versionCode": 12,
+  "versionName": "1.2.3",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.3/orbit-browser-1.2.3.apk",
+  "notes": "SURVIVAL MODE: app ab kabhi andha crash nahi karegi — crash hote hi khud report screen dikhegi (wajah + device info + WebView version). 'Report copy karo' dabao aur chat me paste kar do = exact fix. Safe mode button bhi hai — bina extras app khulti hai. Pichhle 4 updates ke launch-crash ki ab pakki janch hogi.",
   "minVersionCode": 1
 }
