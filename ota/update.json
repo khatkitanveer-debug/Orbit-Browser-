@@ -1,7 +1,7 @@
 {
-  "versionCode": 14,
-  "versionName": "1.2.5",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.5/orbit-browser-1.2.5.apk",
-  "notes": "3 naye fixes: (1) Pull-to-refresh ab SIRF page ke bilkul top par kaam karta hai — page end se upar scroll karne par reload nahi hoga. (2) New tab page par omnibox ab bilkul CLEAN — pichhli khuli link ka URL kabhi nahi dikhega. (3) Google Lens button ab CAMERA kholta hai — photo lo, QR/UPI/barcode phone par hi decode hoga (bina internet): UPI QR par seedha payment app khulega. QR na mile to Google Lens image-search. versionCode 14",
+  "versionCode": 15,
+  "versionName": "1.3.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.0/orbit-browser-1.3.0.apk",
+  "notes": "v1.3.0 — M1-M4 ke saare features ab ORIGINAL Orbit me (UI/logo bilkul same): (1) Background playback — video/audio background me chalta rahega, lock-screen par play/pause controls. (2) Google Lens in-app — camera photo seedha Lens results app ke andar kholti hai. (3) Discover feed — new tab me tumhari history se suggestions (100% on-device, koi tracking nahi). (4) True incognito — incognito tab ab bilkul ephemeral (cache/storage kuch nahi bachta). (5) Orbit Sync (Google) — menu se bookmarks/history sync on karo. (6) VPN beta structure ready. versionCode 15",
   "minVersionCode": 1
 }
