@@ -46,12 +46,24 @@ object AdBlocker {
 
     private const val EMPTY_BYTES = 0
 
+    // HOT-PATCH channel (RemoteConfig) — ota/hotfix.json se aaye live domains.
+    // active set rebuild sirf yahan hota hai — shouldBlock hot path par koi
+    // allocation nahi (har WebView request isse guzarta hai).
+    @Volatile
+    private var activeDomains: Set<String> = DOMAINS
+
+    /** Live shields update — dev ota/hotfix.json push kare, APK ke bina. */
+    fun setExtraDomains(domains: List<String>) {
+        val extra = domains.filter { it.isNotBlank() }.toSet()
+        activeDomains = if (extra.isEmpty()) DOMAINS else DOMAINS + extra
+    }
+
     /** host suffix match — "ads.x.doubleclick.net" bhi "doubleclick.net" se match.
      *  Sirf dot-boundary match (naive endsWith "notdoubleclick.net" ko galat block karta) */
     fun shouldBlock(url: String): Boolean {
         val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull() ?: return false
         if (host.isEmpty()) return false
-        for (d in DOMAINS) {
+        for (d in activeDomains) {
             if (host == d || host.endsWith(".$d")) return true
         }
         return false

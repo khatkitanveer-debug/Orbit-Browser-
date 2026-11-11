@@ -286,6 +286,10 @@ class MainActivity : Activity() {
         newTab()
         // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
         sleeper.postDelayed(sleepCheck, 30_000)
+        // HOT-PATCH channel (Blinkit-style): chote-mote changes bina APK install
+        // ke — cached hotfix turant active, fresh 4h-throttle background check
+        runCatching { AdBlocker.setExtraDomains(RemoteConfig.loadCached(this).blockDomains) }
+        RemoteConfig.refreshAsync(this)
         // silent auto-update: naya version mila to background me khud download,
         // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
         runAutoUpdate(manual = false)

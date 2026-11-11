@@ -1,23 +1,17 @@
 name: Build Orbit APK
 
-# Orbit Browser cloud build — koi local setup nahi chahiye (no git/JDK/SDK needed).
-# - Push of this file  -> auto run (pehli baar khud chalega)
-# - Actions tab -> Run workflow -> manual re-run jab bhi naya build chahiye
+# ❌ DISABLED (user request, 12 Nov 2026) — ye Capacitor TEST build tha; asli
+# release sirf "Android Build (OTA)" (android.yml) se hota hai.
+# - Koi AUTO run nahi hoga (push trigger hata diya) — Actions tab clean rahega
+# - Re-enable: niche push: block wapas add karo, ya Actions tab se manual run
 # APK signs with the committed android/orbit.keystore, so it installs OVER any
 # existing Orbit install (data safe) — see capacitor/android/app/build.gradle.
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build-apk:
-    # DISABLED (v1.3.0) — user ka decision: original native app hi main app hai,
-    # is Capacitor shell ki CI builds ki zaroorat nahi. android.yml (OTA pipeline)
-    # hi single source of truth hai. Wapas chalana ho to if: false hatao.
-    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
