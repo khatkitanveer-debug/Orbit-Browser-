@@ -78,6 +78,62 @@ export const IconHome = (p: IconProps) => (
   </svg>
 );
 
+/* ——— Module 2 (home / feed) ——— */
+
+export const IconPlus = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+  </svg>
+);
+
+export const IconClose = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+    />
+  </svg>
+);
+
+export const IconTrash = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+    />
+  </svg>
+);
+
+export const IconMusic = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path fill="currentColor" d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" />
+  </svg>
+);
+
+export const IconVideo = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"
+    />
+  </svg>
+);
+
+export const IconNews = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M19 5v14H5V5h14m0-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-2 12H7v2h10v-2zm0-4H7v2h10v-2zm0-4H7v2h10V7z"
+    />
+  </svg>
+);
+
+export const IconPlay = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path fill="currentColor" d="M8 5v14l11-7z" />
+  </svg>
+);
+
 /** Orbit brand mark — ring + satellite, rendered from the official geometry. */
 export function OrbitMark({ size = 88 }: { size?: number }) {
   return (

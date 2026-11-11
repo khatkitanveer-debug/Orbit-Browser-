@@ -21,6 +21,13 @@
   --orbit-accent-soft: rgba(76, 141, 255, 0.16);
   --orbit-progress: linear-gradient(90deg, #4c8dff, #7eb2ff);
 
+  /* — Module 2: feed category tints (accent family only) + overlays — */
+  --orbit-tint-music: rgba(126, 178, 255, 0.16);
+  --orbit-tint-video: rgba(76, 141, 255, 0.16);
+  --orbit-tint-news: rgba(143, 163, 192, 0.16);
+  --orbit-scrim: rgba(2, 6, 14, 0.62);
+  --orbit-danger: #ff6b6b;
+
   /* — z-index scale: the ONLY z-index values allowed in the app —
      content < progress < appbar < omnibox-suggest < menu/sheet          */
   --z-content: 0;

@@ -244,50 +244,7 @@ button {
 }
 
 /* ============================ HOME ============================ */
-
-.home {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--bar-h) + 24px) 24px 32px;
-  text-align: center;
-}
-
-.home__word {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin: 6px 0 0;
-}
-
-.home__tag {
-  margin: 0;
-  color: var(--orbit-text-dim);
-  font-size: 14px;
-}
-
-.home__search {
-  margin-top: 22px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: min(420px, 100%);
-  height: 48px;
-  padding: 0 18px;
-  border-radius: var(--radius-pill);
-  background: var(--orbit-pill);
-  border: 1px solid var(--orbit-border);
-  color: var(--orbit-text-dim);
-  font-size: 15px;
-  text-align: left;
-}
-
-.home__search:active {
-  border-color: var(--orbit-border-strong);
-}
+/* Moved to styles/home.css in Module 2 (shortcuts + Discover feed). */
 
 /* ============================ BROWSER BODY ============================ */
 
