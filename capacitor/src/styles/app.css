@@ -1,0 +1,314 @@
+/* ============================================================
+   ORBIT SHELL LAYOUT — strict Grid/Flex, zero-overlap contract:
+   • every text node: min-width:0 + truncation
+   • every icon button: flex:none
+   • grid column 2 is minmax(0, 1fr) — the omnibox can shrink,
+     icons can never be pushed out of the bar
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--orbit-bg);
+  color: var(--orbit-text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* ============================ APP BAR ============================ */
+
+.appbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: var(--z-appbar);
+  background: var(--orbit-bg);
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--orbit-border);
+}
+
+.appbar__row {
+  display: grid;
+  /* anti-overlap core: nav | omnibox(min-w-0) | actions */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px;
+  height: var(--bar-h);
+  padding: 0 6px 0 4px;
+}
+
+.appbar__nav,
+.appbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.iconbtn {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--orbit-text);
+  transition: background-color 0.15s var(--ease-fast), opacity 0.15s;
+}
+
+.iconbtn:active {
+  background: var(--orbit-surface-2);
+}
+
+.iconbtn:disabled {
+  opacity: 0.32;
+}
+
+/* progress line — transform-only (GPU), never reflows the bar */
+.appbar__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  transform-origin: 0 50%;
+  background: var(--orbit-progress);
+  will-change: transform, opacity;
+  transition: opacity 0.25s var(--ease-fast);
+  z-index: var(--z-progress);
+  pointer-events: none;
+}
+
+/* ============================ OMNIBOX ============================ */
+
+.omnibox {
+  display: flex;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.omnibox__pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  height: 44px;
+  padding: 0 4px 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--orbit-pill);
+  border: 1px solid transparent;
+  transition: border-color 0.15s var(--ease-fast), background-color 0.15s;
+}
+
+.omnibox__pill[data-focused] {
+  border-color: var(--orbit-accent);
+  background: var(--orbit-surface);
+}
+
+.omnibox__icon {
+  flex: none;
+  color: var(--orbit-text-dim);
+}
+
+.omnibox__text {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.omnibox__host {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--orbit-text);
+  font-weight: 550;
+  font-size: 14.5px;
+}
+
+.omnibox__rest {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--orbit-text-dim);
+  font-size: 14px;
+}
+
+.omnibox__input {
+  flex: 1 1 0;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--orbit-text);
+  font-size: 15px;
+  caret-color: var(--orbit-accent);
+  padding: 0;
+}
+
+.omnibox__input::placeholder {
+  color: var(--orbit-text-dim);
+}
+
+.omnibox__reload {
+  width: 36px;
+  height: 36px;
+  margin-right: 4px;
+  color: var(--orbit-text-dim);
+}
+
+/* ============================ MENU ============================ */
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 8px;
+  z-index: var(--z-menu);
+  min-width: 200px;
+  background: var(--orbit-surface);
+  border: 1px solid var(--orbit-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-menu);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  transform-origin: top right;
+  animation: menu-in 0.14s var(--ease-fast);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  text-align: left;
+}
+
+.menu__item:active {
+  background: var(--orbit-surface-2);
+}
+
+.menu__item:disabled {
+  opacity: 0.32;
+}
+
+.menu__sep {
+  height: 1px;
+  background: var(--orbit-border);
+  margin: 5px 8px;
+}
+
+/* ============================ HOME ============================ */
+
+.home {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--bar-h) + 24px) 24px 32px;
+  text-align: center;
+}
+
+.home__word {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 6px 0 0;
+}
+
+.home__tag {
+  margin: 0;
+  color: var(--orbit-text-dim);
+  font-size: 14px;
+}
+
+.home__search {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, 100%);
+  height: 48px;
+  padding: 0 18px;
+  border-radius: var(--radius-pill);
+  background: var(--orbit-pill);
+  border: 1px solid var(--orbit-border);
+  color: var(--orbit-text-dim);
+  font-size: 15px;
+  text-align: left;
+}
+
+.home__search:active {
+  border-color: var(--orbit-border-strong);
+}
+
+/* ============================ BROWSER BODY ============================ */
+
+.browser-body {
+  flex: 1;
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--bar-h));
+}
+
+/* dev-machine preview only — never rendered on device */
+.web-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  color: var(--orbit-text-dim);
+  font-size: 13px;
+}
+
+/* ultra-narrow devices: drop Forward before anything can ever clip */
+@media (max-width: 359px) {
+  .appbar__fwd {
+    display: none;
+  }
+}

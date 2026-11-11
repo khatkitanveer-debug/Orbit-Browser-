@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Orbit Browser</string>
+    <string name="title_activity_main">Orbit Browser</string>
+    <string name="package_name">com.orbit.browser</string>
+    <string name="custom_url_scheme">com.orbit.browser</string>
+</resources>

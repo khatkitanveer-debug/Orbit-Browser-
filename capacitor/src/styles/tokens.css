@@ -1,0 +1,41 @@
+/* ============================================================
+   ORBIT DESIGN TOKENS — single source of truth
+   Theme: #070D19. No component may hardcode a color or z-index.
+   ============================================================ */
+
+:root {
+  /* — Brand surfaces — */
+  --orbit-bg: #070d19;
+  --orbit-surface: #0c1728;
+  --orbit-surface-2: #12203a;
+  --orbit-pill: #0e1b30;
+  --orbit-border: rgba(148, 163, 184, 0.16);
+  --orbit-border-strong: rgba(148, 163, 184, 0.32);
+
+  /* — Text — */
+  --orbit-text: #e8eef9;
+  --orbit-text-dim: #8fa3c0;
+
+  /* — Accent — */
+  --orbit-accent: #4c8dff;
+  --orbit-accent-soft: rgba(76, 141, 255, 0.16);
+  --orbit-progress: linear-gradient(90deg, #4c8dff, #7eb2ff);
+
+  /* — z-index scale: the ONLY z-index values allowed in the app —
+     content < progress < appbar < omnibox-suggest < menu/sheet          */
+  --z-content: 0;
+  --z-progress: 100;
+  --z-appbar: 200;
+  --z-omnibox: 300;
+  --z-menu: 400;
+
+  /* — Rhythm — */
+  --bar-h: 56px;
+  --tap: 40px;
+  --radius-pill: 999px;
+  --shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  /* — Type & motion — */
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --ease-fast: cubic-bezier(0.2, 0.7, 0.3, 1);
+}

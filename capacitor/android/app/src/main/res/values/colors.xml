@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Orbit brand — single source of truth on the native side. -->
+    <color name="orbit_bg">#070D19</color>
+    <color name="orbit_accent">#4C8DFF</color>
+</resources>
