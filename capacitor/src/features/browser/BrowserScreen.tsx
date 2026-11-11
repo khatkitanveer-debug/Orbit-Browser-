@@ -4,6 +4,7 @@ import { App as CapApp } from "@capacitor/app";
 import { AppBar } from "../../components/chrome/AppBar";
 import { HomeScreen } from "../home/HomeScreen";
 import { OrbitRender, type PageState } from "../../core/orbit";
+import { OrbitLens } from "../../core/lens";
 import { normalizeInput } from "../../core/url";
 import { recordVisit, updateTitle } from "../../core/historyDB";
 import { isOverlayOpen } from "../../core/overlay";
@@ -18,6 +19,7 @@ const isNative = Capacitor.isNativePlatform();
 export function BrowserScreen() {
   const [session, setSession] = useState<PageState | null>(null);
   const [focusSignal, setFocusSignal] = useState(0);
+  const [lensBusy, setLensBusy] = useState(false);
   const lastInsetRef = useRef(0);
   // Module 2: dedupe key for history recording (last finished page).
   const lastVisitRef = useRef<{ url: string; title: string }>({ url: "", title: "" });
@@ -112,6 +114,19 @@ export function BrowserScreen() {
     }
   }, []);
 
+  const onLens = useCallback(async () => {
+    if (lensBusy) return;
+    setLensBusy(true);
+    try {
+      const result = await OrbitLens.scan();
+      if (result.url) await navigate(result.url);
+    } catch {
+      /* no camera app / cancelled — stay where we are */
+    } finally {
+      setLensBusy(false);
+    }
+  }, [lensBusy, navigate]);
+
   const onBack = useCallback(async () => {
     if (isNative && hasSession) {
       const { consumed } = await OrbitRender.goBack();
@@ -136,6 +151,8 @@ export function BrowserScreen() {
         onBack={() => void onBack()}
         onForward={onForward}
         onHome={() => void endSession()}
+        onLens={() => void onLens()}
+        lensBusy={lensBusy}
         onInsetChange={handleInset}
         focusSignal={focusSignal}
       />
@@ -148,7 +165,12 @@ export function BrowserScreen() {
           )}
         </div>
       ) : (
-        <HomeScreen onSearchTap={() => setFocusSignal((n) => n + 1)} onOpen={(url) => void navigate(url)} />
+        <HomeScreen
+          onSearchTap={() => setFocusSignal((n) => n + 1)}
+          onOpen={(url) => void navigate(url)}
+          onLens={() => void onLens()}
+          lensBusy={lensBusy}
+        />
       )}
     </div>
   );

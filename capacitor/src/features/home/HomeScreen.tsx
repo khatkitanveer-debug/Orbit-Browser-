@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { OrbitMark, IconSearch } from "../../components/chrome/Icons";
+import { OrbitMark, IconSearch, IconCamera } from "../../components/chrome/Icons";
 import { ShortcutsRow } from "./ShortcutsRow";
 import { AddShortcutSheet } from "./AddShortcutSheet";
 import { DiscoverFeed } from "./DiscoverFeed";
@@ -19,6 +19,9 @@ interface HomeScreenProps {
   onSearchTap: () => void;
   /** Opens any home target (shortcut / card / chip) in the content slot. */
   onOpen: (url: string) => void;
+  /** Module 3: camera → Google Lens → results in the content slot. */
+  onLens: () => void;
+  lensBusy: boolean;
 }
 
 /**
@@ -26,7 +29,7 @@ interface HomeScreenProps {
  * frequently-visited chips, and the Discover feed generated from local
  * history. Fully scrollable; the app bar above stays fixed and clean.
  */
-export function HomeScreen({ onSearchTap, onOpen }: HomeScreenProps) {
+export function HomeScreen({ onSearchTap, onOpen, onLens, lensBusy }: HomeScreenProps) {
   const [custom, setCustom] = useState<Shortcut[]>(loadCustomShortcuts);
   const [sheetOpen, setSheetOpen] = useState(false);
   const entries = useHistoryEntries();
@@ -60,10 +63,21 @@ export function HomeScreen({ onSearchTap, onOpen }: HomeScreenProps) {
           </div>
         </header>
 
-        <button className="home__search" onClick={onSearchTap} aria-label="Search or type URL">
-          <IconSearch size={18} />
-          Search or type URL
-        </button>
+        <div className="home__searchrow">
+          <button className="home__search" onClick={onSearchTap} aria-label="Search or type URL">
+            <IconSearch size={18} />
+            Search or type URL
+          </button>
+          <button
+            className="home__lens"
+            onClick={onLens}
+            disabled={lensBusy}
+            aria-label="Search with Lens"
+            title="Search with Lens"
+          >
+            <IconCamera size={22} />
+          </button>
+        </div>
 
         <ShortcutsRow
           shortcuts={shortcuts}

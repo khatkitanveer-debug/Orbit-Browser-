@@ -1,4 +1,8 @@
 apply plugin: 'com.android.application'
+// Kotlin compiles the app's own sources (MainActivity, plugins, media/lens
+// packages) — without this plugin the .kt files are silently skipped and
+// the app crashes on launch with ClassNotFoundException.
+apply plugin: 'kotlin-android'
 
 android {
     namespace "com.orbit.browser"
@@ -7,8 +11,8 @@ android {
         applicationId "com.orbit.browser"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 16
-        versionName "1.4.0-m2"
+        versionCode 17
+        versionName "1.5.0-m3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -49,6 +53,7 @@ dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "androidx.media:media:$androidxMediaVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')

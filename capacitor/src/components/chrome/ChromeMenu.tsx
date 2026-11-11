@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
-import { IconBack, IconForward, IconHome, IconReload } from "./Icons";
+import { IconBack, IconCamera, IconForward, IconHome, IconReload } from "./Icons";
 
-export type MenuAction = "back" | "forward" | "reload" | "home";
+export type MenuAction = "back" | "forward" | "reload" | "home" | "lens";
 
 interface ChromeMenuProps {
   canBack: boolean;
   canForward: boolean;
   canReload: boolean;
+  lensBusy?: boolean;
   onAction: (action: MenuAction) => void;
   onClose: () => void;
 }
@@ -15,7 +16,7 @@ interface ChromeMenuProps {
  * 3-dot menu. Positioned inside the app bar stacking context, above the
  * content slot via --z-menu. Only live actions — no stubs.
  */
-export function ChromeMenu({ canBack, canForward, canReload, onAction, onClose }: ChromeMenuProps) {
+export function ChromeMenu({ canBack, canForward, canReload, lensBusy, onAction, onClose }: ChromeMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +48,15 @@ export function ChromeMenu({ canBack, canForward, canReload, onAction, onClose }
       </button>
       <button className="menu__item" role="menuitem" onClick={() => onAction("home")}>
         <IconHome size={18} /> Home
+      </button>
+      <div className="menu__sep" />
+      <button
+        className="menu__item"
+        role="menuitem"
+        disabled={lensBusy}
+        onClick={() => onAction("lens")}
+      >
+        <IconCamera size={18} /> {lensBusy ? "Scanning…" : "Search with Lens"}
       </button>
     </div>
   );

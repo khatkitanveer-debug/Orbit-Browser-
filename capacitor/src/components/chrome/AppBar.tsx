@@ -11,6 +11,9 @@ interface AppBarProps {
   onBack: () => void;
   onForward: () => void;
   onHome: () => void;
+  /** Module 3: camera → Google Lens → results in the content slot. */
+  onLens: () => void;
+  lensBusy: boolean;
   /** Reports the bar's bottom edge (CSS px) — the native slot syncs to it. */
   onInsetChange: (bottomCssPx: number) => void;
   focusSignal: number;
@@ -31,6 +34,8 @@ export function AppBar({
   onBack,
   onForward,
   onHome,
+  onLens,
+  lensBusy,
   onInsetChange,
   focusSignal,
 }: AppBarProps) {
@@ -63,9 +68,10 @@ export function AppBar({
       if (action === "back") onBack();
       else if (action === "forward") onForward();
       else if (action === "reload") onReload();
+      else if (action === "lens") onLens();
       else onHome();
     },
-    [onBack, onForward, onReload, onHome],
+    [onBack, onForward, onReload, onHome, onLens],
   );
 
   return (
@@ -114,6 +120,7 @@ export function AppBar({
           canBack={!!session?.canGoBack}
           canForward={!!session?.canGoForward}
           canReload={!!session}
+          lensBusy={lensBusy}
           onAction={onMenuAction}
           onClose={() => setMenuOpen(false)}
         />

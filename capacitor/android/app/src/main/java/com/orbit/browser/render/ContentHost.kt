@@ -13,6 +13,8 @@ import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewCompat
+import com.orbit.browser.media.PlaybackCoordinator
+import com.orbit.browser.media.PlaybackSink
 
 /**
  * Owns the single native content slot of Module 1.
@@ -50,12 +52,23 @@ class ContentHost(
     init {
         WebViewDefaults.apply(activity, webView)
 
-        // Viewport bootstrap runs BEFORE any page script/layout — no flicker.
+        // Viewport bootstrap runs BEFORE any page script — no flicker.
         WebViewCompat.addDocumentStartJavaScript(
             webView,
             ViewportBootstrap.SCRIPT,
             ViewportBootstrap.ALLOWED_ORIGIN_RULES,
         )
+        // Module 3: visibility lock + media watch (each call registers its
+        // own script; handlers are additive by design).
+        WebViewCompat.addDocumentStartJavaScript(
+            webView,
+            MediaWatchBootstrap.SCRIPT,
+            ViewportBootstrap.ALLOWED_ORIGIN_RULES,
+        )
+
+        // Module 3: page media reports play/pause here → foreground service.
+        webView.addJavascriptInterface(PlaybackSink(), "OrbitMediaSink")
+        PlaybackCoordinator.attachWebView(webView)
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -76,6 +89,7 @@ class ContentHost(
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                if (url != null) PlaybackCoordinator.onPageNavigatedAway(url)
                 emit(view)
             }
 
@@ -173,6 +187,9 @@ class ContentHost(
 
     fun destroy() {
         ViewCompat.setOnApplyWindowInsetsListener(webView, null)
+        PlaybackCoordinator.detachWebView()
+        PlaybackCoordinator.stopAll()
+        webView.removeJavascriptInterface("OrbitMediaSink")
         webView.stopLoading()
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
