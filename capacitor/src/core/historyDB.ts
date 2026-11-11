@@ -20,10 +20,10 @@ export interface HistoryEntry {
   visitCount: number;
   firstVisit: number;
   lastVisit: number;
+  /** Wall clock of the last local mutation — sync engine ordering key. */
+  updatedAt?: number;
 }
 
-const DB_NAME = "orbit";
-const DB_VERSION = 1;
 const STORE = "history";
 const LAST_VISIT_INDEX = "lastVisit";
 /** Hard cap — prune keeps the store O(2000) regardless of usage years. */
@@ -31,9 +31,7 @@ const MAX_ENTRIES = 2000;
 /** Prune check frequency — a full count() every put would be wasteful. */
 const PRUNE_EVERY = 32;
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-let putsSincePrune = 0;
-
+import { openOrbitDB as openDB, requestAsPromise } from "./db";
 /* ------------------------------ change feed ------------------------------ */
 
 let changeVersion = 0;
@@ -54,6 +52,8 @@ export function getHistoryVersion(): number {
   return changeVersion;
 }
 
+let putsSincePrune = 0;
+
 /* ----------------------------- incognito seam ---------------------------- */
 
 let suppressed = false;
@@ -63,29 +63,7 @@ export function setHistorySuppressed(value: boolean): void {
   suppressed = value;
 }
 
-/* --------------------------------- plumbing ------------------------------ */
-
-function openDB(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(STORE)) {
-          const store = db.createObjectStore(STORE, { keyPath: "url" });
-          store.createIndex(LAST_VISIT_INDEX, "lastVisit");
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error("orbit-history: blocked"));
-    });
-    dbPromise.catch(() => {
-      dbPromise = null; // allow a retry on the next call
-    });
-  }
-  return dbPromise;
-}
+/* -------------------------------- helpers -------------------------------- */
 
 function isRecordableUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
@@ -97,13 +75,6 @@ function hostOf(url: string): string {
   } catch {
     return "";
   }
-}
-
-function requestAsPromise<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
 }
 
 /** Keeps the store bounded: drops the oldest entries beyond MAX_ENTRIES. */
@@ -151,8 +122,9 @@ export async function recordVisit(url: string, title: string): Promise<void> {
           title: title || existing.title,
           visitCount: existing.visitCount + 1,
           lastVisit: now,
+          updatedAt: now,
         }
-      : { url, host: hostOf(url), title: title || url, visitCount: 1, firstVisit: now, lastVisit: now };
+      : { url, host: hostOf(url), title: title || url, visitCount: 1, firstVisit: now, lastVisit: now, updatedAt: now };
     store.put(entry);
     if (++putsSincePrune >= PRUNE_EVERY) void pruneIfNeeded(db);
     notifyChanged();
@@ -172,7 +144,7 @@ export async function updateTitle(url: string, title: string): Promise<void> {
     const store = db.transaction(STORE, "readwrite").objectStore(STORE);
     const existing = await requestAsPromise(store.get(url));
     if (!existing || existing.title === title) return;
-    store.put({ ...existing, title });
+    store.put({ ...existing, title, updatedAt: Date.now() });
     notifyChanged();
   } catch {
     /* storage unavailable */
@@ -194,6 +166,31 @@ export async function clearHistory(): Promise<void> {
   try {
     const db = await openDB();
     db.transaction(STORE, "readwrite").objectStore(STORE).clear();
+    notifyChanged();
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * Module 4 sync seam — writes REMOTE winners straight into the store.
+ * Tombstoned docs are hard-removed here (the tombstone lives on the
+ * server; locally a deletion is a deletion). No updatedAt bump on these
+ * writes — they are not local mutations.
+ */
+export async function applyRemoteHistory(entries: HistoryEntry[]): Promise<void> {
+  if (entries.length === 0) return;
+  try {
+    const db = await openDB();
+    const store = db.transaction(STORE, "readwrite").objectStore(STORE);
+    for (const e of entries) {
+      const existing = await requestAsPromise(store.get(e.url));
+      if ((e as HistoryEntry & { deleted?: boolean }).deleted) {
+        if (existing) store.delete(e.url);
+      } else {
+        store.put(e);
+      }
+    }
     notifyChanged();
   } catch {
     /* storage unavailable */

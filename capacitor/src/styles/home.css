@@ -15,7 +15,128 @@
 .home__scroll {
   max-width: 560px;
   margin: 0 auto;
-  padding: calc(env(safe-area-inset-top, 0px) + var(--bar-h) + 16px) 20px 56px;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--bar-h) + 12px) 20px 56px;
+}
+
+/* ———————————————— Module 4: incognito banner ———————————————— */
+
+.incognito-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 6px 8px 6px 14px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--orbit-surface-2);
+  border: 1px solid var(--orbit-border-strong);
+  color: var(--orbit-text);
+}
+
+.incognito-banner__text {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--orbit-text-dim);
+}
+
+.incognito-banner__exit {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--orbit-text-dim);
+}
+
+.incognito-banner__exit:active {
+  background: var(--orbit-surface);
+}
+
+/* ———————————————— Module 4: bookmarks chips ———————————————— */
+
+.bookmarks {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bookmarks__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  background: var(--orbit-surface);
+  border: 1px solid var(--orbit-border);
+  font-size: 12.5px;
+  color: var(--orbit-text);
+  max-width: 100%;
+}
+
+.bookmarks__chip svg {
+  flex: none;
+  color: var(--orbit-accent);
+}
+
+.bookmarks__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.bookmarks__chip:active {
+  background: var(--orbit-surface-2);
+}
+
+/* ———————————————— Module 4: sync footer ———————————————— */
+
+.home__sync {
+  margin-top: 30px;
+  padding-top: 16px;
+  border-top: 1px solid var(--orbit-border);
+}
+
+.home__sync-line {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--orbit-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home__sync-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.home__sync-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--orbit-border-strong);
+  background: var(--orbit-pill);
+  color: var(--orbit-text);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.home__sync-btn:active {
+  background: var(--orbit-surface-2);
+}
+
+.home__sync-btn:disabled {
+  opacity: 0.5;
 }
 
 /* ———————————————— brand + search ———————————————— */

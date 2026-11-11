@@ -43,6 +43,16 @@
             android:name=".media.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Module 4: VPN scaffolding — system binds with its own permission. -->
+        <service
+            android:name=".vpn.OrbitVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
     </application>
 
     <!-- Queries: resolve the system camera for Lens without CAMERA permission. -->

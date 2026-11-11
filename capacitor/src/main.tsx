@@ -15,10 +15,11 @@ createRoot(document.getElementById("root")!).render(
 // Module 2 feed in the web preview. Never ships — dead-code-eliminated by
 // the DEV guard in production builds.
 if (import.meta.env.DEV) {
-  void import("./core/historyDB").then((m) => {
+  void Promise.all([import("./core/historyDB"), import("./core/bookmarksDB")]).then(([h, b]) => {
     (window as unknown as Record<string, unknown>).__orbitDev = {
-      recordVisit: m.recordVisit,
-      clearHistory: m.clearHistory,
+      recordVisit: h.recordVisit,
+      clearHistory: h.clearHistory,
+      addBookmark: b.addBookmark,
     };
   });
 }

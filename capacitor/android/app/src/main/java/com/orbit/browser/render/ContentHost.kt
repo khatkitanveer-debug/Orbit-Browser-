@@ -4,9 +4,11 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
@@ -31,6 +33,8 @@ class ContentHost(
     private val activity: Activity,
     hostRoot: ViewGroup,
     private val listener: Listener,
+    /** Module 4: ephemeral (incognito) host — writes as little as possible. */
+    val ephemeral: Boolean = false,
 ) {
     interface Listener {
         fun onPageState(state: PageSnapshot)
@@ -51,6 +55,7 @@ class ContentHost(
 
     init {
         WebViewDefaults.apply(activity, webView)
+        if (ephemeral) applyEphemeralSettings()
 
         // Viewport bootstrap runs BEFORE any page script — no flicker.
         WebViewCompat.addDocumentStartJavaScript(
@@ -191,7 +196,33 @@ class ContentHost(
         PlaybackCoordinator.stopAll()
         webView.removeJavascriptInterface("OrbitMediaSink")
         webView.stopLoading()
+        if (ephemeral) {
+            // Instance-scoped wipes only — global calls (CookieManager,
+            // WebStorage) would also hit normal tabs.
+            webView.clearCache(true)
+            webView.clearFormData()
+            webView.clearHistory()
+        }
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
+    }
+
+    /**
+     * Incognito hardening (Module 4). Every knob here exists to keep the
+     * visit off the disk:
+     *   • LOAD_NO_CACHE      — no HTTP cache entries
+     *   • no DOM storage     — localStorage/sessionStorage would persist
+     *   • no 3P cookies      — trackers get nothing
+     * Known WebView limitation (documented): the first-party cookie jar is
+     * app-global, so persistent cookies from incognito sites survive the
+     * session. Session cookies die with the process. The per-profile
+     * isolation (android.webkit.Profile, API 35+) is the M5 upgrade path.
+     */
+    private fun applyEphemeralSettings() {
+        val s: WebSettings = webView.settings
+        s.cacheMode = WebSettings.LOAD_NO_CACHE
+        s.domStorageEnabled = false
+        s.databaseEnabled = false
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
     }
 }

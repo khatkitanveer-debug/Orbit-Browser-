@@ -21,6 +21,10 @@ const config: CapacitorConfig = {
     // Keep native networking on the WebView stack — no JS fetch interception,
     // zero latency overhead on every request.
     CapacitorHttp: { enabled: false },
+    // Module 4 sync: put your Firebase OAuth **Web client ID** here
+    // (Firebase console → Authentication → Sign-in method → Google →
+    // Web SDK configuration). No google-services.json is needed.
+    // OrbitSync: { webClientId: "1234-abcd.apps.googleusercontent.com" },
   },
 };
 

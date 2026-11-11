@@ -23,6 +23,7 @@ export const DEFAULT_SHORTCUTS: readonly Shortcut[] = [
 export const MAX_CUSTOM = 6;
 
 const STORAGE_KEY = "orbit.shortcuts.v1";
+const UPDATED_AT_KEY = "orbit.shortcuts.updatedAt";
 
 export function loadCustomShortcuts(): Shortcut[] {
   try {
@@ -52,9 +53,24 @@ export function loadCustomShortcuts(): Shortcut[] {
 export function saveCustomShortcuts(list: Shortcut[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, MAX_CUSTOM)));
+    localStorage.setItem(UPDATED_AT_KEY, String(Date.now()));
   } catch {
     /* storage unavailable — shortcuts stay in-memory for the session */
   }
+}
+
+/** Module 4 sync — wall clock of the last list mutation. */
+export function getShortcutsUpdatedAt(): number {
+  try {
+    return Number(localStorage.getItem(UPDATED_AT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Module 4 sync — replace the whole list with a remote winner. */
+export function replaceCustomShortcuts(list: Shortcut[]): void {
+  saveCustomShortcuts(list);
 }
 
 /**

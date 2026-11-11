@@ -14,6 +14,16 @@ interface AppBarProps {
   /** Module 3: camera → Google Lens → results in the content slot. */
   onLens: () => void;
   lensBusy: boolean;
+  /** Module 4: session flags for the menu. */
+  incognito: boolean;
+  canBookmark: boolean;
+  bookmarked: boolean;
+  syncItem: { label: string; enabled: boolean };
+  vpnItem: { label: string; enabled: boolean };
+  onBookmark: () => void;
+  onIncognito: () => void;
+  onSync: () => void;
+  onVpn: () => void;
   /** Reports the bar's bottom edge (CSS px) — the native slot syncs to it. */
   onInsetChange: (bottomCssPx: number) => void;
   focusSignal: number;
@@ -36,6 +46,15 @@ export function AppBar({
   onHome,
   onLens,
   lensBusy,
+  incognito,
+  canBookmark,
+  bookmarked,
+  syncItem,
+  vpnItem,
+  onBookmark,
+  onIncognito,
+  onSync,
+  onVpn,
   onInsetChange,
   focusSignal,
 }: AppBarProps) {
@@ -69,9 +88,13 @@ export function AppBar({
       else if (action === "forward") onForward();
       else if (action === "reload") onReload();
       else if (action === "lens") onLens();
+      else if (action === "bookmark") onBookmark();
+      else if (action === "incognito") onIncognito();
+      else if (action === "sync") onSync();
+      else if (action === "vpn") onVpn();
       else onHome();
     },
-    [onBack, onForward, onReload, onHome, onLens],
+    [onBack, onForward, onReload, onHome, onLens, onBookmark, onIncognito, onSync, onVpn],
   );
 
   return (
@@ -121,6 +144,11 @@ export function AppBar({
           canForward={!!session?.canGoForward}
           canReload={!!session}
           lensBusy={lensBusy}
+          incognito={incognito}
+          canBookmark={canBookmark}
+          bookmarked={bookmarked}
+          syncItem={syncItem}
+          vpnItem={vpnItem}
           onAction={onMenuAction}
           onClose={() => setMenuOpen(false)}
         />

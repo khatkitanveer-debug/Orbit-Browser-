@@ -147,6 +147,37 @@ export const IconCamera = (p: IconProps) => (
   </svg>
 );
 
+/* ——— Module 4 (sync / privacy) ——— */
+
+export const IconStar = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
+    />
+  </svg>
+);
+
+export const IconIncognito = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path fill="currentColor" d="M5 12c0-3.6 3.1-6 7-6s7 2.4 7 6H5z" />
+    <path fill="currentColor" d="M2 12.8h20V15H2z" />
+    <path
+      fill="currentColor"
+      d="M8.4 16.4a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm7.2 0a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zm-2.3 1.4a1.9 1.9 0 0 0-2.6 0h2.6z"
+    />
+  </svg>
+);
+
+export const IconShield = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path
+      fill="currentColor"
+      d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"
+    />
+  </svg>
+);
+
 /** Orbit brand mark — ring + satellite, rendered from the official geometry. */
 export function OrbitMark({ size = 88 }: { size?: number }) {
   return (
