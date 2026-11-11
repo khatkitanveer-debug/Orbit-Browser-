@@ -1,7 +1,7 @@
 {
-  "versionCode": 15,
-  "versionName": "1.3.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.0/orbit-browser-1.3.0.apk",
-  "notes": "v1.3.0 — M1-M4 ke saare features ab ORIGINAL Orbit me (UI/logo bilkul same): (1) Background playback — video/audio background me chalta rahega, lock-screen par play/pause controls. (2) Google Lens in-app — camera photo seedha Lens results app ke andar kholti hai. (3) Discover feed — new tab me tumhari history se suggestions (100% on-device, koi tracking nahi). (4) True incognito — incognito tab ab bilkul ephemeral (cache/storage kuch nahi bachta). (5) Orbit Sync (Google) — menu se bookmarks/history sync on karo. (6) VPN beta structure ready. versionCode 15",
+  "versionCode": 16,
+  "versionName": "1.3.1",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.1/orbit-browser-1.3.1.apk",
+  "notes": "v1.3.1 — YouTube lock-screen fix: ab screen lock karo, video/audio chalti rahegi (ruk-ruk ke chalna band). Naye ad-block hot-patch system se chote fixes ab bina update ke bhi apne aap aayenge. Background me battery/CPU better. versionCode 16",
   "minVersionCode": 1
 }
