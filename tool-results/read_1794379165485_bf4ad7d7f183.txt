@@ -1,0 +1,1488 @@
+     1→package com.orbit.browser
+     2→
+     3→import android.annotation.SuppressLint
+     4→import android.app.Activity
+     5→import android.app.AlertDialog
+     6→import android.content.ClipData
+     7→import android.content.ClipboardManager
+     8→import android.content.Context
+     9→import android.content.Intent
+    10→import android.graphics.Bitmap
+    11→import android.graphics.Canvas
+    12→import android.graphics.Color
+    13→import android.graphics.Typeface
+    14→import android.graphics.drawable.ColorDrawable
+    15→import android.graphics.drawable.GradientDrawable
+    16→import android.os.Build
+    17→import android.os.Bundle
+    18→import android.os.Handler
+    19→import android.os.Looper
+    20→import android.os.Message
+    21→import android.text.Editable
+    22→import android.text.TextWatcher
+    23→import android.view.Gravity
+    24→import android.view.KeyEvent
+    25→import android.view.View
+    26→import android.view.ViewGroup
+    27→import android.view.WindowInsets
+    28→import android.view.inputmethod.EditorInfo
+    29→import android.webkit.CookieManager
+    30→import android.webkit.JavascriptInterface
+    31→import android.webkit.WebChromeClient
+    32→import android.webkit.WebResourceError
+    33→import android.webkit.WebResourceRequest
+    34→import android.webkit.WebResourceResponse
+    35→import android.webkit.WebSettings
+    36→import android.webkit.WebStorage
+    37→import android.webkit.WebView
+    38→import android.webkit.WebViewClient
+    39→import android.webkit.WebViewDatabase
+    40→import android.widget.EditText
+    41→import android.widget.FrameLayout
+    42→import android.widget.GridLayout
+    43→import android.widget.ImageButton
+    44→import android.widget.ImageView
+    45→import android.widget.LinearLayout
+    46→import android.widget.PopupWindow
+    47→import android.widget.ProgressBar
+    48→import android.widget.ScrollView
+    49→import android.widget.TextView
+    50→import android.widget.Toast
+    51→import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    52→import androidx.webkit.WebViewCompat
+    53→import java.io.ByteArrayInputStream
+    54→import java.io.File
+    55→
+    56→/**
+    57→ * Orbit Browser — native Android browser, CHROME ANDROID PARITY (v1.1.0):
+    58→ *   • Toolbar: sirf [omnibox pill (lock + reload andar)][tab-count][3-dot] — Chrome jaisa
+    59→ *   • Koi persistent tab strip nahi — Chrome tab-switcher: cards grid + FAB
+    60→ *   • Real WebView UA ("; wv" hata kar) — Google login/search/YouTube kaam karte hain
+    61→ *   • Third-party cookies ON — Google sign-in flows
+    62→ *   • target=_blank links naye tab me (onCreateWindow)
+    63→ *   • Pull-to-refresh, progress line, find-in-page, desktop site, share
+    64→ * Har data DEVICE par hi rehta hai (LocalStore). Incognito tab history me nahi jata.
+    65→ */
+    66→class MainActivity : Activity() {
+    67→
+    68→    private class Tab(val id: Long, var url: String, var title: String) {
+    69→        var webView: WebView? = null
+    70→        var isInternal: Boolean = true
+    71→        var isIncognito: Boolean = false
+    72→        var desktopSite: Boolean = false
+    73→        var thumb: Bitmap? = null
+    74→        var blockedCount: Int = 0      // Brave Shields — is page par kitne blocked
+    75→        var sleeping: Boolean = false  // Edge sleeping tabs — WebView frozen
+    76→        var evicted: Boolean = false   // Opera RAM limiter — WebView destroy hua, select par recreate
+    77→        var lastActive: Long = System.currentTimeMillis()
+    78→    }
+    79→
+    80→    private val tabs = mutableListOf<Tab>()
+    81→    private var activeTab: Tab? = null
+    82→    private var nextTabId = 1L
+    83→
+    84→    private lateinit var toolbar: LinearLayout
+    85→    private lateinit var container: FrameLayout
+    86→    private lateinit var omnibox: EditText
+    87→    private lateinit var omniIcon: ImageView
+    88→    private lateinit var btnReload: ImageButton
+    89→    private lateinit var progress: ProgressBar
+    90→    private lateinit var pullRefresh: SwipeRefreshLayout
+    91→    private lateinit var tabCount: TextView
+    92→    private lateinit var tabSwitcher: FrameLayout
+    93→    private lateinit var switcherGrid: GridLayout
+    94→    private lateinit var switcherTitle: TextView
+    95→    private lateinit var findBar: LinearLayout
+    96→    private lateinit var findInput: EditText
+    97→    private lateinit var findCount: TextView
+    98→
+    99→    private var aiJob: Thread? = null
+   100→    private var menuPopup: PopupWindow? = null
+   101→    private var suggestPopup: PopupWindow? = null
+   102→    private lateinit var shieldBadge: TextView
+   103→
+   104→    // EDGE MODULE — sleeping tabs ka timer
+   105→    private val sleeper = Handler(Looper.getMainLooper())
+   106→
+   107→    /** System WebView ka REAL UA — "; wv" token hata kar. Fake/stale UA (purana
+   108→     *  Chrome/126 claim) Google ka bot-detection trigger karta tha — login/search
+   109→     *  par "browser not secure" aata tha. Real UA = engine version match.
+   110→     *  HARDENED: getDefaultUserAgent kabhi throw kare to fallback UA. */
+   111→    private val realUA: String by lazy {
+   112→        runCatching { WebSettings.getDefaultUserAgent(this).replace("; wv", "") }.getOrDefault(
+   113→            "Mozilla/5.0 (Linux; Android ${Build.VERSION.RELEASE}; ${Build.MODEL}) " +
+   114→                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+   115→        )
+   116→    }
+   117→
+   118→    // ---------------------------------------------------------------- lifecycle
+   119→
+   120→    override fun onCreate(savedInstanceState: Bundle?) {
+   121→        super.onCreate(savedInstanceState)
+   122→        // GLOBAL CRASH GUARD — setContentView se PEHLE install, taaki layout-crash
+   123→        // bhi crash-log.txt me pahunch jaye
+   124→        CrashGuard.install(this)
+   125→
+   126→        // SURVIVAL MODE — pichhla crash fresh (<48h) hai to seedha crash-report
+   127→        // screen dikhao (programmatic — khud kabhi crash nahi karegi). Screenshot
+   128→        // bhejo = EXACT wajah + device info + WebView version sab mil jayega.
+   129→        val prior = CrashGuard.lastCrash(this)
+   130→        if (prior != null && CrashGuard.isFresh(prior.first)) {
+   131→            showEmergency(prior.first, prior.second, prior.third)
+   132→            return
+   133→        }
+   134→        startNormalMode()
+   135→    }
+   136→
+   137→    /** Normal startup — init me kahin bhi exception aayi to app "keeps stopping"
+   138→     *  NAHI hogi: exception pakdi jayegi, log hoga, emergency report screen
+   139→     *  dikhegi. App HAMESHA khulegi (ya exact wajah dikhayegi). */
+   140→    private fun startNormalMode() {
+   141→        try {
+   142→            initNormal()
+   143→        } catch (t: Throwable) {
+   144→            CrashGuard.logCrash(this, t)
+   145→            showEmergency(
+   146→                "abhi (launch par)",
+   147→                "${t.javaClass.simpleName}: ${t.message}",
+   148→                CrashGuard.stackOf(t),
+   149→            )
+   150→        }
+   151→    }
+   152→
+   153→    @SuppressLint("SetJavaScriptEnabled")
+   154→    private fun initNormal() {
+   155→        setContentView(R.layout.activity_main)
+   156→
+   157→        // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — Chrome-jaisa
+   158→        // insets handling: toolbar status bar ke NEECHE baithega.
+   159→        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+   160→            window.setDecorFitsSystemWindows(false)
+   161→            val root = findViewById<View>(R.id.root)
+   162→            root.setOnApplyWindowInsetsListener { v, insets ->
+   163→                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+   164→                val ime = insets.getInsets(WindowInsets.Type.ime())
+   165→                v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+   166→                WindowInsets.CONSUMED
+   167→            }
+   168→        }
+   169→
+   170→        toolbar = findViewById(R.id.toolbar)
+   171→        container = findViewById(R.id.container)
+   172→        omnibox = findViewById(R.id.omnibox)
+   173→        omniIcon = findViewById(R.id.omni_icon)
+   174→        btnReload = findViewById(R.id.btn_reload)
+   175→        progress = findViewById(R.id.progress)
+   176→        pullRefresh = findViewById(R.id.pull_refresh)
+   177→        tabCount = findViewById(R.id.tab_count)
+   178→        tabSwitcher = findViewById(R.id.tab_switcher)
+   179→        switcherGrid = findViewById(R.id.switcher_grid)
+   180→        switcherTitle = findViewById(R.id.switcher_title)
+   181→        findBar = findViewById(R.id.find_bar)
+   182→        findInput = findViewById(R.id.find_input)
+   183→        findCount = findViewById(R.id.find_count)
+   184→        shieldBadge = findViewById(R.id.shield_badge)
+   185→
+   186→        // Brave Shields badge click — is page ke block stats
+   187→        shieldBadge.setOnClickListener { showShieldStats() }
+   188→
+   189→        // CHROME MODULE — omnibox typing par history/bookmark suggestions
+   190→        omnibox.addTextChangedListener(object : TextWatcher {
+   191→            override fun afterTextChanged(s: Editable?) {
+   192→                if (omnibox.hasFocus()) showSuggestions(s?.toString() ?: "")
+   193→            }
+   194→
+   195→            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+   196→
+   197→            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+   198→        })
+   199→        omnibox.setOnFocusChangeListener { _, hasFocus ->
+   200→            if (!hasFocus) suggestPopup?.dismiss()
+   201→        }
+   202→
+   203→        omnibox.setOnEditorActionListener { _, actionId, event ->
+   204→            if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
+   205→                navigateInput(omnibox.text.toString())
+   206→                true
+   207→            } else false
+   208→        }
+   209→        omnibox.setSelectAllOnFocus(true)
+   210→
+   211→        btnReload.setOnClickListener {
+   212→            val wv = activeTab?.webView ?: return@setOnClickListener
+   213→            if (wv.progress in 1..99) wv.stopLoading() else wv.reload()
+   214→        }
+   215→        findViewById<ImageButton>(R.id.btn_tabs).setOnClickListener { showTabSwitcher() }
+   216→        findViewById<ImageButton>(R.id.btn_menu).setOnClickListener { showMenu() }
+   217→
+   218→        // Chrome pull-to-refresh
+   219→        pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
+   220→        pullRefresh.setOnRefreshListener {
+   221→            activeTab?.webView?.reload()
+   222→        }
+   223→
+   224→        // Chrome tab switcher
+   225→        findViewById<ImageButton>(R.id.btn_new_tab_fab).setOnClickListener {
+   226→            hideTabSwitcher()
+   227→            newTab(incognito = activeIncognitoContext())
+   228→        }
+   229→        findViewById<TextView>(R.id.btn_close_all).setOnClickListener {
+   230→            tabs.toList().forEach { closeTabInternal(it) }
+   231→            hideTabSwitcher()
+   232→            if (tabs.isEmpty()) newTab() else refreshChrome()
+   233→        }
+   234→
+   235→        // Find in page bar
+   236→        findInput.setOnEditorActionListener { _, actionId, event ->
+   237→            if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
+   238→                activeTab?.webView?.findAllAsync(findInput.text.toString())
+   239→                true
+   240→            } else false
+   241→        }
+   242→        findViewById<ImageButton>(R.id.find_next).setOnClickListener {
+   243→            activeTab?.webView?.findNext(true)
+   244→        }
+   245→        findViewById<ImageButton>(R.id.find_prev).setOnClickListener {
+   246→            activeTab?.webView?.findNext(false)
+   247→        }
+   248→        findViewById<ImageButton>(R.id.find_close).setOnClickListener { hideFindBar() }
+   249→
+   250→        // pehla tab — clean new tab screen
+   251→        newTab()
+   252→        // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
+   253→        sleeper.postDelayed(sleepCheck, 30_000)
+   254→        // silent auto-update: naya version mila to background me khud download,
+   255→        // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
+   256→        runAutoUpdate(manual = false)
+   257→    }
+   258→
+   259→    // ---------------------------------------------------------- survival mode
+   260→
+   261→    /** 100% PROGRAMMATIC crash-report screen — koi XML resource, koi WebView,
+   262→     *  koi lateinit field touch nahi hota, isliye YE SCREEN KABHI CRASH NAHI
+   263→     *  KAREGI. Dukh bhara "keeps stopping" band — ab app khud batayegi ki wajah
+   264→     *  kya hai. User screenshot bheje = line-by-line fix possible. */
+   265→    private fun showEmergency(whenStr: String, firstLine: String, full: String) {
+   266→        runCatching {
+   267→            val pad = dp(18)
+   268→            val root = LinearLayout(this).apply {
+   269→                orientation = LinearLayout.VERTICAL
+   270→                setBackgroundColor(0xFF101418.toInt())
+   271→                setPadding(pad, dp(20), pad, pad)
+   272→            }
+   273→            fun txt(s: String, size: Float, color: Int, bold: Boolean = false, mono: Boolean = false) =
+   274→                TextView(this).apply {
+   275→                    text = s
+   276→                    textSize = size
+   277→                    setTextColor(color)
+   278→                    if (bold) setTypeface(null, Typeface.BOLD)
+   279→                    if (mono) typeface = Typeface.MONOSPACE
+   280→                    setLineSpacing(0f, 1.2f)
+   281→                }
+   282→            fun btn(label: String, bg: Int, fg: Int, action: () -> Unit) {
+   283→                val b = TextView(this).apply {
+   284→                    text = label
+   285→                    textSize = 15f
+   286→                    setTypeface(null, Typeface.BOLD)
+   287→                    setTextColor(fg)
+   288→                    gravity = Gravity.CENTER
+   289→                    setPadding(pad, dp(13), pad, dp(13))
+   290→                    background = GradientDrawable().apply {
+   291→                        setColor(bg)
+   292→                        cornerRadius = dp(26).toFloat()
+   293→                    }
+   294→                    setOnClickListener { action() }
+   295→                }
+   296→                root.addView(b, LinearLayout.LayoutParams(
+   297→                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+   298→                ).apply { topMargin = dp(9) })
+   299→            }
+   300→
+   301→            root.addView(txt("Orbit crash report", 22f, 0xFFFFFFFF.toInt(), bold = true))
+   302→            root.addView(txt(CrashGuard.deviceInfo(this), 13f, 0xFF9AA0A6.toInt()).apply {
+   303→                setPadding(0, dp(8), 0, 0)
+   304→            })
+   305→
+   306→            // WebView provider gayab/buggy ho to seedha FIX batao
+   307→            if (full.contains("MissingWebViewPackage") || full.contains("WebViewFactory") ||
+   308→                full.contains("WebView provider") || full.contains("WebView has crashed") ||
+   309→                full.contains("UnsupportedOperationException")
+   310→            ) {
+   311→                root.addView(txt(
+   312→                    "FIX: Play Store kholo → 'Android System WebView' search karo → " +
+   313→                        "Update/Enable karo → phone RESTART karo → Orbit kholo.",
+   314→                    14f, 0xFFFBBC05.toInt(), bold = true,
+   315→                ).apply { setPadding(0, dp(8), 0, 0) })
+   316→            }
+   317→
+   318→            root.addView(txt("Wakt: $whenStr", 13f, 0xFF9AA0A6.toInt()).apply {
+   319→                setPadding(0, dp(12), 0, 0)
+   320→            })
+   321→            root.addView(txt(firstLine, 15f, 0xFFFF8A80.toInt(), bold = true).apply {
+   322→                setPadding(0, dp(4), 0, 0)
+   323→            })
+   324→
+   325→            val trace = ScrollView(this)
+   326→            trace.addView(txt(full, 11f, 0xFFBDC1C6.toInt(), mono = true).apply {
+   327→                setPadding(0, dp(8), 0, dp(8))
+   328→            })
+   329→            root.addView(trace, LinearLayout.LayoutParams(
+   330→                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
+   331→            ).apply { topMargin = dp(10); bottomMargin = dp(4) })
+   332→
+   333→            btn("Report copy karo", 0xFF8AB4F8.toInt(), 0xFF101418.toInt()) {
+   334→                runCatching {
+   335→                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+   336→                    cm.setPrimaryClip(
+   337→                        ClipData.newPlainText("orbit-crash", CrashGuard.deviceInfo(this) + "\n\n" + full),
+   338→                    )
+   339→                    CrashGuard.toast(this, "Copy ho gaya — chat me paste kar do")
+   340→                }
+   341→            }
+   342→            btn("Safe mode me kholo (bina extras)", 0xFF81C995.toInt(), 0xFF101418.toInt()) {
+   343→                safeMode = true
+   344→                CrashGuard.clear(this)
+   345→                startNormalMode()
+   346→            }
+   347→            btn("Normal mode try karo", 0xFF3C4043.toInt(), 0xFFFFFFFF.toInt()) {
+   348→                safeMode = false
+   349→                CrashGuard.clear(this)
+   350→                startNormalMode()
+   351→            }
+   352→
+   353→            setContentView(root)
+   354→        }
+   355→        // runCatching ke bahar kuch nahi — worst case blank dark screen, kabhi
+   356→        // wapas "keeps stopping" dialog nahi aayega
+   357→    }
+   358→
+   359→    override fun onBackPressed() {
+   360→        // emergency/survival screen chal rahi hai (init adhoora) — kuch na touch karo
+   361→        if (!this::tabSwitcher.isInitialized) {
+   362→            super.onBackPressed()
+   363→            return
+   364→        }
+   365→        if (tabSwitcher.visibility == View.VISIBLE) {
+   366→            hideTabSwitcher()
+   367→            return
+   368→        }
+   369→        if (findBar.visibility == View.VISIBLE) {
+   370→            hideFindBar()
+   371→            return
+   372→        }
+   373→        menuPopup?.let { if (it.isShowing) { it.dismiss(); return } }
+   374→        val wv = activeTab?.webView
+   375→        if (wv != null && wv.canGoBack()) {
+   376→            wv.goBack()
+   377→        } else if (tabs.size > 1) {
+   378→            activeTab?.let { closeTab(it.id) } ?: super.onBackPressed()
+   379→        } else {
+   380→            super.onBackPressed()
+   381→        }
+   382→    }
+   383→
+   384→    override fun onDestroy() {
+   385→        super.onDestroy()
+   386→        // cleanup — timers, popups, sab WebViews. Bina iske backgrounded process me
+   387→        // WebView leak + phantom callbacks rehte hain.
+   388→        runCatching { sleeper.removeCallbacksAndMessages(null) }
+   389→        runCatching { menuPopup?.dismiss() }
+   390→        runCatching { suggestPopup?.dismiss() }
+   391→        runCatching {
+   392→            for (tab in tabs) {
+   393→                tab.webView?.apply {
+   394→                    stopLoading()
+   395→                    (parent as? ViewGroup)?.removeView(this)
+   396→                    destroy()
+   397→                }
+   398→                tab.webView = null
+   399→                tab.thumb = null
+   400→            }
+   401→            tabs.clear()
+   402→        }
+   403→    }
+   404→
+   405→    override fun onNewIntent(intent: android.content.Intent?) {
+   406→        super.onNewIntent(intent)
+   407→        // emergency screen mode me init adhoora hai — external link ignore karo
+   408→        if (!this::container.isInitialized) return
+   409→        // Default browser ban gaya to external links yahan aate hain
+   410→        val data = intent?.data?.toString() ?: return
+   411→        if (data.startsWith("http")) newTabWithUrl(data)
+   412→    }
+   413→
+   414→    // ---------------------------------------------------------------- tabs
+   415→
+   416→    private fun newTab(incognito: Boolean = false) {
+   417→        val tab = Tab(nextTabId++, NEWTAB, "New Tab")
+   418→        tab.isInternal = true
+   419→        tab.isIncognito = incognito
+   420→        tabs.add(tab)
+   421→        selectTab(tab.id)
+   422→        if (incognito) {
+   423→            Toast.makeText(this, "Incognito tab — history me kuch save nahi hoga", Toast.LENGTH_SHORT).show()
+   424→        }
+   425→    }
+   426→
+   427→    private fun activeIncognitoContext(): Boolean = activeTab?.isIncognito ?: false
+   428→
+   429→    private fun newTabWithUrl(url: String) {
+   430→        val tab = Tab(nextTabId++, url, domainOf(url))
+   431→        tab.isInternal = false
+   432→        tabs.add(tab)
+   433→        selectTab(tab.id)
+   434→        loadUrlInTab(tab, url)
+   435→    }
+   436→
+   437→    private fun closeTab(id: Long) {
+   438→        val idx = tabs.indexOfFirst { it.id == id }
+   439→        if (idx < 0) return
+   440→        closeTabInternal(tabs[idx])
+   441→        if (tabs.isEmpty()) {
+   442→            finish()
+   443→        } else {
+   444→            selectTab(tabs[(idx - 1).coerceAtLeast(0)].id)
+   445→        }
+   446→    }
+   447→
+   448→    private fun closeTabInternal(tab: Tab) {
+   449→        val idx = tabs.indexOf(tab)
+   450→        if (idx < 0) return
+   451→        tabs.remove(tab)
+   452→        tab.webView?.apply {
+   453→            stopLoading()
+   454→            (parent as? ViewGroup)?.removeView(this)
+   455→            destroy()
+   456→        }
+   457→        // NULL karna ZARURI hai — warna AI-stream/JS callbacks destroy hua WebView
+   458→        // use karke crash kar sakte hain
+   459→        tab.webView = null
+   460→        if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
+   461→        refreshChrome()
+   462→    }
+   463→
+   464→    @SuppressLint("SetJavaScriptEnabled")
+   465→    private fun selectTab(id: Long) {
+   466→        // firstOrNull — band ho chuke tab ka stale id kabhi app crash nahi karega
+   467→        val tab = tabs.firstOrNull { it.id == id } ?: return
+   468→        // outgoing tab: lastActive abhi set + thumbnail capture — switcher cards me dikhega
+   469→        activeTab?.let {
+   470→            it.lastActive = System.currentTimeMillis()
+   471→            captureThumb(it)
+   472→        }
+   473→        if (tab.webView == null) {
+   474→            tab.webView = buildWebView(tab)
+   475→            // OPERA MODULE — evicted tab wapas aaya to URL dobara load (WebView fresh hai)
+   476→            if (tab.evicted) {
+   477→                tab.evicted = false
+   478→                if (!tab.isInternal && tab.url != NEWTAB) tab.webView?.loadUrl(tab.url)
+   479→            }
+   480→        }
+   481→        container.removeAllViews()
+   482→        tab.webView?.let {
+   483→            it.visibility = View.VISIBLE
+   484→            container.addView(
+   485→                it,
+   486→                FrameLayout.LayoutParams(
+   487→                    ViewGroup.LayoutParams.MATCH_PARENT,
+   488→                    ViewGroup.LayoutParams.MATCH_PARENT,
+   489→                ),
+   490→            )
+   491→            // EDGE MODULE — sleeping tab ko jagao
+   492→            if (tab.sleeping) {
+   493→                it.onResume()
+   494→                tab.sleeping = false
+   495→            }
+   496→        }
+   497→        activeTab = tab
+   498→        tab.lastActive = System.currentTimeMillis()
+   499→        // OPERA MODULE — RAM limit: sabse zyada purane inactive WebViews freeze/destroy
+   500→        evictExcessTabs()
+   501→        refreshChrome()
+   502→        if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
+   503→        if (tab.isInternal && tab.url == NEWTAB) {
+   504→            loadInternal(tab, NEWTAB)
+   505→        }
+   506→    }
+   507→
+   508→    /** Har chrome element ek jagah — toolbar, count, icon, PTR, hint */
+   509→    private fun refreshChrome() {
+   510→        val tab = activeTab ?: return
+   511→        tabCount.text = tabs.size.coerceAtMost(99).toString()
+   512→        // user omnibox me TYPING ho to overwrite mat karo (Chrome jaisa)
+   513→        if (!omnibox.hasFocus()) {
+   514→            omnibox.setText(tab.url)
+   515→            omnibox.clearFocus()
+   516→        }
+   517→        pullRefresh.isEnabled = !tab.isInternal
+   518→        if (tab.isIncognito) {
+   519→            omnibox.hint = "Incognito — Search karo ya URL likho"
+   520→            toolbar.setBackgroundColor(0xFF3C4043.toInt())
+   521→        } else {
+   522→            omnibox.hint = getString(R.string.search_hint)
+   523→            toolbar.setBackgroundColor(0xFF202124.toInt())
+   524→        }
+   525→        updateOmniIcon(tab)
+   526→    }
+   527→
+   528→    /** Chrome jaisa: https = lock, http = "not secure" info icon */
+   529→    private fun updateOmniIcon(tab: Tab) {
+   530→        if (tab.url.startsWith("http://") && !tab.isInternal) {
+   531→            omniIcon.setImageResource(R.drawable.ic_notsecure)
+   532→            omniIcon.setColorFilter(0xFFF28B82.toInt())
+   533→        } else {
+   534→            omniIcon.setImageResource(R.drawable.ic_lock)
+   535→            omniIcon.setColorFilter(0xFF9AA0A6.toInt())
+   536→        }
+   537→    }
+   538→
+   539→    private fun captureThumb(tab: Tab) {
+   540→        val wv = tab.webView ?: return
+   541→        if (wv.width == 0 || wv.height == 0) return
+   542→        runCatching {
+   543→            val scale = 480f / wv.width
+   544→            val h = (wv.height * scale).toInt().coerceIn(240, 1200)
+   545→            val bmp = Bitmap.createBitmap(480, h, Bitmap.Config.ARGB_8888)
+   546→            val c = Canvas(bmp)
+   547→            c.scale(scale, scale)
+   548→            wv.draw(c)
+   549→            // PURANA BITMAP RECYCLE MAT KARO — switcher card me displayed bitmap
+   550→            // recycle hua to "Canvas: trying to use a recycled bitmap" crash aata tha.
+   551→            // Reference replace karo — GC khud saaf kar dega.
+   552→            tab.thumb = bmp
+   553→        }
+   554→    }
+   555→
+   556→    @SuppressLint("SetJavaScriptEnabled")
+   557→    private fun buildWebView(tab: Tab): WebView {
+   558→        val wv = WebView(this)
+   559→        wv.setBackgroundColor(0xFF202124.toInt())
+   560→        wv.settings.javaScriptEnabled = true
+   561→        wv.settings.domStorageEnabled = true
+   562→        // GOOGLE SERVICES FIX: real WebView UA (engine version sach me match karta
+   563→        // hai) + third-party cookies + multiple windows — bina inke Google login,
+   564→        // search aur YouTube ke flows block/broken rehte the.
+   565→        wv.settings.userAgentString = when {
+   566→            tab.desktopSite -> DESKTOP_UA
+   567→            // SURVIVAL safe mode — bilkul vanilla UA, kuch bhi custom nahi
+   568→            safeMode -> runCatching { WebSettings.getDefaultUserAgent(this) }.getOrDefault(realUA)
+   569→            else -> realUA
+   570→        }
+   571→        CookieManager.getInstance().setAcceptCookie(true)
+   572→        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+   573→        wv.settings.javaScriptCanOpenWindowsAutomatically = true
+   574→        wv.settings.setSupportMultipleWindows(true)
+   575→        wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+   576→        wv.settings.builtInZoomControls = true
+   577→        wv.settings.displayZoomControls = false
+   578→        wv.settings.loadWithOverviewMode = true
+   579→        wv.settings.useWideViewPort = true
+   580→        wv.addJavascriptInterface(Bridge(tab), "OrbitBridge")
+   581→        // FIREFOX MODULE — anti-fingerprinting: document-start pe script inject
+   582→        // (kisi bhi page script se PEHLE) — canvas noise + hardware spoof
+   583→        if (antiFpEnabled()) {
+   584→            runCatching {
+   585→                WebViewCompat.addDocumentStartJavaScript(wv, FINGERPRINT_SHIELD_JS, setOf("*"))
+   586→            }
+   587→        }
+   588→        wv.webViewClient = OrbitWebViewClient(tab)
+   589→        wv.webChromeClient = object : WebChromeClient() {
+   590→            override fun onReceivedTitle(view: WebView?, title: String?) {
+   591→                if (!tab.isInternal && !title.isNullOrBlank()) {
+   592→                    tab.title = title
+   593→                    refreshChrome()
+   594→                    if (!tab.isIncognito) LocalStore.addHistory(this@MainActivity, tab.url, title)
+   595→                }
+   596→            }
+   597→
+   598→            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+   599→                progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+   600→                progress.progress = newProgress
+   601→                // Chrome jaisa: loading me pill ka button X (stop) ban jata hai
+   602→                btnReload.setImageResource(if (newProgress in 1..99) R.drawable.ic_close else R.drawable.ic_refresh)
+   603→            }
+   604→
+   605→            // target=_blank / window.open — Chrome ki tarah NAYE TAB me
+   606→            // HARDENED: koi bhi system-callback null/odd ho to app crash nahi karegi
+   607→            override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+   608→                if (view == null || resultMsg == null) return false
+   609→                val ok = runCatching {
+   610→                    val temp = WebView(this@MainActivity)
+   611→                    temp.webViewClient = object : WebViewClient() {
+   612→                        override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
+   613→                            val url = request?.url?.toString() ?: return false
+   614→                            if (url.startsWith("http")) {
+   615→                                runOnUiThread { if (!isFinishing) newTabWithUrl(url) }
+   616→                            }
+   617→                            v?.post { runCatching { v.destroy() } }
+   618→                            return true
+   619→                        }
+   620→                    }
+   621→                    (resultMsg.obj as? WebView.WebViewTransport)?.webView = temp
+   622→                    resultMsg.sendToTarget()
+   623→                    true
+   624→                }.getOrDefault(false)
+   625→                return ok
+   626→            }
+   627→        }
+   628→        // find-in-page counts
+   629→        wv.setFindListener { ordinal, matches, done ->
+   630→            if (findBar.visibility == View.VISIBLE) {
+   631→                findCount.text = if (matches > 0) "${ordinal + 1}/$matches" else "0/0"
+   632→            }
+   633→        }
+   634→        return wv
+   635→    }
+   636→
+   637→    // ---------------------------------------------------------------- navigation
+   638→
+   639→    private fun navigateInput(raw: String) {
+   640→        val input = raw.trim()
+   641→        if (input.isEmpty()) return
+   642→        val tab = activeTab ?: return
+   643→        omnibox.clearFocus()
+   644→        navigate(tab.id, normalizeInput(input))
+   645→    }
+   646→
+   647→    /** web app ke shared.ts ka port — orbit:// internal pages + search detection */
+   648→    private fun normalizeInput(t: String): String {
+   649→        val x = t.trim()
+   650→        val lower = x.lowercase()
+   651→        return when {
+   652→            lower.startsWith("orbit://newtab") -> NEWTAB
+   653→            lower.startsWith("orbit://history") -> "orbit://history"
+   654→            lower.startsWith("orbit://bookmarks") -> "orbit://bookmarks"
+   655→            lower.startsWith("orbit://settings") -> "orbit://settings"
+   656→            lower.startsWith("tez://") -> normalizeInput(x.replaceFirst(Regex("^tez://", RegexOption.IGNORE_CASE), "orbit://"))
+   657→            lower.startsWith("http://") || lower.startsWith("https://") -> x
+   658→            lower.startsWith("orbit://") -> NEWTAB
+   659→            else -> {
+   660→                val looksLikeUrl = !x.contains(" ") &&
+   661→                    (x.contains(".") || x.contains(":")) &&
+   662→                    !x.endsWith(".")
+   663→                if (looksLikeUrl) "https://$x" else GOOGLE_SEARCH + java.net.URLEncoder.encode(x, "UTF-8")
+   664→            }
+   665→        }
+   666→    }
+   667→
+   668→    private fun navigate(tabId: Long, url: String) {
+   669→        val tab = tabs.firstOrNull { it.id == tabId } ?: return
+   670→        tab.url = url
+   671→        when {
+   672→            url == NEWTAB -> loadInternal(tab, NEWTAB)
+   673→            url.startsWith("orbit://search?q=") -> {
+   674→                val q = java.net.URLDecoder.decode(url.removePrefix("orbit://search?q="), "UTF-8")
+   675→                loadInternal(tab, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+   676→            }
+   677→            url.startsWith("orbit://") -> loadInternal(tab, url)
+   678→            else -> loadUrlInTab(tab, url)
+   679→        }
+   680→        refreshChrome()
+   681→    }
+   682→
+   683→    @SuppressLint("SetJavaScriptEnabled")
+   684→    private fun loadInternal(tab: Tab, url: String) {
+   685→        tab.isInternal = true
+   686→        tab.title = when {
+   687→            url == NEWTAB -> "New Tab"
+   688→            url.startsWith("orbit://search") -> "Orbit AI Search"
+   689→            else -> "Orbit"
+   690→        }
+   691→        val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
+   692→        when {
+   693→            url == NEWTAB -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+   694→            url.startsWith("orbit://search?q=") -> {
+   695→                val q = java.net.URLDecoder.decode(url.removePrefix("orbit://search?q="), "UTF-8")
+   696→                val html = assetHtml("aipage.html").replace("__QUERY__", escapeHtml(q))
+   697→                wv.loadDataWithBaseURL("https://orbit.local/", html, "text/html", "UTF-8", url)
+   698→                wv.postDelayed({ runAiSearch(tab, q) }, 350)
+   699→            }
+   700→            url == "orbit://history" -> { showHistory(); tab.url = NEWTAB; loadInternal(tab, NEWTAB) }
+   701→            url == "orbit://bookmarks" -> { showBookmarks(); tab.url = NEWTAB; loadInternal(tab, NEWTAB) }
+   702→            url == "orbit://settings" -> { showSettings(); tab.url = NEWTAB; loadInternal(tab, NEWTAB) }
+   703→        }
+   704→        refreshChrome()
+   705→    }
+   706→
+   707→    private fun loadUrlInTab(tab: Tab, url: String) {
+   708→        tab.isInternal = false
+   709→        val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
+   710→        // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
+   711→        // native browser jaisa chalega.
+   712→        wv.loadUrl(url)
+   713→        refreshChrome()
+   714→    }
+   715→
+   716→    private fun showErrorPage(wv: WebView, url: String, reason: String) {
+   717→        val html = assetHtml("error.html")
+   718→            .replace("__URL__", escapeHtml(url))
+   719→            .replace("__REASON__", escapeHtml(reason))
+   720→        wv.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url)
+   721→    }
+   722→
+   723→    // ---------------------------------------------------------------- AI search
+   724→
+   725→    private fun runAiSearch(tab: Tab, query: String) {
+   726→        aiJob?.interrupt()
+   727→        val backend = LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND)
+   728→        val wv = tab.webView ?: return
+   729→        if (backend.isBlank() || backend == "unset") {
+   730→            wv.evaluateJavascript("window.__aiError('Pehle Settings me apna Orbit AI backend URL set karo (menu -> Settings)')", null)
+   731→            return
+   732→        }
+   733→        aiJob = Thread {
+   734→            AiClient.search(backend, query, object : AiClient.Listener {
+   735→                override fun onSources(json: String) = postJs(tab, "window.__aiSources(${escapeJs(json)})")
+   736→                override fun onDelta(text: String) = postJs(tab, "window.__aiDelta(${escapeJs(text)})")
+   737→                override fun onDone() = postJs(tab, "window.__aiDone()")
+   738→                override fun onError(message: String) = postJs(tab, "window.__aiError(${escapeJs(message)})")
+   739→            })
+   740→        }.also { it.start() }
+   741→    }
+   742→
+   743→    private fun postJs(tab: Tab, js: String) {
+   744→        runOnUiThread {
+   745→            // band/badla hua tab ya finished activity — destroy hua WebView touch nahi
+   746→            if (isFinishing || isDestroyed) return@runOnUiThread
+   747→            tab.webView?.evaluateJavascript(js, null)
+   748→        }
+   749→    }
+   750→
+   751→    // ---------------------------------------------------------------- bridge
+   752→
+   753→    private inner class Bridge(private val tab: Tab) {
+   754→        @JavascriptInterface
+   755→        fun navigate(url: String, newTab: Boolean) {
+   756→            runOnUiThread {
+   757→                if (newTab) newTabWithUrl(url) else navigate(tab.id, url)
+   758→            }
+   759→        }
+   760→
+   761→        @JavascriptInterface
+   762→        fun search(q: String) {
+   763→            // newtab search bar — default GOOGLE search (browser ki tarah)
+   764→            runOnUiThread {
+   765→                navigate(tab.id, GOOGLE_SEARCH + java.net.URLEncoder.encode(q, "UTF-8"))
+   766→            }
+   767→        }
+   768→
+   769→        @JavascriptInterface
+   770→        fun meta(title: String, url: String) {
+   771→            runOnUiThread {
+   772→                tab.title = title.ifBlank { domainOf(url) }
+   773→                tab.url = url
+   774→                refreshChrome()
+   775→            }
+   776→        }
+   777→
+   778→        @JavascriptInterface
+   779→        fun version(): String = BuildConfig.VERSION_NAME
+   780→    }
+   781→
+   782→    private inner class OrbitWebViewClient(val tab: Tab) : WebViewClient() {
+   783→        // BRAVE MODULE — matched ad/tracker request server tak jaane se PEHLE drop
+   784→        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+   785→            val url = request?.url?.toString() ?: return null
+   786→            if (shieldsEnabled() && AdBlocker.shouldBlock(url)) {
+   787→                tab.blockedCount++
+   788→                AdBlocker.countBlock()
+   789→                return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
+   790→            }
+   791→            return null
+   792→        }
+   793→
+   794→        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+   795→            val url = request?.url ?: return false
+   796→            val scheme = url.scheme?.lowercase() ?: return false
+   797→            // tel:/mailto:/market: jaise external schemes — system app me bhejo
+   798→            if (scheme !in setOf("http", "https", "about", "data", "javascript", "blob")) {
+   799→                runCatching { startActivity(Intent(Intent.ACTION_VIEW, url)) }
+   800→                return true
+   801→            }
+   802→            return false // http(s) WebView (Chromium) me hi khulega — real browser
+   803→        }
+   804→
+   805→        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+   806→            if (!url.isNullOrEmpty() && url != "https://orbit.local/" && !url.startsWith("data:")) {
+   807→                tab.url = url
+   808→                refreshChrome()
+   809→            }
+   810→        }
+   811→
+   812→        override fun onPageFinished(view: WebView?, url: String?) {
+   813→            pullRefresh.isRefreshing = false
+   814→            updateShieldBadge()
+   815→            if (view == null || url.isNullOrEmpty() || tab.isInternal) return
+   816→            tab.url = url
+   817→            tab.title = view.title?.ifBlank { null } ?: domainOf(url)
+   818→            refreshChrome()
+   819→            // Incognito tab — history me KUCH nahi jata (Chrome parity)
+   820→            if (!tab.isIncognito) LocalStore.addHistory(this@MainActivity, url, tab.title)
+   821→        }
+   822→
+   823→        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+   824→            // sirf main frame — subresource errors page todte nahi
+   825→            if (request?.isForMainFrame == true) {
+   826→                showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page load nahi hua")
+   827→            }
+   828→        }
+   829→    }
+   830→
+   831→    // ---------------------------------------------------------------- chrome (omnibox etc.)
+   832→
+   833→    private fun domainOf(url: String): String = runCatching {
+   834→        java.net.URI(url).host ?: url
+   835→    }.getOrDefault(url)
+   836→
+   837→    // ---------------------------------------------------------------- Chrome tab switcher
+   838→
+   839→    private fun showTabSwitcher() {
+   840→        captureThumb(activeTab ?: return)
+   841→        switcherTitle.text = "Tabs (${tabs.size})"
+   842→        renderSwitcherCards()
+   843→        tabSwitcher.visibility = View.VISIBLE
+   844→    }
+   845→
+   846→    private fun hideTabSwitcher() {
+   847→        tabSwitcher.visibility = View.GONE
+   848→    }
+   849→
+   850→    /** Chrome tab switcher: 2-column cards grid — thumbnail/letter avatar + title + X */
+   851→    private fun renderSwitcherCards() {
+   852→        switcherTitle.text = "Tabs (${tabs.size})"
+   853→        switcherGrid.removeAllViews()
+   854→        val colWidth = (resources.displayMetrics.widthPixels - dp(40)) / 2
+   855→        tabs.forEach { tab ->
+   856→            val card = LinearLayout(this).apply {
+   857→                orientation = LinearLayout.VERTICAL
+   858→                background = getDrawable(if (tab.isIncognito) R.drawable.card_bg_incognito else R.drawable.card_bg)
+   859→                setPadding(dp(6), dp(6), dp(6), dp(6))
+   860→            }
+   861→            // thumbnail (ya letter avatar)
+   862→            val thumbHolder = FrameLayout(this).apply {
+   863→                layoutParams = LinearLayout.LayoutParams(
+   864→                    LinearLayout.LayoutParams.MATCH_PARENT, dp(96),
+   865→                )
+   866→                setBackgroundColor(0xFF3C4043.toInt())
+   867→            }
+   868→            val iv = ImageView(this).apply {
+   869→                layoutParams = FrameLayout.LayoutParams(
+   870→                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+   871→                )
+   872→                scaleType = ImageView.ScaleType.CENTER_CROP
+   873→                tab.thumb?.let { setImageBitmap(it) } ?: run { visibility = View.GONE }
+   874→            }
+   875→            val letter = TextView(this).apply {
+   876→                layoutParams = FrameLayout.LayoutParams(
+   877→                    FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+   878→                    Gravity.CENTER,
+   879→                )
+   880→                text = domainOf(tab.url).removePrefix("www.").take(1).uppercase().ifBlank { "?" }
+   881→                textSize = 26f
+   882→                setTextColor(0xFFE8EAED.toInt())
+   883→                if (tab.thumb != null) visibility = View.GONE
+   884→            }
+   885→            thumbHolder.addView(iv)
+   886→            thumbHolder.addView(letter)
+   887→            card.addView(thumbHolder)
+   888→
+   889→            // title + close row
+   890→            val row = LinearLayout(this).apply {
+   891→                orientation = LinearLayout.HORIZONTAL
+   892→                gravity = Gravity.CENTER_VERTICAL
+   893→                setPadding(dp(4), dp(6), dp(0), dp(0))
+   894→            }
+   895→            val title = TextView(this).apply {
+   896→                text = (if (tab.sleeping) "😴 " else "") +
+   897→                    (if (tab.isIncognito) "[Incognito] " else "") +
+   898→                    tab.title.ifBlank { domainOf(tab.url) }
+   899→                textSize = 11f
+   900→                maxLines = 1
+   901→                ellipsize = android.text.TextUtils.TruncateAt.END
+   902→                setTextColor(0xFFE8EAED.toInt())
+   903→                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+   904→            }
+   905→            val x = ImageButton(this).apply {
+   906→                setImageResource(R.drawable.ic_close)
+   907→                setColorFilter(0xFF9AA0A6.toInt())
+   908→                background = getDrawable(R.drawable.btn_ripple)
+   909→                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+   910→                setOnClickListener {
+   911→                    closeTabInternal(tab)
+   912→                    if (tabs.isEmpty()) { hideTabSwitcher(); newTab() }
+   913→                }
+   914→            }
+   915→            row.addView(title)
+   916→            row.addView(x)
+   917→            card.addView(row)
+   918→
+   919→            card.setOnClickListener {
+   920→                hideTabSwitcher()
+   921→                selectTab(tab.id)
+   922→            }
+   923→            val glp = GridLayout.LayoutParams(
+   924→                GridLayout.spec(GridLayout.UNDEFINED, 1f),
+   925→                GridLayout.spec(GridLayout.UNDEFINED, 1f),
+   926→            ).apply {
+   927→                width = colWidth
+   928→                height = ViewGroup.LayoutParams.WRAP_CONTENT
+   929→                setMargins(dp(4), dp(4), dp(4), dp(4))
+   930→            }
+   931→            switcherGrid.addView(card, glp)
+   932→        }
+   933→    }
+   934→
+   935→    // ---------------------------------------------------------------- find in page
+   936→
+   937→    private fun hideFindBar() {
+   938→        findBar.visibility = View.GONE
+   939→        activeTab?.webView?.clearMatches()
+   940→        findInput.setText("")
+   941→        findCount.text = "0/0"
+   942→    }
+   943→
+   944→    // ---------------------------------------------------------------- menu (Chrome order)
+   945→
+   946→    /** Chrome-jaisa 3-dot menu — btn_menu ke neeche se slide hoke khulta hai, right-aligned. */
+   947→    private fun showMenu() {
+   948→        if (isFinishing || isDestroyed) return
+   949→        if (menuPopup?.isShowing == true) { menuPopup?.dismiss(); return }
+   950→        val anchor = findViewById<View>(R.id.btn_menu)
+   951→        val content = layoutInflater.inflate(R.layout.popup_menu, null)
+   952→        val list = content.findViewById<LinearLayout>(R.id.menu_items)
+   953→
+   954→        val tab = activeTab
+   955→        data class Item(val icon: Int, val label: String, val action: () -> Unit)
+   956→        val items = listOf(
+   957→            Item(R.drawable.ic_newtab, "New tab") { newTab() },
+   958→            Item(R.drawable.ic_private, "Incognito tab") { newTab(incognito = true) },
+   959→            null, // divider
+   960→            Item(R.drawable.ic_history, "History") { showHistory() },
+   961→            Item(R.drawable.ic_star, "Bookmarks") { showBookmarks() },
+   962→            Item(R.drawable.ic_ai, "AI Search") { showAiSearchPrompt() },
+   963→            Item(R.drawable.ic_find, "Find in page") { showFindBar() },
+   964→            null, // divider
+   965→            Item(R.drawable.ic_desktop, if (tab?.desktopSite == true) "✓ Desktop site" else "Desktop site") { toggleDesktopSite() },
+   966→            Item(R.drawable.ic_share, "Share karo") { sharePage() },
+   967→            Item(R.drawable.ic_shield, if (shieldsEnabled()) "✓ Shields (ads block)" else "Shields (ads block)") { toggleShields(); renderSwitcherCards() },
+   968→            Item(R.drawable.ic_lock, if (antiFpEnabled()) "✓ Anti-fingerprint" else "Anti-fingerprint") { toggleAntiFp() },
+   969→            Item(R.drawable.ic_fire, "Fire Button (sab data clear)") { fireButton() },
+   970→            null, // divider
+   971→            Item(R.drawable.ic_update, "Check update") { runAutoUpdate(manual = true) },
+   972→            Item(R.drawable.ic_settings, "Settings") { showSettings() },
+   973→            Item(R.drawable.ic_about, "About Orbit") { showAbout() },
+   974→        )
+   975→
+   976→        for (item in items) {
+   977→            if (item == null) {
+   978→                val div = View(this).apply {
+   979→                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+   980→                        setMargins(dp(6), dp(4), dp(6), dp(4))
+   981→                    }
+   982→                    setBackgroundColor(0xFF3C4043.toInt())
+   983→                }
+   984→                list.addView(div)
+   985→                continue
+   986→            }
+   987→            val row = LinearLayout(this).apply {
+   988→                orientation = LinearLayout.HORIZONTAL
+   989→                gravity = Gravity.CENTER_VERTICAL
+   990→                setPadding(dp(20), 0, dp(20), 0)
+   991→                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46))
+   992→                background = getDrawable(R.drawable.btn_ripple)
+   993→                isClickable = true
+   994→                isFocusable = true
+   995→            }
+   996→            val iv = ImageView(this).apply {
+   997→                setImageResource(item.icon)
+   998→                setColorFilter(0xFFE8EAE9.toInt())
+   999→                layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
+  1000→            }
+  1001→            val tv = TextView(this).apply {
+  1002→                text = item.label
+  1003→                setTextColor(0xFFE8EAE9.toInt())
+  1004→                textSize = 15f
+  1005→                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+  1006→                    marginStart = dp(20)
+  1007→                }
+  1008→            }
+  1009→            row.addView(iv)
+  1010→            row.addView(tv)
+  1011→            row.setOnClickListener {
+  1012→                menuPopup?.dismiss()
+  1013→                item.action()
+  1014→            }
+  1015→            list.addView(row)
+  1016→        }
+  1017→
+  1018→        menuPopup = PopupWindow(
+  1019→            content,
+  1020→            dp(262),
+  1021→            ViewGroup.LayoutParams.WRAP_CONTENT,
+  1022→            true,
+  1023→        ).apply {
+  1024→            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT)) // rounded bg dikhne ke liye
+  1025→            elevation = dp(12).toFloat()
+  1026→            animationStyle = R.style.OrbitPopupAnim
+  1027→            isOutsideTouchable = true
+  1028→            showAsDropDown(anchor, -dp(2), dp(2), Gravity.END)
+  1029→        }
+  1030→    }
+  1031→
+  1032→    private fun showFindBar() {
+  1033→        findBar.visibility = View.VISIBLE
+  1034→        findInput.requestFocus()
+  1035→        val q = findInput.text.toString()
+  1036→        if (q.isNotBlank()) activeTab?.webView?.findAllAsync(q)
+  1037→    }
+  1038→
+  1039→    private fun toggleDesktopSite() {
+  1040→        val tab = activeTab ?: return
+  1041→        tab.desktopSite = !tab.desktopSite
+  1042→        tab.webView?.settings?.userAgentString = if (tab.desktopSite) DESKTOP_UA else realUA
+  1043→        tab.webView?.reload()
+  1044→        Toast.makeText(
+  1045→            this,
+  1046→            if (tab.desktopSite) "Desktop site ON" else "Desktop site OFF (mobile)",
+  1047→            Toast.LENGTH_SHORT,
+  1048→        ).show()
+  1049→    }
+  1050→
+  1051→    private fun sharePage() {
+  1052→        val tab = activeTab ?: return
+  1053→        if (tab.isInternal) {
+  1054→            Toast.makeText(this, "Internal page share nahi hota", Toast.LENGTH_SHORT).show()
+  1055→            return
+  1056→        }
+  1057→        val i = Intent(Intent.ACTION_SEND).apply {
+  1058→            type = "text/plain"
+  1059→            putExtra(Intent.EXTRA_TEXT, tab.url)
+  1060→            putExtra(Intent.EXTRA_SUBJECT, tab.title)
+  1061→        }
+  1062→        runCatching { startActivity(Intent.createChooser(i, "Share karo")) }
+  1063→    }
+  1064→
+  1065→    // ---------------------------------------------------------------- modules (v1.2.0)
+  1066→
+  1067→    private fun shieldsEnabled(): Boolean =
+  1068→        !safeMode && LocalStore.getSetting(this, "shields", "on") != "off"
+  1069→
+  1070→    private fun antiFpEnabled(): Boolean =
+  1071→        !safeMode && LocalStore.getSetting(this, "antiFp", "on") != "off"
+  1072→
+  1073→    private fun toggleShields() {
+  1074→        val on = shieldsEnabled()
+  1075→        LocalStore.setSetting(this, "shields", if (on) "off" else "on")
+  1076→        Toast.makeText(this, if (on) "Shields OFF — ads dikhenge" else "Shields ON — ads/trackers block", Toast.LENGTH_SHORT).show()
+  1077→    }
+  1078→
+  1079→    private fun toggleAntiFp() {
+  1080→        val on = antiFpEnabled()
+  1081→        LocalStore.setSetting(this, "antiFp", if (on) "off" else "on")
+  1082→        Toast.makeText(
+  1083→            this,
+  1084→            if (on) "Anti-fingerprint OFF (naye tabs me)" else "Anti-fingerprint ON (naye tabs me)",
+  1085→            Toast.LENGTH_SHORT,
+  1086→        ).show()
+  1087→    }
+  1088→
+  1089→    /** Brave Shields badge — omnibox pill me blocked count */
+  1090→    private fun updateShieldBadge() {
+  1091→        val n = activeTab?.blockedCount ?: 0
+  1092→        runOnUiThread {
+  1093→            if (isFinishing) return@runOnUiThread
+  1094→            if (n > 0 && shieldsEnabled()) {
+  1095→                shieldBadge.text = "🛡 $n"
+  1096→                shieldBadge.visibility = View.VISIBLE
+  1097→            } else {
+  1098→                shieldBadge.visibility = View.GONE
+  1099→            }
+  1100→        }
+  1101→    }
+  1102→
+  1103→    private fun showShieldStats() {
+  1104→        val tab = activeTab
+  1105→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1106→            .setTitle("🛡 Orbit Shields")
+  1107→            .setMessage(
+  1108→                "Is page par ${tab?.blockedCount ?: 0} ads/trackers block hue.\n" +
+  1109→                    "Is session me total ${AdBlocker.totalBlocked} blocked.\n\n" +
+  1110→                    "Network-level blocking — matched requests server tak jaane se pehle drop hote hain.",
+  1111→            )
+  1112→            .setPositiveButton("OK", null)
+  1113→            .show()
+  1114→    }
+  1115→
+  1116→    /** DDG FIRE BUTTON — cookies + cache + storage + history, sab ek jhatke me */
+  1117→    private fun fireButton() {
+  1118→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1119→            .setTitle("🔥 Fire Button")
+  1120→            .setMessage("Cookies, cache, site data aur history — SAB clear ho jayega, sab tabs band. Pakka?")
+  1121→            .setPositiveButton("🔥 Jala do") { _, _ -> doFire() }
+  1122→            .setNegativeButton("Cancel", null)
+  1123→            .show()
+  1124→    }
+  1125→
+  1126→    private fun doFire() {
+  1127→        val root = findViewById<ViewGroup>(R.id.root)
+  1128→        val flash = View(this).apply { setBackgroundColor(0xFFFF5252.toInt()); alpha = 0f }
+  1129→        root.addView(flash, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+  1130→        flash.animate().alpha(0.85f).setDuration(180).withEndAction {
+  1131→            runCatching {
+  1132→                CookieManager.getInstance().removeAllCookies(null)
+  1133→                CookieManager.getInstance().flush()
+  1134→            }
+  1135→            runCatching { WebStorage.getInstance().deleteAllData() }
+  1136→            runCatching { WebViewDatabase.getInstance(this).clearFormData() }
+  1137→            runCatching { WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword() }
+  1138→            runCatching { LocalStore.clearHistory(this) }
+  1139→            AdBlocker.resetStats()
+  1140→            tabs.toList().forEach { tab ->
+  1141→                tab.webView?.clearCache(true)
+  1142→                closeTabInternal(tab)
+  1143→            }
+  1144→            tabs.clear()
+  1145→            flash.animate().alpha(0f).setDuration(320)
+  1146→                .withEndAction { (flash.parent as? ViewGroup)?.removeView(flash) }.start()
+  1147→            newTab()
+  1148→            Toast.makeText(this, "🔥 Sab data jala diya — fresh start", Toast.LENGTH_SHORT).show()
+  1149→        }.start()
+  1150→    }
+  1151→
+  1152→    /** OPERA MODULE lite — max live WebViews, baaki oldest ka WebView destroy
+  1153→     *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai) */
+  1154→    private fun evictExcessTabs() {
+  1155→        var live = tabs.filter { it !== activeTab && it.webView != null }
+  1156→        for (tab in live.sortedBy { it.lastActive }) {
+  1157→            if (live.size < MAX_LIVE_WEBVIEWS) break
+  1158→            runCatching {
+  1159→                captureThumb(tab)
+  1160→                tab.webView?.apply {
+  1161→                    stopLoading()
+  1162→                    (parent as? ViewGroup)?.removeView(this)
+  1163→                    destroy()
+  1164→                }
+  1165→            }
+  1166→            tab.webView = null
+  1167→            tab.evicted = true
+  1168→            live = tabs.filter { it !== activeTab && it.webView != null }
+  1169→        }
+  1170→    }
+  1171→
+  1172→    /** EDGE MODULE — har 30s check: 5 min se inactive WebViews freeze (onPause)
+  1173→     *  — JS/timers/battery sab ruk jata hai. Select karte hi onResume. */
+  1174→    private val sleepCheck = object : Runnable {
+  1175→        override fun run() {
+  1176→            // activity chali gayi to timer band — dead activity ko callbacks nahi
+  1177→            if (isFinishing || isDestroyed) return
+  1178→            val now = System.currentTimeMillis()
+  1179→            for (tab in tabs) {
+  1180→                if (tab === activeTab || tab.sleeping || tab.webView == null || tab.isInternal) continue
+  1181→                if (now - tab.lastActive > SLEEP_AFTER_MS) {
+  1182→                    runCatching { tab.webView?.onPause() }
+  1183→                    tab.sleeping = true
+  1184→                }
+  1185→            }
+  1186→            sleeper.postDelayed(this, 30_000)
+  1187→        }
+  1188→    }
+  1189→
+  1190→    /** CHROME MODULE — omnibox suggestions: history + bookmarks, ranking ke saath */
+  1191→    private fun showSuggestions(q: String) {
+  1192→        if (isFinishing || isDestroyed) return
+  1193→        val query = q.trim().lowercase()
+  1194→        if (suggestPopup?.isShowing == true) suggestPopup?.dismiss()
+  1195→        if (query.length < 2) return
+  1196→        val merged = LinkedHashMap<String, Pair<String, Boolean>>() // url -> (title, isBookmark)
+  1197→        runCatching {
+  1198→            LocalStore.listBookmarks(this).forEach { b ->
+  1199→                if (b.url.lowercase().contains(query) || b.title.lowercase().contains(query)) {
+  1200→                    merged[b.url] = Pair(b.title.ifBlank { b.url }, true)
+  1201→                }
+  1202→            }
+  1203→            LocalStore.listHistory(this).forEach { h ->
+  1204→                if (merged.size >= 6) return@forEach
+  1205→                if (h.url.lowercase().contains(query) || h.title.lowercase().contains(query)) {
+  1206→                    merged.putIfAbsent(h.url, Pair(h.title.ifBlank { h.url }, false))
+  1207→                }
+  1208→            }
+  1209→        }
+  1210→        if (merged.isEmpty()) return
+  1211→
+  1212→        val content = LinearLayout(this).apply {
+  1213→            orientation = LinearLayout.VERTICAL
+  1214→            background = getDrawable(R.drawable.menu_bg)
+  1215→            setPadding(dp(4), dp(4), dp(4), dp(4))
+  1216→        }
+  1217→        for ((url, meta) in merged.entries.take(6)) {
+  1218→            val row = LinearLayout(this).apply {
+  1219→                orientation = LinearLayout.HORIZONTAL
+  1220→                gravity = Gravity.CENTER_VERTICAL
+  1221→                setPadding(dp(14), dp(8), dp(14), dp(8))
+  1222→                background = getDrawable(R.drawable.btn_ripple)
+  1223→                isClickable = true
+  1224→            }
+  1225→            val iv = ImageView(this).apply {
+  1226→                setImageResource(if (meta.second) R.drawable.ic_star else R.drawable.ic_history)
+  1227→                setColorFilter(0xFF9AA0A6.toInt())
+  1228→                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+  1229→            }
+  1230→            val col = LinearLayout(this).apply {
+  1231→                orientation = LinearLayout.VERTICAL
+  1232→                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+  1233→                    marginStart = dp(14)
+  1234→                }
+  1235→            }
+  1236→            val t = TextView(this).apply {
+  1237→                text = meta.first
+  1238→                textSize = 14f
+  1239→                maxLines = 1
+  1240→                ellipsize = android.text.TextUtils.TruncateAt.END
+  1241→                setTextColor(0xFFE8EAED.toInt())
+  1242→            }
+  1243→            val u = TextView(this).apply {
+  1244→                text = url
+  1245→                textSize = 11f
+  1246→                maxLines = 1
+  1247→                ellipsize = android.text.TextUtils.TruncateAt.END
+  1248→                setTextColor(0xFF9AA0A6.toInt())
+  1249→            }
+  1250→            col.addView(t)
+  1251→            col.addView(u)
+  1252→            row.addView(iv)
+  1253→            row.addView(col)
+  1254→            row.setOnClickListener {
+  1255→                suggestPopup?.dismiss()
+  1256→                omnibox.clearFocus()
+  1257→                val tab = activeTab ?: return@setOnClickListener
+  1258→                navigate(tab.id, url)
+  1259→            }
+  1260→            content.addView(row)
+  1261→        }
+  1262→        suggestPopup = PopupWindow(content, maxOf(omnibox.width, dp(220)), ViewGroup.LayoutParams.WRAP_CONTENT, false).apply {
+  1263→            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+  1264→            elevation = dp(10).toFloat()
+  1265→            isOutsideTouchable = true
+  1266→            // window token dead hone par BadTokenException — runCatching me rakho
+  1267→            runCatching { showAsDropDown(omnibox, 0, dp(2)) }
+  1268→        }
+  1269→    }
+  1270→
+  1271→    /** AI search optional hai — menu se. Default search Google hai. */
+  1272→    private fun showAiSearchPrompt() {
+  1273→        val input = EditText(this)
+  1274→        input.hint = "AI se kya poochna hai?"
+  1275→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1276→            .setTitle("Orbit AI Search")
+  1277→            .setView(input)
+  1278→            .setPositiveButton("Search") { _, _ ->
+  1279→                val q = input.text.toString().trim()
+  1280→                val tab = activeTab ?: return@setPositiveButton
+  1281→                if (q.isNotEmpty()) navigate(tab.id, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+  1282→            }
+  1283→            .setNegativeButton("Cancel", null)
+  1284→            .show()
+  1285→    }
+  1286→
+  1287→    private fun showHistory() {
+  1288→        val items = LocalStore.listHistory(this)
+  1289→        if (items.isEmpty()) {
+  1290→            Toast.makeText(this, "History khali hai", Toast.LENGTH_SHORT).show()
+  1291→            return
+  1292→        }
+  1293→        val labels = items.map { it.title.ifBlank { it.url } }.toTypedArray()
+  1294→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1295→            .setTitle("History")
+  1296→            .setItems(labels) { _, which -> newTabWithUrl(items[which].url) }
+  1297→            .setNeutralButton("Clear") { _, _ ->
+  1298→                LocalStore.clearHistory(this)
+  1299→                Toast.makeText(this, "History clear", Toast.LENGTH_SHORT).show()
+  1300→            }
+  1301→            .setNegativeButton("Band karo", null)
+  1302→            .show()
+  1303→    }
+  1304→
+  1305→    private fun showBookmarks() {
+  1306→        val items = LocalStore.listBookmarks(this)
+  1307→        if (items.isEmpty()) {
+  1308→            Toast.makeText(this, "Koi bookmark nahi", Toast.LENGTH_SHORT).show()
+  1309→            return
+  1310→        }
+  1311→        val labels = items.map { it.title.ifBlank { it.url } }.toTypedArray()
+  1312→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1313→            .setTitle("Bookmarks")
+  1314→            .setItems(labels) { _, which -> newTabWithUrl(items[which].url) }
+  1315→            .setNegativeButton("Band karo", null)
+  1316→            .show()
+  1317→    }
+  1318→
+  1319→    private fun showSettings() {
+  1320→        val view = layoutInflater.inflate(R.layout.dialog_settings, null)
+  1321→        val backendInput = view.findViewById<EditText>(R.id.input_backend)
+  1322→        backendInput.setText(LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND))
+  1323→        val versionText = view.findViewById<TextView>(R.id.text_version)
+  1324→        versionText.text = "Orbit Browser v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
+  1325→            "Data 100% aapke device me — history, bookmarks, sab local."
+  1326→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1327→            .setTitle("Settings")
+  1328→            .setView(view)
+  1329→            .setPositiveButton("Save") { _, _ ->
+  1330→                LocalStore.setSetting(this, "aiBackend", backendInput.text.toString().trim())
+  1331→                Toast.makeText(this, "Settings save ho gayi", Toast.LENGTH_SHORT).show()
+  1332→            }
+  1333→            .setNegativeButton("Cancel", null)
+  1334→            .show()
+  1335→    }
+  1336→
+  1337→    private fun showAbout() {
+  1338→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1339→            .setTitle("Orbit Browser")
+  1340→            .setMessage(
+  1341→                "Orbit — Fast. Private. Aapka.\n\n" +
+  1342→                    "• Real browser: Chromium engine, Google services built-in\n" +
+  1343→                    "• Chrome jaisa UI: tab switcher, omnibox, find, desktop site\n" +
+  1344→                    "• Aapka data device par hi — koi server nahi\n" +
+  1345→                    "• Incognito tab — history me kuch nahi\n" +
+  1346→                    "• OTA updates: background download, ek tap install\n\n" +
+  1347→                    "v${BuildConfig.VERSION_NAME}",
+  1348→            )
+  1349→            .setPositiveButton("OK", null)
+  1350→            .show()
+  1351→    }
+  1352→
+  1353→    /**
+  1354→     * Fully silent auto-update — launch par bhi, menu check par bhi same flow:
+  1355→     * update mila → background download (Orbit ke cache me) → sirf INSTALL wala
+  1356→     * dialog. Koi "Update karo?" puchha-woochha nahi, koi Chrome/Downloads nahi.
+  1357→     * v1.2.1: downloaded APK pehle se validated + signature pre-checked aata hai
+  1358→     * (UpdateChecker me) — isliye yahan kabhi adhoora APK ya doomed install nahi
+  1359→     * pahunchta. Har dialog me "Chrome me APK kholo" escape hatch bhi hai.
+  1360→     */
+  1361→    private fun runAutoUpdate(manual: Boolean) {
+  1362→        UpdateChecker.autoUpdate(this, manual) { info, apk, compatible ->
+  1363→            runOnUiThread {
+  1364→                if (isFinishing) return@runOnUiThread
+  1365→                if (!compatible) {
+  1366→                    // signing mismatch — install attempt bekaar hai, seedha migration
+  1367→                    showMigrationDialog(info, apk)
+  1368→                    return@runOnUiThread
+  1369→                }
+  1370→                AlertDialog.Builder(this, R.style.OrbitDialog)
+  1371→                    .setTitle("Orbit ${info.versionName} ready hai")
+  1372→                    .setMessage("Install dabao — purana version replace ho jayega (aapka data safe rahega).")
+  1373→                    .setPositiveButton("Install") { _, _ ->
+  1374→                        UpdateChecker.installWithStatus(this, apk)
+  1375→                    }
+  1376→                    .setNeutralButton("Chrome me APK kholo") { _, _ ->
+  1377→                        UpdateChecker.openApkInBrowser(this, info.apkUrl)
+  1378→                    }
+  1379→                    .setNegativeButton("Baad me", null)
+  1380→                    .show()
+  1381→            }
+  1382→        }
+  1383→    }
+  1384→
+  1385→    /**
+  1386→     * Signature mismatch (purana version alag key se bana) — Android iske upar
+  1387→     * naya version install nahi hone dega. One-time migration: APK Downloads me
+  1388→     * save (uninstall se cache mar jata hai, Downloads nahi) → uninstall →
+  1389→     * Downloads me APK kholo. Iske baad ke saare updates khud install honge.
+  1390→     */
+  1391→    private fun showMigrationDialog(info: UpdateChecker.UpdateInfo, apk: File) {
+  1392→        AlertDialog.Builder(this, R.style.OrbitDialog)
+  1393→            .setTitle("Orbit ${info.versionName} — ek baar migration chahiye")
+  1394→            .setMessage(
+  1395→                "Purana Orbit alag build key se bana hai, isliye Android naya version uske UPAR " +
+  1396→                    "install nahi hone dega (isliye 'Install' ke baad kuch nahi hota tha).\n\n" +
+  1397→                    "1. Neeche 'APK Downloads me save karo' dabao\n" +
+  1398→                    "2. 'Purana uninstall karo' dabao\n" +
+  1399→                    "3. Files/Downloads app me saved APK kholke install karo\n\n" +
+  1400→                    "Ye SIRF IS EK BAAR hai — iske baad saare updates khud install honge.",
+  1401→            )
+  1402→            .setPositiveButton("APK Downloads me save karo") { _, _ ->
+  1403→                Thread {
+  1404→                    val path = UpdateChecker.saveApkToDownloads(this, apk)
+  1405→                    runOnUiThread {
+  1406→                        if (isFinishing) return@runOnUiThread
+  1407→                        if (path == null) {
+  1408→                            Toast.makeText(
+  1409→                                this,
+  1410→                                "Save nahi hua — Chrome me APK seedha download karo: ${info.apkUrl}",
+  1411→                                Toast.LENGTH_LONG,
+  1412→                            ).show()
+  1413→                        } else {
+  1414→                            AlertDialog.Builder(this, R.style.OrbitDialog)
+  1415→                                .setTitle("APK save ho gaya")
+  1416→                                .setMessage("$path\n\nAb purana Orbit uninstall karein?")
+  1417→                                .setPositiveButton("Haan, uninstall karo") { _, _ ->
+  1418→                                    UpdateChecker.uninstallSelf(this)
+  1419→                                }
+  1420→                                .setNegativeButton("Baad me", null)
+  1421→                                .show()
+  1422→                        }
+  1423→                    }
+  1424→                }.start()
+  1425→            }
+  1426→            .setNeutralButton("Chrome me APK kholo") { _, _ ->
+  1427→                UpdateChecker.openApkInBrowser(this, info.apkUrl)
+  1428→            }
+  1429→            .setNegativeButton("Baad me", null)
+  1430→            .show()
+  1431→    }
+  1432→
+  1433→    // ---------------------------------------------------------------- helpers
+  1434→
+  1435→    private fun assetHtml(name: String): String =
+  1436→        runCatching { assets.open(name).bufferedReader().use { it.readText() } }.getOrDefault(
+  1437→            "<html><body style='background:#000;color:#fff'>Asset missing: $name</body></html>",
+  1438→        )
+  1439→
+  1440→    private fun escapeHtml(s: String): String =
+  1441→        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+  1442→
+  1443→    private fun escapeJs(s: String): String =
+  1444→        "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "") + "\""
+  1445→
+  1446→    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+  1447→
+  1448→    companion object {
+  1449→        const val NEWTAB = "orbit://newtab"
+  1450→        const val GOOGLE_SEARCH = "https://www.google.com/search?q="
+  1451→        const val DEFAULT_AI_BACKEND = "https://orbit-browser.vercel.app"
+  1452→
+  1453→        /** Desktop site toggle ke liye — modern desktop Chrome UA */
+  1454→        const val DESKTOP_UA =
+  1455→            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+  1456→                "Chrome/131.0.0.0 Safari/537.36"
+  1457→
+  1458→        // OPERA MODULE — isse zyada live WebViews nahi (RAM limit)
+  1459→        const val MAX_LIVE_WEBVIEWS = 6
+  1460→
+  1461→        /** SURVIVAL MODE — emergency screen ke "Safe mode" button se ON hota hai.
+  1462→         *  Shields/anti-fp/custom-UA sab OFF — pure vanilla WebView. Agar safe
+  1463→         *  mode chalta hai par normal nahi, to wajah feature-module me hai. */
+  1464→        var safeMode = false
+  1465→
+  1466→        // EDGE MODULE — 5 min inactive = WebView freeze (battery bachao)
+  1467→        const val SLEEP_AFTER_MS = 5 * 60_000L
+  1468→
+  1469→        /** FIREFOX MODULE — anti-fingerprinting preload (document-start).
+  1470→         *  Canvas toDataURL/getImageData me 1-bit random noise + hardware spoof —
+  1471→         *  fingerprint hamesha ALAG aata hai, sites pehchan nahi paati. */
+  1472→        const val FINGERPRINT_SHIELD_JS =
+  1473→            "(function(){try{" +
+  1474→                "var n=function(c){try{var x=c.getContext('2d');if(!x)return;" +
+  1475→                "var w=Math.min(c.width||1,16),h=Math.min(c.height||1,16);if(w<1||h<1)return;" +
+  1476→                "var d=x.getImageData(0,0,w,h);for(var i=0;i<d.data.length;i+=4){d.data[i]=d.data[i]^1;}" +
+  1477→                "x.putImageData(d,0,0);}catch(e){}};" +
+  1478→                "var t=HTMLCanvasElement.prototype.toDataURL;" +
+  1479→                "HTMLCanvasElement.prototype.toDataURL=function(){n(this);return t.apply(this,arguments);};" +
+  1480→                "var g=CanvasRenderingContext2D.prototype.getImageData;" +
+  1481→                "CanvasRenderingContext2D.prototype.getImageData=function(){var r=g.apply(this,arguments);" +
+  1482→                "try{for(var i=0;i<r.data.length;i+=997){r.data[i]=r.data[i]^1;}}catch(e){}return r;};" +
+  1483→                "Object.defineProperty(navigator,'hardwareConcurrency',{get:function(){return 8;}});" +
+  1484→                "Object.defineProperty(navigator,'deviceMemory',{get:function(){return 8;}});" +
+  1485→                "}catch(e){}})();"
+  1486→    }
+  1487→}
+  1488→
