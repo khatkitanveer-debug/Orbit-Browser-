@@ -22,6 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # SAFETY GATE — findViewById cast audit. v1.1..v1.2.3 ka 4-release launch-crash
+      # (FrameLayout ko ImageButton me cast) aisi har galti build se PEHLE pakadta hai.
+      # Fail = CI red, APK release nahi hoga.
+      - name: Layout-cast audit (findViewById safety)
+        run: python3 tools/layout_audit.py
+
       - name: Java 17 setup
         uses: actions/setup-java@v4
         with:

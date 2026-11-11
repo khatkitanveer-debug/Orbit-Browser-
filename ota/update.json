@@ -1,7 +1,7 @@
 {
-  "versionCode": 12,
-  "versionName": "1.2.3",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.3/orbit-browser-1.2.3.apk",
-  "notes": "SURVIVAL MODE: app ab kabhi andha crash nahi karegi — crash hote hi khud report screen dikhegi (wajah + device info + WebView version). 'Report copy karo' dabao aur chat me paste kar do = exact fix. Safe mode button bhi hai — bina extras app khulti hai. Pichhle 4 updates ke launch-crash ki ab pakki janch hogi.",
+  "versionCode": 13,
+  "versionName": "1.2.4",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.2.4/orbit-browser-1.2.4.apk",
+  "notes": "LAUNCH-CRASH PAKKA FIX: tumhari v1.2.3 crash-report ne exact wajah batayi — toolbar ka tab-button (square + number) XML me FrameLayout hai, code use ImageButton me cast kar raha tha = ClassCastException. Isi liye app pichhle 4 updates (v1.1 se) har device par launch par crash thi. Ab fixed + naya safety: CI me layout-audit gate, aisi galti ab build se pehle pakdi jayegi.",
   "minVersionCode": 1
 }

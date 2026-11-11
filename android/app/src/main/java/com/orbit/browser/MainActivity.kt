@@ -212,7 +212,10 @@ class MainActivity : Activity() {
             val wv = activeTab?.webView ?: return@setOnClickListener
             if (wv.progress in 1..99) wv.stopLoading() else wv.reload()
         }
-        findViewById<ImageButton>(R.id.btn_tabs).setOnClickListener { showTabSwitcher() }
+        // btn_tabs XML me FrameLayout hai (Chrome tab-count button — square + number
+        // andar). ImageButton cast yahin ClassCastException deta tha = 4 releases ka
+        // launch-crash (v1.1 se). Click-only target, isliye View cast — kabhi nahi tootega.
+        findViewById<View>(R.id.btn_tabs).setOnClickListener { showTabSwitcher() }
         findViewById<ImageButton>(R.id.btn_menu).setOnClickListener { showMenu() }
 
         // Chrome pull-to-refresh
