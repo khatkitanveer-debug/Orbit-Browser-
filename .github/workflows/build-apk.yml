@@ -9,8 +9,8 @@ name: Build Orbit APK
 on:
   workflow_dispatch:
   push:
-    paths:
-      - ".github/workflows/build-apk.yml"
+    branches:
+      - main
 
 jobs:
   build-apk:
@@ -50,7 +50,21 @@ jobs:
         working-directory: capacitor/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      # Logs sign-in ke peeche hain — failure ka tail PUBLIC job summary me
+      # daalte hain taaki run page se hi root cause padh saken.
+      - name: Failure diagnostics -> job summary (public)
+        if: failure()
+        run: |
+          {
+            echo "## Gradle failure diagnostics"
+            echo '```text'
+            grep -nE "FAILURE|What went wrong|Caused by|> Task.*FAILED|error:|Error:|Exception|\* Where|BUILD FAILED" /tmp/gradle.log | head -40 || true
+            echo "--- tail 50 ---"
+            tail -50 /tmp/gradle.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
