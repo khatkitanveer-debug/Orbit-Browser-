@@ -62,6 +62,7 @@ import androidx.webkit.WebViewCompat
 import com.orbit.browser.lens.LensEngine
 import com.orbit.browser.media.PlaybackCoordinator
 import com.orbit.browser.media.PlaybackSink
+import com.orbit.browser.render.BackgroundWebView
 import com.orbit.browser.render.MediaWatchBootstrap
 import com.orbit.browser.render.ViewportBootstrap
 import com.orbit.browser.sync.OrbitSync
@@ -520,16 +521,32 @@ class MainActivity : Activity() {
                 if (!tab.isInternal && tab.url != NEWTAB) tab.webView?.loadUrl(tab.url)
             }
         }
-        container.removeAllViews()
+        // MODULE 3 v1.3.3 FIX — media chala raha WebView ko container se DETACH
+        // MAT karo! WebView detach = Chromium "page hidden" = audio/video pause.
+        // (Pehle removeAllViews() owner ko bhi nikaal deta tha — tab switch par
+        // YouTube ruk jata tha.) Ab owner attached rehta hai, active WebView
+        // uske UPAR add hota hai; wapas switch par owner phir top par aa jata hai.
+        val keepOwner = tabs.firstOrNull { it !== tab && PlaybackCoordinator.isMediaOwner(it.webView) }
+            ?.webView?.takeIf { it.parent === container }
+        for (i in container.childCount - 1 downTo 0) {
+            val child = container.getChildAt(i)
+            if (child !== keepOwner && child !== tab.webView) container.removeView(child)
+        }
         tab.webView?.let {
             it.visibility = View.VISIBLE
-            container.addView(
-                it,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                ),
-            )
+            if (it.parent === container) {
+                // already attached (owner wapas switch) — detach/reattach MAT karo,
+                // warna Chromium video ko pause kar dega
+                it.bringToFront()
+            } else {
+                container.addView(
+                    it,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
             // EDGE MODULE — sleeping tab ko jagao
             if (tab.sleeping) {
                 it.onResume()
@@ -607,7 +624,11 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun buildWebView(tab: Tab): WebView {
-        val wv = WebView(this)
+        // MODULE 3 v1.3.3 — BackgroundWebView: Chromium ko screen-lock/app-
+        // background par bhi VISIBLE batata hai. Plain WebView window visibility
+        // GONE leke media pipeline suspend kar deta tha (asli pause-yahan-hota-hai
+        // wala fix — dekho render/BackgroundWebView.kt).
+        val wv = BackgroundWebView(this)
         wv.setBackgroundColor(0xFF202124.toInt())
         wv.settings.javaScriptEnabled = true
         wv.settings.domStorageEnabled = true
