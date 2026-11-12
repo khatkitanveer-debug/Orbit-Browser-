@@ -1,7 +1,7 @@
 {
-  "versionCode": 18,
-  "versionName": "1.3.3",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.3/orbit-browser-1.3.3.apk",
-  "notes": "v1.3.3 — ASLI pipeline-level fix: Chromium ko screen-lock par bhi VISIBLE batane wala BackgroundWebView engine (pehle wale JS fixes ke neeche ki problem thi). Tab switch par bhi media ab nahi rukega. Naye Music shortcuts: JioSaavn + YT Music — free unlimited Bollywood music, screen lock hone par bhi chalega. versionCode 18",
+  "versionCode": 19,
+  "versionName": "1.3.4",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.4/orbit-browser-1.3.4.apk",
+  "notes": "v1.3.4 — YouTube Ad Shield: YouTube ki ads ab Orbit me block (Brave/uBlock jaisa legal client-side ad-blocking — content/DRM touch nahi hota). Video ads, masthead/feed ads, overlay ads — sab filtered + skip button turant. Screen-lock background play + Music shortcuts (JioSaavn/YT Music) pehle wale version se hi hain. versionCode 19",
   "minVersionCode": 1
 }
