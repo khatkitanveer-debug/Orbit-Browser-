@@ -773,12 +773,13 @@ class MainActivity : Activity() {
             val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
                 .getOrDefault("orbit-download")
             val ok = runCatching {
+                // NOTE: allowScanningByMediaScanner() yahan chain me nahi — wo void
+                // return karta hai (req Unit ban jata tha = v1.3.6 CI compile fail)
                 val req = DownloadManager.Request(Uri.parse(url))
                     .setTitle(name)
                     .setDescription("Orbit Browser download")
                     .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-                    .allowScanningByMediaScanner()
                 val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 dm.enqueue(req)
             }.isSuccess
