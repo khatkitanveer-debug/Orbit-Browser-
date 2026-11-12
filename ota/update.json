@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "1.4.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.0/orbit-browser-1.4.0.apk",
-  "notes": "v1.4.0 — Chrome-parity UI overhaul: Brave-style boxed shortcuts (bigger icons, long-press x to remove), Chrome-style 3-dot menu with real switches, omnibox bookmark star, 1:1 tab previews with x, full History page (day groups + clear browsing data), full Bookmarks page, full Settings page (Basics/Advanced) with on/off toggles everywhere, premium dark dialogs, English-only UI, Sign in with Google, and the new Orbit VPN: free community relays (Tor-style browser routing) with an on/off switch. versionCode 24",
+  "versionCode": 25,
+  "versionName": "1.4.3",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.3/orbit-browser-1.4.3.apk",
+  "notes": "v1.4.3 — 3 fixes: (1) Blue loading line ki jagah ab Orbit ring loader — arc + satellite dot page load ke saath advance hota hai (lock icon load ke waqt hide), (2) keyboard search ke baad ab khud band ho jata hai (omnibox, newtab search, suggestions — sab paths), (3) Home button omnibox ke bagal me — ek tap me Orbit home. versionCode 25",
   "minVersionCode": 1
 }
