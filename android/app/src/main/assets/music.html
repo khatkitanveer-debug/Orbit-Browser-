@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Orbit Music</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #1a1a1d; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+               -webkit-tap-highlight-color: transparent; }
+  body { padding-bottom: 86px; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 18px 16px 8px; }
+
+  .hd { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .bk { width: 38px; height: 38px; border-radius: 50%; border: 0; background: #303134;
+        display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .bk svg { width: 20px; height: 20px; }
+  .hd-t { flex: 1; min-width: 0; }
+  .hd-t h1 { font-size: 20px; color: #e8eaed; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .hd-t h1 svg { width: 22px; height: 22px; }
+  .hd-t p { font-size: 12px; color: #9aa0a6; margin-top: 2px; }
+
+  .tabs { display: flex; gap: 8px; margin: 16px 0 12px; }
+  .tab { flex: 1; height: 40px; border-radius: 20px; border: 1px solid #5f6368; background: transparent;
+         color: #e8eaed; font-size: 14px; font-family: inherit; cursor: pointer; font-weight: 600; }
+  .tab.on { background: #8ab4f8; border-color: #8ab4f8; color: #202124; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .chip { height: 30px; padding: 0 13px; border-radius: 15px; background: #303134; border: 0;
+          color: #e8eaed; font-size: 12.5px; font-family: inherit; cursor: pointer; }
+  .chip.on { background: #1e3a5f; color: #8ab4f8; font-weight: 600; }
+  .chip:active { background: #3c4043; }
+
+  .row { display: flex; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 12px;
+         cursor: pointer; }
+  .row:active, .row.playing { background: #303134; }
+  .ava { width: 46px; height: 46px; border-radius: 12px; background: #303134; color: #8ab4f8;
+         font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+         flex-shrink: 0; overflow: hidden; }
+  .ava img { width: 100%; height: 100%; object-fit: cover; }
+  .row .meta { flex: 1; min-width: 0; }
+  .row .mt { display: block; font-size: 14px; color: #e8eaed; white-space: nowrap; overflow: hidden;
+             text-overflow: ellipsis; }
+  .row .ms { display: block; font-size: 11.5px; color: #9aa0a6; margin-top: 3px; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  .row .live { font-size: 10px; color: #ea4335; font-weight: 700; letter-spacing: .5px; }
+
+  .status { padding: 30px 8px; text-align: center; color: #9aa0a6; font-size: 13.5px; line-height: 1.6; }
+  .status button { margin-top: 12px; height: 36px; padding: 0 20px; border-radius: 18px; border: 0;
+                   background: #8ab4f8; color: #202124; font-weight: 600; font-family: inherit; font-size: 13px;
+                   cursor: pointer; }
+  .spin { width: 26px; height: 26px; border: 3px solid #3c4043; border-top-color: #8ab4f8;
+          border-radius: 50%; margin: 0 auto 12px; animation: sp 0.9s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  .src-note { font-size: 11px; color: #5f6368; text-align: center; padding: 18px 8px 10px; line-height: 1.6; }
+
+  /* mini player — fixed bottom */
+  .player { position: fixed; left: 0; right: 0; bottom: 0; background: #202124; border-top: 1px solid #3c4043;
+            display: none; align-items: center; gap: 12px; padding: 10px 14px;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 20; }
+  .player.on { display: flex; }
+  .eq { display: flex; align-items: flex-end; gap: 2px; height: 20px; flex-shrink: 0; }
+  .eq i { width: 3px; background: #8ab4f8; border-radius: 2px; height: 6px; }
+  .player.playing .eq i { animation: eq 0.7s ease-in-out infinite; }
+  .player.playing .eq i:nth-child(2) { animation-delay: .15s; }
+  .player.playing .eq i:nth-child(3) { animation-delay: .3s; }
+  @keyframes eq { 0%,100% { height: 6px; } 50% { height: 19px; } }
+  .pinfo { flex: 1; min-width: 0; }
+  .pinfo .pt { font-size: 13.5px; color: #e8eaed; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pinfo .ps { font-size: 11px; color: #9aa0a6; margin-top: 2px; white-space: nowrap; overflow: hidden;
+               text-overflow: ellipsis; }
+  .pbtn { width: 42px; height: 42px; border-radius: 50%; border: 0; background: #8ab4f8; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pbtn svg { width: 20px; height: 20px; }
+
+  #toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: #3c4043;
+           color: #e8eaed; font-size: 12.5px; padding: 9px 16px; border-radius: 20px; display: none;
+           z-index: 30; max-width: 86%; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <button class="bk" onclick="goBack()" aria-label="Wapas">
+      <svg viewBox="0 0 24 24"><path d="M15.5 5l-7 7 7 7" stroke="#e8eaed" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="hd-t">
+      <h1>
+        <svg viewBox="0 0 28 28"><circle cx="14" cy="14" r="13" fill="#1e3a5f"/><path d="M11.4 19.3V9.6l7.2-1.7v8.2" stroke="#8ab4f8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.7" cy="19.4" r="1.9" fill="#8ab4f8"/><circle cx="16.9" cy="16.2" r="1.9" fill="#8ab4f8"/></svg>
+        Orbit Music
+      </h1>
+      <p>Free &middot; Unlimited &middot; Legal &middot; lock-screen par bhi chalta hai</p>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" id="tabRadio" type="button">Radio (Live)</button>
+    <button class="tab" id="tabSongs" type="button">Songs (Trending)</button>
+  </div>
+
+  <div class="chips" id="chips"></div>
+  <div id="list"></div>
+  <div class="src-note" id="srcNote">
+    Radio: radio-browser.info open-source database (GitHub: radio-browser/radio-browser)<br>
+    Songs: Audius — artists ka apna free music platform (GitHub: AudiusProject/audius-protocol)
+  </div>
+</div>
+
+<div class="player" id="player">
+  <div class="eq"><i></i><i></i><i></i></div>
+  <div class="pinfo">
+    <div class="pt" id="pt">&nbsp;</div>
+    <div class="ps" id="ps">&nbsp;</div>
+  </div>
+  <button class="pbtn" id="pbtn" type="button" aria-label="Play/Pause"></button>
+</div>
+
+<div id="toast"></div>
+<audio id="au"></audio>
+
+<script>
+(function () {
+  var au = document.getElementById("au");
+  var list = document.getElementById("list");
+  var chipsBox = document.getElementById("chips");
+  var player = document.getElementById("player");
+  var pt = document.getElementById("pt"), ps = document.getElementById("ps");
+  var pbtn = document.getElementById("pbtn");
+  var toast = document.getElementById("toast");
+  var toastTimer = null;
+
+  var PLAY_SVG = '<svg viewBox="0 0 24 24"><path d="M8 5.5l11 6.5-11 6.5z" fill="#202124"/></svg>';
+  var PAUSE_SVG = '<svg viewBox="0 0 24 24"><rect x="7" y="5.5" width="3.6" height="13" rx="1" fill="#202124"/><rect x="13.4" y="5.5" width="3.6" height="13" rx="1" fill="#202124"/></svg>';
+
+  var mode = "radio";
+  var stations = [], songs = [];
+  var curGenre = 0;
+
+  var MIRRORS = ["https://de1.api.radio-browser.info", "https://nl1.api.radio-browser.info", "https://at1.api.radio-browser.info"];
+  var GENRES = [["Bollywood", "bollywood"], ["Hindi", "hindi"], ["Punjabi", "punjabi"], ["Ghazal", "ghazal"],
+                ["Bhakti", "devotional"], ["Tamil", "tamil"], ["Telugu", "telugu"], ["Lofi", "lofi"], ["English", "pop"]];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.style.display = "none"; }, 3200);
+  }
+  function statusLoading() {
+    list.innerHTML = '<div class="status"><div class="spin"></div>Load ho raha hai&hellip;</div>';
+  }
+  function statusError(msg, retryFn) {
+    list.innerHTML = '<div class="status">' + esc(msg) + '<br><button type="button" id="retry">Dobara try karo</button></div>';
+    document.getElementById("retry").addEventListener("click", retryFn);
+  }
+  function fmtCount(n) {
+    n = Number(n) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+    return String(n);
+  }
+  function goBack() {
+    try { history.back(); } catch (e) {}
+  }
+
+  // ---------- mini player ----------
+  function setPlayer(title, sub, playing) {
+    pt.textContent = title || "";
+    ps.textContent = sub || "";
+    player.classList.add("on");
+    player.classList.toggle("playing", !!playing);
+    pbtn.innerHTML = playing ? PAUSE_SVG : PLAY_SVG;
+  }
+  pbtn.addEventListener("click", function () {
+    if (au.paused) { var p = au.play(); if (p && p.catch) p.catch(function () { showToast("Play nahi hua — dobara tap karo"); }); }
+    else au.pause();
+  });
+  au.addEventListener("play", function () {
+    player.classList.add("playing");
+    pbtn.innerHTML = PAUSE_SVG;
+    markRows();
+  });
+  au.addEventListener("pause", function () {
+    player.classList.remove("playing");
+    pbtn.innerHTML = PLAY_SVG;
+    markRows();
+  });
+  au.addEventListener("error", function () {
+    if (!au.src) return;
+    player.classList.remove("playing");
+    showToast("Stream nahi chala — doosra station/song try karo");
+  });
+  function markRows() {
+    var rows = list.querySelectorAll(".row");
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle("playing", rows[i].getAttribute("data-src") === au.src);
+    }
+  }
+
+  function play(src, title, sub) {
+    if (!src) return;
+    au.src = src;
+    var p = au.play();
+    if (p && p.catch) p.catch(function () { showToast("Play nahi hua — doosra try karo"); });
+    setPlayer(title, sub, true);
+  }
+
+  // ---------- RADIO (radio-browser.info — open-source, GitHub repo) ----------
+  function renderChips() {
+    chipsBox.innerHTML = "";
+    for (var i = 0; i < GENRES.length; i++) {
+      (function (gi) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip" + (gi === curGenre ? " on" : "");
+        b.textContent = GENRES[gi][0];
+        b.addEventListener("click", function () {
+          curGenre = gi;
+          renderChips();
+          loadStations();
+        });
+        chipsBox.appendChild(b);
+      })(i);
+    }
+  }
+
+  function loadStations() {
+    statusLoading();
+    var tag = GENRES[curGenre][1];
+    var mi = 0;
+    function tryMirror() {
+      if (mi >= MIRRORS.length) {
+        statusError("Radio list load nahi hui — net check karo", loadStations);
+        return;
+      }
+      var url = MIRRORS[mi++] + "/json/stations/search?limit=40&hidebroken=true&order=votes&reverse=true&tagList=" + encodeURIComponent(tag);
+      fetch(url).then(function (r) { if (!r.ok) throw new Error("http " + r.status); return r.json(); })
+        .then(function (data) {
+          // sirf https streams — WebView mixed-content safe
+          stations = (data || []).filter(function (s) { return s && s.url_resolved && String(s.url_resolved).indexOf("https://") === 0; });
+          if (!stations.length) throw new Error("empty");
+          renderStations();
+        })
+        .catch(tryMirror);
+    }
+    tryMirror();
+  }
+
+  function renderStations() {
+    list.innerHTML = "";
+    for (var i = 0; i < stations.length; i++) {
+      (function (st) {
+        var row = document.createElement("div");
+        row.className = "row";
+        row.setAttribute("data-src", st.url_resolved);
+        var ava = document.createElement("div"); ava.className = "ava";
+        ava.textContent = (st.name || "?").trim().charAt(0).toUpperCase();
+        var meta = document.createElement("div"); meta.className = "meta";
+        var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = st.name || "Radio";
+        var ms = document.createElement("span"); ms.className = "ms";
+        ms.textContent = (st.country || "") + (st.bitrate ? " \u00B7 " + st.bitrate + " kbps" : "") + " \u00B7 " + fmtCount(st.votes) + " votes";
+        meta.appendChild(mt); meta.appendChild(ms);
+        var live = document.createElement("span"); live.className = "live"; live.textContent = "LIVE";
+        row.appendChild(ava); row.appendChild(meta); row.appendChild(live);
+        row.addEventListener("click", function () {
+          play(st.url_resolved, st.name, "Live radio \u00B7 " + (st.country || GENRES[curGenre][0]));
+        });
+        list.appendChild(row);
+      })(stations[i]);
+    }
+    markRows();
+  }
+
+  // ---------- SONGS (Audius trending — free, legal, artist-uploaded) ----------
+  var audiusHost = "";
+
+  function renderSongs() {
+    list.innerHTML = "";
+    for (var i = 0; i < songs.length; i++) {
+      (function (t) {
+        var row = document.createElement("div");
+        row.className = "row";
+        var streamUrl = audiusHost + "/v1/tracks/" + t.id + "/stream?app_name=OrbitBrowser";
+        row.setAttribute("data-src", streamUrl);
+        var ava = document.createElement("div"); ava.className = "ava";
+        var art = (t.artwork && (t.artwork["150x150"] || t.artwork["480x480"])) || "";
+        if (art) {
+          var img = document.createElement("img"); img.alt = "";
+          img.src = art;
+          img.addEventListener("error", function () { img.remove(); ava.textContent = (t.title || "?").charAt(0).toUpperCase(); });
+          ava.appendChild(img);
+        } else {
+          ava.textContent = (t.title || "?").charAt(0).toUpperCase();
+        }
+        var meta = document.createElement("div"); meta.className = "meta";
+        var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = t.title;
+        var ms = document.createElement("span"); ms.className = "ms";
+        var dur = Math.round((t.duration || 0) / 60);
+        ms.textContent = (t.user && t.user.name ? t.user.name : "Artist") + " \u00B7 " + fmtCount(t.play_count) + " plays" + (dur ? " \u00B7 " + dur + " min" : "");
+        meta.appendChild(mt); meta.appendChild(ms);
+        row.appendChild(ava); row.appendChild(meta);
+        row.addEventListener("click", function () {
+          play(streamUrl, t.title, (t.user && t.user.name ? t.user.name : "Audius") + " \u00B7 Audius free stream");
+        });
+        list.appendChild(row);
+      })(songs[i]);
+    }
+    markRows();
+  }
+
+  function loadSongs() {
+    statusLoading();
+    fetch("https://api.audius.co").then(function (r) { return r.json(); }).then(function (cfg) {
+      audiusHost = (cfg && cfg.data && cfg.data[0]) || "";
+      if (!audiusHost) throw new Error("no host");
+      return fetch(audiusHost + "/v1/tracks/trending?app_name=OrbitBrowser&limit=40").then(function (r) { return r.json(); });
+    }).then(function (data) {
+      songs = (data && data.data) || [];
+      songs = songs.filter(function (t) { return t && t.id && t.title; });
+      if (!songs.length) throw new Error("empty");
+      renderSongs();
+    }).catch(function () {
+      statusError("Songs load nahi hue — Audius server busy hai", loadSongs);
+    });
+  }
+
+  // ---------- tabs ----------
+  var tabRadio = document.getElementById("tabRadio"), tabSongs = document.getElementById("tabSongs");
+  function setMode(m) {
+    mode = m;
+    tabRadio.classList.toggle("on", m === "radio");
+    tabSongs.classList.toggle("on", m === "songs");
+    chipsBox.style.display = (m === "radio") ? "flex" : "none";
+    if (m === "radio") loadStations(); else loadSongs();
+  }
+  tabRadio.addEventListener("click", function () { setMode("radio"); });
+  tabSongs.addEventListener("click", function () { setMode("songs"); });
+
+  renderChips();
+  loadStations();
+})();
+</script>
+</body>
+</html>

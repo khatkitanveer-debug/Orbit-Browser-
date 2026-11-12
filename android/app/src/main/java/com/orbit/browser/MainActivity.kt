@@ -110,6 +110,7 @@ class MainActivity : Activity() {
     private lateinit var omnibox: EditText
     private lateinit var omniIcon: ImageView
     private lateinit var btnReload: ImageButton
+    private lateinit var btnClear: ImageButton
     private lateinit var progress: ProgressBar
     private lateinit var pullRefresh: SwipeRefreshLayout
     private lateinit var tabCount: TextView
@@ -213,10 +214,14 @@ class MainActivity : Activity() {
         // Brave Shields badge click — is page ke block stats
         shieldBadge.setOnClickListener { showShieldStats() }
 
-        // CHROME MODULE — omnibox typing par history/bookmark suggestions
+        // CHROME MODULE — omnibox typing par history/bookmark suggestions.
+        // v1.3.5 FIX: typing ke waqt X-button bhi toggle (icons-mix bug ka hissa)
         omnibox.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {
-                if (omnibox.hasFocus()) showSuggestions(s?.toString() ?: "")
+                if (omnibox.hasFocus()) {
+                    showSuggestions(s?.toString() ?: "")
+                    btnClear.visibility = if (s.isNullOrBlank()) View.GONE else View.VISIBLE
+                }
             }
 
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -224,6 +229,7 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
         omnibox.setOnFocusChangeListener { _, hasFocus ->
+            applyOmniFocus(hasFocus)
             if (!hasFocus) suggestPopup?.dismiss()
         }
 
@@ -234,6 +240,13 @@ class MainActivity : Activity() {
             } else false
         }
         omnibox.setSelectAllOnFocus(true)
+
+        // v1.3.5 — omnibox clear (X): focus-mode me reload ki jagah, tap par text saaf
+        btnClear = findViewById(R.id.btn_clear)
+        btnClear.setOnClickListener {
+            omnibox.setText("")
+            btnClear.visibility = View.GONE
+        }
 
         btnReload.setOnClickListener {
             val wv = activeTab?.webView ?: return@setOnClickListener
@@ -803,11 +816,15 @@ class MainActivity : Activity() {
         tab.title = when {
             url == NEWTAB -> "New Tab"
             url.startsWith("orbit://search") -> "Orbit AI Search"
+            url == "orbit://music" -> "Orbit Music"
             else -> "Orbit"
         }
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         when {
             url == NEWTAB -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+            // v1.3.5 — FREE MUSIC LIBRARY: GitHub-repo powered (radio-browser.info +
+            // Audius) built-in page. Background play MediaWatchBootstrap se free milta hai.
+            url == "orbit://music" -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("music.html"), "text/html", "UTF-8", url)
             url.startsWith("orbit://search?q=") -> {
                 val q = java.net.URLDecoder.decode(url.removePrefix("orbit://search?q="), "UTF-8")
                 val html = assetHtml("aipage.html").replace("__QUERY__", escapeHtml(q))
@@ -1526,17 +1543,40 @@ class MainActivity : Activity() {
         ).show()
     }
 
-    /** Brave Shields badge — omnibox pill me blocked count */
+    /** Brave Shields badge — omnibox pill me blocked count.
+     *  v1.3.5 FIX: badge visible hote hi omnibox ka end-padding badhao — warna
+     *  URL/search text badge ke NEECHE se guzar ke icons ke saath MIX hota tha. */
     private fun updateShieldBadge() {
         val n = activeTab?.blockedCount ?: 0
         runOnUiThread {
             if (isFinishing) return@runOnUiThread
-            if (n > 0 && shieldsEnabled()) {
+            if (n > 0 && shieldsEnabled() && !omnibox.hasFocus()) {
                 shieldBadge.text = "🛡 $n"
                 shieldBadge.visibility = View.VISIBLE
+                shieldBadge.post {
+                    val w = shieldBadge.width.takeIf { it > 0 } ?: dp(52)
+                    omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44) + w + dp(8), omnibox.paddingBottom)
+                }
             } else {
                 shieldBadge.visibility = View.GONE
+                omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44), omnibox.paddingBottom)
             }
+        }
+    }
+
+    /** v1.3.5 — Chrome-jaisa omnibox focus mode: typing ke waqt lock/shield/reload
+     *  icons hide + X dikhao. Suggestions popup aur icons ka "mix" isi se fixed. */
+    private fun applyOmniFocus(focused: Boolean) {
+        if (focused) {
+            omniIcon.visibility = View.GONE
+            shieldBadge.visibility = View.GONE
+            btnReload.visibility = View.GONE
+            btnClear.visibility = if (omnibox.text.isBlank()) View.GONE else View.VISIBLE
+        } else {
+            omniIcon.visibility = View.VISIBLE
+            btnReload.visibility = View.VISIBLE
+            btnClear.visibility = View.GONE
+            updateShieldBadge()
         }
     }
 
@@ -1634,12 +1674,57 @@ class MainActivity : Activity() {
         }
     }
 
-    /** CHROME MODULE — omnibox suggestions: history + bookmarks, ranking ke saath */
+    /** v1.3.5 — suggestion row factory (icon + title + subtitle + click). Ek hi
+     *  jagah row-banawat: search-row aur history/bookmark rows dono isse bante hain. */
+    private fun suggestionRow(iconRes: Int, title: String, sub: String, onClick: () -> Unit): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = getDrawable(R.drawable.btn_ripple)
+            isClickable = true
+        }
+        val iv = ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(0xFF9AA0A6.toInt())
+            layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(14)
+            }
+        }
+        val t = TextView(this).apply {
+            text = title
+            textSize = 14f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(0xFFE8EAED.toInt())
+        }
+        val u = TextView(this).apply {
+            text = sub
+            textSize = 11f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(0xFF9AA0A6.toInt())
+        }
+        col.addView(t)
+        col.addView(u)
+        row.addView(iv)
+        row.addView(col)
+        row.setOnClickListener { onClick() }
+        return row
+    }
+
+    /** CHROME MODULE — omnibox suggestions: pehli row "Google search" (v1.3.5),
+     *  phir history + bookmarks, ranking ke saath */
     private fun showSuggestions(q: String) {
         if (isFinishing || isDestroyed) return
         val query = q.trim().lowercase()
+        val typed = q.trim()
         if (suggestPopup?.isShowing == true) suggestPopup?.dismiss()
-        if (query.length < 2) return
+        if (query.length < 2 && typed.isEmpty()) return
         val merged = LinkedHashMap<String, Pair<String, Boolean>>() // url -> (title, isBookmark)
         runCatching {
             LocalStore.listBookmarks(this).forEach { b ->
@@ -1654,64 +1739,40 @@ class MainActivity : Activity() {
                 }
             }
         }
-        if (merged.isEmpty()) return
-
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = getDrawable(R.drawable.menu_bg)
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        for ((url, meta) in merged.entries.take(6)) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(8), dp(14), dp(8))
-                background = getDrawable(R.drawable.btn_ripple)
-                isClickable = true
-            }
-            val iv = ImageView(this).apply {
-                setImageResource(if (meta.second) R.drawable.ic_star else R.drawable.ic_history)
-                setColorFilter(0xFF9AA0A6.toInt())
-                layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
-            }
-            val col = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(14)
-                }
-            }
-            val t = TextView(this).apply {
-                text = meta.first
-                textSize = 14f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setTextColor(0xFFE8EAED.toInt())
-            }
-            val u = TextView(this).apply {
-                text = url
-                textSize = 11f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setTextColor(0xFF9AA0A6.toInt())
-            }
-            col.addView(t)
-            col.addView(u)
-            row.addView(iv)
-            row.addView(col)
-            row.setOnClickListener {
-                suggestPopup?.dismiss()
-                omnibox.clearFocus()
-                val tab = activeTab ?: return@setOnClickListener
-                navigate(tab.id, url)
-            }
-            content.addView(row)
+        // v1.3.5 — PEHLI ROW hamesha "Google search": Chrome jaisa typed query top
+        // suggestion hota hai — tappable search-link, tap karo aur seedha jao
+        if (typed.isNotEmpty()) {
+            content.addView(
+                suggestionRow(R.drawable.ic_find, typed, "Google par search karo") {
+                    suggestPopup?.dismiss()
+                    omnibox.clearFocus()
+                    navigateInput(typed)
+                },
+            )
         }
+        for ((url, meta) in merged.entries.take(6)) {
+            content.addView(
+                suggestionRow(if (meta.second) R.drawable.ic_star else R.drawable.ic_history, meta.first, url) {
+                    suggestPopup?.dismiss()
+                    omnibox.clearFocus()
+                    val tab = activeTab ?: return@suggestionRow
+                    navigate(tab.id, url)
+                },
+            )
+        }
+        if (content.childCount == 0) return
         suggestPopup = PopupWindow(content, maxOf(omnibox.width, dp(220)), ViewGroup.LayoutParams.WRAP_CONTENT, false).apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             elevation = dp(10).toFloat()
             isOutsideTouchable = true
             // window token dead hone par BadTokenException — runCatching me rakho
-            runCatching { showAsDropDown(omnibox, 0, dp(2)) }
+            // v1.3.5 — 6dp gap: popup omnibox ke icons se chipka nahi lagta
+            runCatching { showAsDropDown(omnibox, 0, dp(6)) }
         }
     }
 

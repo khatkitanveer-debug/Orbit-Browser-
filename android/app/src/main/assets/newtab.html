@@ -39,37 +39,42 @@
   .shortcuts { display: flex; justify-content: center; flex-wrap: wrap; gap: 18px 14px;
                margin-top: 40px; width: 100%; max-width: 560px; }
   .sc { display: flex; flex-direction: column; align-items: center; width: 64px;
-        background: transparent; border: 0; cursor: pointer; padding: 0; font-family: inherit; }
+        background: transparent; border: 0; cursor: pointer; padding: 0; font-family: inherit;
+        position: relative; }
   .sc .c { width: 50px; height: 50px; border-radius: 50%; background: #303134;
-           display: flex; align-items: center; justify-content: center; transition: background .15s; }
+           display: flex; align-items: center; justify-content: center; transition: background .15s;
+           position: relative; overflow: hidden; }
   .sc:active .c { background: #3c4043; }
   .sc .c svg { width: 24px; height: 24px; }
+  .sc .c img.fav { width: 28px; height: 28px; border-radius: 7px; display: none; }
+  .sc .c .lt { font-size: 20px; color: #e8eaed; font-weight: 500; }
   .sc .l { margin-top: 7px; font-size: 11.5px; color: #e8eaed; max-width: 64px;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sc.add .c { border: 1.5px dashed #5f6368; background: transparent; }
 
-  /* ---- Discover — Module 2 (history-driven, 100% on-device) ----
-     Hero (logo+search+shortcuts) bilkul waisa hi centered rehta hai — ye
-     section sirf USKE NEECHE aata hai (history ho to; na ho to zero height). */
-  #discover { width: 100%; max-width: 560px; margin: 44px auto 0; display: none; }
-  #discover .d-h { margin: 0 2px 10px; }
-  #discover .d-t { font-size: 13px; color: #9aa0a6; }
-  #discover .card { display: flex; gap: 12px; align-items: center; background: #303134;
-                    border-radius: 14px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
-  #discover .card:active { background: #3c4043; }
-  #discover .ava { width: 40px; height: 40px; border-radius: 50%; background: #3c4043;
-                   color: #e8eaed; font-size: 17px; display: flex; align-items: center;
-                   justify-content: center; flex-shrink: 0; }
-  #discover .media { position: relative; width: 66px; height: 44px; border-radius: 8px;
-                     background: #3c4043; flex-shrink: 0; overflow: hidden; display: flex;
-                     align-items: center; justify-content: center; }
-  #discover .media .ava2 { font-size: 16px; color: #e8eaed; }
-  #discover .media img { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-                         object-fit: cover; display: none; }
-  #discover .meta { min-width: 0; flex: 1; }
-  #discover .mt { display: block; font-size: 13.5px; color: #e8eaed; white-space: nowrap;
-                  overflow: hidden; text-overflow: ellipsis; }
-  #discover .ms { display: block; font-size: 11px; color: #9aa0a6; margin-top: 2px;
-                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* ---- add-shortcut dialog — in-page overlay (WebView-safe) ---- */
+  .ovl { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none;
+         align-items: center; justify-content: center; z-index: 50; padding: 24px; }
+  .ovl.on { display: flex; }
+  .card { width: 100%; max-width: 340px; background: #303134; border-radius: 16px;
+          padding: 18px 16px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .card h2 { font-size: 16px; color: #e8eaed; margin-bottom: 14px; font-weight: 600; }
+  .card .fld { width: 100%; height: 44px; border-radius: 10px; background: #202124;
+               border: 1px solid #5f6368; color: #e8eaed; font-size: 14px; padding: 0 12px;
+               margin-bottom: 10px; outline: 0; font-family: inherit; -webkit-appearance: none; }
+  .card .fld:focus { border-color: #8ab4f8; }
+  .d-l { font-size: 12px; color: #9aa0a6; margin: 4px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+  .chip { height: 30px; padding: 0 12px; border-radius: 15px; background: #3c4043; border: 0;
+          color: #e8eaed; font-size: 12px; font-family: inherit; cursor: pointer; }
+  .chip:active { background: #4a4b4f; }
+  .chip.hot { background: #1e3a5f; color: #8ab4f8; font-weight: 600; }
+  .dlg-btns { display: flex; gap: 6px; justify-content: flex-end; }
+  .dlg-btns button { height: 38px; padding: 0 16px; border-radius: 19px; border: 0; font-family: inherit;
+                     font-size: 14px; cursor: pointer; background: transparent; color: #8ab4f8; }
+  .dlg-btns .act { background: #8ab4f8; color: #202124; font-weight: 600; }
+  .tm-msg { font-size: 13px; color: #9aa0a6; margin: -6px 0 16px; line-height: 1.45;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -126,98 +131,38 @@
     </button>
   </div>
 
-  <div class="shortcuts">
-    <button type="button" class="sc" onclick="nav('https://www.youtube.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <rect x="1" y="5.5" width="26" height="17" rx="4.5" fill="#FF0000"/>
-          <path d="M11.6 9.8l6.8 4.2-6.8 4.2z" fill="#fff"/>
-        </svg>
-      </span>
-      <span class="l">YouTube</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://github.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path fill="#e8eaed" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
-        </svg>
-      </span>
-      <span class="l">GitHub</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://www.instagram.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <defs>
-            <radialGradient id="igg" cx=".3" cy="1.1" r="1.4">
-              <stop offset="0" stop-color="#FFD600"/><stop offset=".4" stop-color="#FF0169"/>
-              <stop offset=".9" stop-color="#D300C5"/>
-            </radialGradient>
-          </defs>
-          <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="none" stroke="url(#igg)" stroke-width="2"/>
-          <circle cx="12" cy="12" r="4.4" fill="none" stroke="url(#igg)" stroke-width="2"/>
-          <circle cx="17.2" cy="6.8" r="1.25" fill="url(#igg)"/>
-        </svg>
-      </span>
-      <span class="l">Instagram</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://web.whatsapp.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2z"/>
-          <path fill="#fff" d="M9.1 7.3c-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-.2.3-.9.9-.9 2.1s.9 2.4 1 2.6c.1.2 1.8 2.9 4.5 3.9 2.2.9 2.7.7 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3l-1.7-.8c-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5L9.1 7.3z"/>
-        </svg>
-      </span>
-      <span class="l">WhatsApp</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://mail.google.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 52 40" aria-hidden="true">
-          <path fill="#4285f4" d="M3.6 40H12V19.6L0 10.7v25.7C0 38.4 1.6 40 3.6 40z"/>
-          <path fill="#34a853" d="M40 40h8.4c2 0 3.6-1.6 3.6-3.6V10.7l-12 8.9z"/>
-          <path fill="#fbbc04" d="M40 4.4v15.2l12-8.9V6.2c0-4.5-5.1-7-8.7-4.3z"/>
-          <path fill="#ea4335" d="M12 19.6V4.4L26 14.9 40 4.4v15.2L26 30.1z"/>
-          <path fill="#c5221f" d="M0 6.2v4.5l12 8.9V4.4L8.7 1.9C5.1-.8 0 1.7 0 6.2z"/>
-        </svg>
-      </span>
-      <span class="l">Gmail</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://www.google.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/>
-          <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/>
-          <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/>
-          <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/>
-        </svg>
-      </span>
-      <span class="l">Google</span>
-    </button>
-    <!-- MUSIC LIBRARY v1.3.3 — free unlimited Bollywood music, dono hi
-         Orbit ke background-play engine (v1.3.3) se screen-lock par bhi
-         chalte hain. JioSaavn = free streaming (ads ke saath), YT Music =
-         web par background play ka sabse pakka tarika. -->
-    <button type="button" class="sc" onclick="nav('https://www.jiosaavn.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <circle cx="14" cy="14" r="13" fill="#2BB24C"/>
-          <path d="M8 18c2.2-1.2 2.3-5.6 4.4-7.1M13.5 19.5c2.3-1.5 2.2-7 4.7-8.7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="l">JioSaavn</span>
-    </button>
-    <button type="button" class="sc" onclick="nav('https://music.youtube.com/', false)">
-      <span class="c">
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <circle cx="14" cy="14" r="13" fill="#FF0000"/>
-          <circle cx="14" cy="14" r="8.2" fill="none" stroke="#fff" stroke-width="1.6"/>
-          <path d="M11.6 10.4l6 3.6-6 3.6z" fill="#fff"/>
-        </svg>
-      </span>
-      <span class="l">YT Music</span>
-    </button>
+  <!-- v1.3.5 SHORTCUTS — sirf JioSaavn + YouTube fix, phir user tiles, "+"
+       add-tile, aur most-visited sites AUTO tiles. Sab JS se render hota hai. -->
+  <div class="shortcuts" id="grid"></div>
+</div>
+
+<!-- add-shortcut dialog -->
+<div class="ovl" id="dlg">
+  <div class="card">
+    <h2>Shortcut add karo</h2>
+    <input class="fld" id="scName" type="text" placeholder="Naam (jaise Instagram)" maxlength="24">
+    <input class="fld" id="scUrl" type="text" placeholder="URL (jaise instagram.com)" inputmode="url" autocapitalize="off">
+    <div class="d-l">Popular — ek tap me add:</div>
+    <div class="chips" id="chips"></div>
+    <div class="dlg-btns">
+      <button type="button" id="dlgCancel">Cancel</button>
+      <button type="button" class="act" id="dlgAdd">Add</button>
+    </div>
   </div>
 </div>
-<div id="discover"></div>
+
+<!-- tile long-press menu (remove / hide) -->
+<div class="ovl" id="tileMenu">
+  <div class="card">
+    <h2 id="tmName">Shortcut</h2>
+    <p class="tm-msg" id="tmUrl">…</p>
+    <div class="dlg-btns">
+      <button type="button" id="tmCancel">Cancel</button>
+      <button type="button" class="act" id="tmYes">Remove</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // wordmark glyphs build-time pe is string me inject hote hain (build script dekho)
 var WORDMARK_D = "M269.043137254902 236.0Q266.85490196078433 236.0 265.5176470588235 234.54117647058825Q264.18039215686275 233.08235294117648 264.18039215686275 231.13725490196077V119.53725490196078Q264.18039215686275 117.5921568627451 265.6392156862745 116.13333333333333Q267.0980392156863 114.67450980392157 269.043137254902 114.67450980392157Q271.2313725490196 114.67450980392157 272.5686274509804 116.13333333333333Q273.90588235294115 117.5921568627451 273.90588235294115 119.53725490196078V160.62745098039215L269.7725490196078 166.94901960784313Q269.7725490196078 157.46666666666667 273.05490196078426 147.74117647058824Q276.33725490196076 138.0156862745098 282.65882352941173 129.62745098039215Q288.98039215686276 121.2392156862745 298.0980392156863 116.01176470588234Q307.2156862745098 110.7843137254902 319.1294117647059 110.7843137254902Q322.5333333333333 110.7843137254902 326.42352941176466 111.75686274509803Q330.3137254901961 112.72941176470589 330.3137254901961 116.37647058823529Q330.3137254901961 118.56470588235294 329.0980392156863 120.02352941176471Q327.88235294117646 121.48235294117647 325.9372549019608 121.48235294117647Q324.47843137254904 121.48235294117647 322.4117647058824 120.38823529411765Q320.3450980392157 119.29411764705883 316.4549019607843 119.29411764705883Q308.6745098039216 119.29411764705883 301.1372549019608 123.91372549019607Q293.6 128.53333333333333 287.4 136.1921568627451Q281.2 143.85098039215688 277.55294117647054 152.84705882352944Q273.90588235294115 161.84313725490196 273.90588235294115 170.3529411764706V231.13725490196077Q273.90588235294115 233.08235294117648 272.4470588235294 234.54117647058825Q270.98823529411766 236.0 269.043137254902 236.0Z M408.0627450980393 110.7843137254902Q424.3529411764706 110.7843137254902 436.99607843137255 118.92941176470589Q449.6392156862745 127.07450980392157 457.0549019607843 141.29803921568626Q464.47058823529414 155.52156862745096 464.47058823529414 174.0Q464.47058823529414 192.23529411764707 457.0549019607843 206.8235294117647Q449.6392156862745 221.41176470588235 436.87450980392157 229.921568627451Q424.10980392156864 238.4313725490196 408.0627450980393 238.4313725490196Q400.03921568627453 238.4313725490196 392.6235294117647 236.0Q385.20784313725494 233.5686274509804 378.8862745098039 229.0705882352941Q372.56470588235294 224.57254901960783 367.3372549019608 218.12941176470588Q362.10980392156864 211.68627450980392 358.2196078431373 203.6627450980392L361.38039215686274 200.25882352941176V231.13725490196077Q361.38039215686274 233.08235294117648 360.043137254902 234.54117647058825Q358.7058823529412 236.0 356.51764705882357 236.0Q354.5725490196079 236.0 353.1137254901961 234.54117647058825Q351.65490196078434 233.08235294117648 351.65490196078434 231.13725490196077V61.1843137254902Q351.65490196078434 59.23921568627452 352.9921568627451 57.780392156862746Q354.3294117647059 56.32156862745097 356.51764705882357 56.32156862745097Q358.7058823529412 56.32156862745097 360.043137254902 57.780392156862746Q361.38039215686274 59.23921568627452 361.38039215686274 61.1843137254902V149.2L358.2196078431373 147.49803921568628Q361.6235294117647 138.50196078431372 366.7294117647059 131.69411764705882Q371.8352941176471 124.88627450980393 378.40000000000003 120.26666666666668Q384.964705882353 115.64705882352942 392.5019607843137 113.2156862745098Q400.03921568627453 110.7843137254902 408.0627450980393 110.7843137254902ZM407.57647058823534 120.02352941176471Q393.71764705882356 120.02352941176471 383.1411764705882 126.95294117647059Q372.56470588235294 133.88235294117646 366.48627450980393 146.0392156862745Q360.40784313725493 158.19607843137254 360.40784313725493 174.0Q360.40784313725493 189.80392156862746 366.48627450980393 202.32549019607842Q372.56470588235294 214.8470588235294 383.1411764705882 222.01960784313724Q393.71764705882356 229.1921568627451 407.57647058823534 229.1921568627451Q421.19215686274515 229.1921568627451 431.76862745098043 221.89803921568625Q442.3450980392157 214.60392156862744 448.5450980392157 202.08235294117645Q454.7450980392157 189.5607843137255 454.7450980392157 174.0Q454.7450980392157 158.19607843137254 448.5450980392157 146.0392156862745Q442.3450980392157 133.88235294117646 431.76862745098043 126.95294117647059Q421.19215686274515 120.02352941176471 407.57647058823534 120.02352941176471Z M505.01960784313724 231.13725490196077Q505.01960784313724 233.08235294117648 503.5607843137255 234.54117647058825Q502.10196078431375 236.0 500.15686274509807 236.0Q497.9686274509804 236.0 496.6313725490196 234.54117647058825Q495.29411764705884 233.08235294117648 495.29411764705884 231.13725490196077V115.64705882352942Q495.29411764705884 113.70196078431373 496.7529411764706 112.24313725490197Q498.2117647058824 110.7843137254902 500.15686274509807 110.7843137254902Q502.3450980392157 110.7843137254902 503.6823529411765 112.24313725490197Q505.01960784313724 113.70196078431373 505.01960784313724 115.64705882352942ZM500.15686274509807 94.25098039215686Q496.26666666666665 94.25098039215686 493.956862745098 92.06274509803922Q491.6470588235294 89.87450980392157 491.6470588235294 86.47058823529412V84.52549019607844Q491.6470588235294 81.12156862745098 494.078431372549 78.93333333333334Q496.5098039215686 76.74509803921569 500.40000000000003 76.74509803921569Q503.80392156862746 76.74509803921569 506.1137254901961 78.93333333333334Q508.4235294117647 81.12156862745098 508.4235294117647 84.52549019607844V86.47058823529412Q508.4235294117647 89.87450980392157 506.1137254901961 92.06274509803922Q503.80392156862746 94.25098039215686 500.15686274509807 94.25098039215686Z M532.1960784313726 113.70196078431373H588.6039215686275Q590.5490196078432 113.70196078431373 591.886274509804 115.16078431372549Q593.2235294117647 116.61960784313726 593.2235294117647 118.32156862745099Q593.2235294117647 120.26666666666667 591.886274509804 121.60392156862744Q590.5490196078432 122.94117647058823 588.6039215686275 122.94117647058823H532.1960784313726Q530.4941176470588 122.94117647058823 529.035294117647 121.48235294117647Q527.5764705882353 120.02352941176471 527.5764705882353 118.32156862745099Q527.5764705882353 116.37647058823529 529.035294117647 115.0392156862745Q530.4941176470588 113.70196078431373 532.1960784313726 113.70196078431373ZM556.9960784313726 77.9607843137255Q559.1843137254903 77.9607843137255 560.521568627451 79.41960784313726Q561.8588235294118 80.87843137254902 561.8588235294118 82.8235294117647V209.49803921568628Q561.8588235294118 217.521568627451 563.9254901960785 221.2901960784314Q565.9921568627451 225.05882352941177 569.1529411764707 226.1529411764706Q572.3137254901961 227.24705882352941 575.2313725490196 227.24705882352941Q576.9333333333334 227.24705882352941 578.1490196078432 226.76078431372548Q579.364705882353 226.27450980392157 581.0666666666667 226.27450980392157Q582.7686274509805 226.27450980392157 583.9843137254902 227.61176470588236Q585.2 228.94901960784313 585.2 230.65098039215687Q585.2 232.8392156862745 582.4039215686275 234.41960784313727Q579.6078431372549 236.0 575.4745098039216 236.0Q574.0156862745098 236.0 570.2470588235294 235.87843137254902Q566.478431372549 235.75686274509803 562.2235294117647 233.69019607843137Q557.9686274509804 231.6235294117647 555.0509803921568 226.1529411764706Q552.1333333333333 220.68235294117648 552.1333333333333 209.9843137254902V82.8235294117647Q552.1333333333333 80.87843137254902 553.5921568627451 79.41960784313726Q555.0509803921569 77.9607843137255 556.9960784313726 77.9607843137255Z";
@@ -239,103 +184,248 @@ function nav(url, newTab){
   catch(e) { location.href = url; }
 }
 
-// ---------- Discover feed (Module 2 port) — 100% on-device ----------
-// feedEngine.ts ka vanilla-JS port: koi network fetch nahi, koi profiling
-// nahi — sirf local history se category + recency-decay scoring.
+// ==================== SHORTCUTS ENGINE v1.3.5 ====================
+// Fix (user request): default tiles sirf JioSaavn + YouTube. "+" tile se
+// user apna shortcut add kar sakta hai (localStorage me save). Zyada-visit
+// wali sites AUTO tiles ban jaati hain (local history se, 100% on-device).
+// Purana Discover links-section hataya — wo "page end me links" lagta tha.
 (function () {
-  var MUSIC = ["jiosaavn.com","saavn.com","wynk.in","gaana.com","spotify.com","music.youtube.com","soundcloud.com","hungama.com","music.amazon.in","music.apple.com","pandora.com","resso.com","boomplay.com","raaga.com"];
-  var NEWS = ["news.google.com","ndtv.com","timesofindia.indiatimes.com","indiatoday.in","hindustantimes.com","indianexpress.com","thehindu.com","bbc.com","bbc.co.uk","cnn.com","aajtak.in","amarujala.com","dainikbhaskar.com","livemint.com","economictimes.indiatimes.com","news18.com","republicworld.com","inshorts.com","moneycontrol.com","business-standard.com","financialexpress.com","mid-day.com","india.com","firstpost.com"];
-  var VIDEO = ["youtube.com","youtu.be","vimeo.com","dailymotion.com","hotstar.com","jiohotstar.com","netflix.com","primevideo.com","sonyliv.com","zee5.com","mxplayer.in","twitch.tv","jiocinema.com"];
-  var GRID = { "youtube.com":1, "m.youtube.com":1, "music.youtube.com":1, "jiosaavn.com":1 };
-  var BRANDS = "YouTube|JioSaavn|Netflix|Hotstar|JioHotstar|NDTV|BBC News|CNN|Times of India|Hindustan Times|India Today|The Hindu|Indian Express|News18|Moneycontrol|Livemint|Reuters|CNBC TV18|Aaj Tak|Dainik Bhaskar";
-  var HALF_LIFE_H = 36, MAX_CARDS = 6, MAX_TOPS = 4;
+  var LS_SC = "orbit_sc", LS_HI = "orbit_hidden";
+  var MAX_USER = 12, MAX_AUTO = 4;
 
-  function hostOf(u){ try { return new URL(u).hostname.replace(/^www\./, ""); } catch(e){ return ""; } }
-  function matches(h, rules){ for (var i=0;i<rules.length;i++){ var r=rules[i]; if (h===r || h.slice(-(r.length+1)) === "."+r) return true; } return false; }
-  function classify(h){ if (!h) return "general"; if (matches(h,MUSIC)) return "music"; if (matches(h,NEWS)) return "news"; if (matches(h,VIDEO)) return "video"; return "general"; }
-  function ytId(u){ var m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/); return m ? m[1] : null; }
-  function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;"); }
-  function rel(ts){ var m = Math.floor((Date.now()-ts)/60000); if (m<1) return "Just now"; if (m<60) return m+"m ago"; var h=Math.floor(m/60); if (h<24) return h+"h ago"; var d=Math.floor(h/24); if (d<7) return d+"d ago"; try { return new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric"}); } catch(e){ return ""; } }
-  function pretty(e){
-    var t = (e.title||"").trim(), h = hostOf(e.url);
-    if (!t || t === e.url) return h || "?";
-    try { t = t.replace(new RegExp("\\s+[-\u2013|]\\s+(" + BRANDS + ")\\s*$", "i"), "").trim() || t; } catch(e2){}
-    return t;
+  var JIOSAAVN_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="13" fill="#2BB24C"/><path d="M8 18c2.2-1.2 2.3-5.6 4.4-7.1M13.5 19.5c2.3-1.5 2.2-7 4.7-8.7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+  var YT_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="5.5" width="26" height="17" rx="4.5" fill="#FF0000"/><path d="M11.6 9.8l6.8 4.2-6.8 4.2z" fill="#fff"/></svg>';
+  var PLUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="#9aa0a6" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
+  var MUSIC_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="13" fill="#1e3a5f"/><path d="M11.4 19.3V9.6l7.2-1.7v8.2" stroke="#8ab4f8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.7" cy="19.4" r="1.9" fill="#8ab4f8"/><circle cx="16.9" cy="16.2" r="1.9" fill="#8ab4f8"/></svg>';
+
+  var DEFAULTS = [
+    { n: "JioSaavn", u: "https://www.jiosaavn.com/", svg: JIOSAAVN_SVG },
+    { n: "YouTube",  u: "https://www.youtube.com/",  svg: YT_SVG }
+  ];
+  // in hosts ke auto-tiles nahi banenge (already default/known)
+  var KNOWN = ["jiosaavn.com", "saavn.com", "youtube.com", "youtu.be", "music.youtube.com"];
+  // "+" dialog ke popular one-tap chips
+  var POPULAR = [
+    { n: "Free Music", u: "orbit://music", hot: true },
+    { n: "Instagram",  u: "https://www.instagram.com/" },
+    { n: "WhatsApp",   u: "https://web.whatsapp.com/" },
+    { n: "GitHub",     u: "https://github.com/" },
+    { n: "Gmail",      u: "https://mail.google.com/" },
+    { n: "Google",     u: "https://www.google.com/" },
+    { n: "X",          u: "https://x.com/" },
+    { n: "Facebook",   u: "https://www.facebook.com/" },
+    { n: "Amazon",     u: "https://www.amazon.in/" },
+    { n: "Flipkart",   u: "https://www.flipkart.com/" },
+    { n: "ChatGPT",    u: "https://chatgpt.com/" },
+    { n: "Reddit",     u: "https://www.reddit.com/" }
+  ];
+
+  var grid = document.getElementById("grid");
+
+  function lsGet(k, d) {
+    try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; }
   }
-  function open(u){ try { OrbitBridge.navigate(u, false); } catch(e){ location.href = u; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function hostOf(u) {
+    try { return new URL(u).hostname.replace(/^www\./, "").replace(/^m\./, ""); } catch (e) { return ""; }
+  }
+  function matchesAny(h, list) {
+    for (var i = 0; i < list.length; i++) { var r = list[i]; if (h === r || h.slice(-(r.length + 1)) === "." + r) return true; }
+    return false;
+  }
+  function normUrl(u) {
+    u = String(u || "").trim();
+    if (!u) return "";
+    if (/^(https?|orbit|about|file):/i.test(u)) return u;
+    return "https://" + u;
+  }
+  function labelFromHost(h) {
+    var b = h.replace(/\.(co\.in|com|in|net|org|io|app|dev|co|ai)$/, "");
+    if (!b) b = h;
+    return b.charAt(0).toUpperCase() + b.slice(1);
+  }
+  function userSc() { return lsGet(LS_SC, []); }
+  function hiddenHosts() { return lsGet(LS_HI, []); }
 
-  function render(){
-    var box = document.getElementById("discover");
-    if (!box) return;
+  // ---------- tile builder ----------
+  function addTile(o, mode) { // mode: default | user | auto | plus
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "sc";
+    if (mode === "plus") btn.classList.add("add");
+    var c = document.createElement("span"); c.className = "c";
+    var l = document.createElement("span"); l.className = "l"; l.textContent = o.n;
+
+    if (o.svg) {
+      c.innerHTML = o.svg;
+    } else if (String(o.u).indexOf("orbit://") === 0) {
+      c.innerHTML = MUSIC_SVG;
+    } else {
+      var img = document.createElement("img");
+      img.className = "fav"; img.alt = "";
+      img.addEventListener("load", function () { img.style.display = "block"; });
+      img.addEventListener("error", function () {
+        img.style.display = "none";
+        if (!c.querySelector(".lt")) {
+          var t = document.createElement("span"); t.className = "lt";
+          t.textContent = (o.n || "?").charAt(0).toUpperCase();
+          c.appendChild(t);
+        }
+      });
+      img.style.display = "none";
+      img.src = "https://www.google.com/s2/favicons?sz=64&domain=" + encodeURIComponent(hostOf(o.u) || o.u);
+      c.appendChild(img);
+    }
+    btn.appendChild(c); btn.appendChild(l);
+
+    if (mode === "plus") {
+      btn.addEventListener("click", openDlg);
+    } else {
+      // long-press (480ms) = remove (user tile) / hide (auto tile)
+      var timer = null, fired = false;
+      var start = function () { fired = false; timer = setTimeout(function () { fired = true; tileMenu(o, mode); }, 480); };
+      var cancel = function () { clearTimeout(timer); };
+      btn.addEventListener("touchstart", start, { passive: true });
+      btn.addEventListener("touchmove", cancel, { passive: true });
+      btn.addEventListener("touchend", cancel, { passive: true });
+      btn.addEventListener("click", function () {
+        if (fired) { fired = false; return; }
+        nav(o.u, false);
+      });
+    }
+    grid.appendChild(btn);
+  }
+
+  // ---------- auto most-visited tiles (100% on-device) ----------
+  function autoList() {
     var raw = "[]";
-    try { raw = OrbitBridge.historyJson() || "[]"; } catch(e){}
+    try { raw = OrbitBridge.historyJson() || "[]"; } catch (e) {}
     var entries;
-    try { entries = JSON.parse(raw); } catch(e2){ entries = []; }
-    if (!entries || !entries.length) return; // history nahi = section hidden (pehle jaisa NTP)
+    try { entries = JSON.parse(raw); } catch (e2) { entries = []; }
+    if (!entries || !entries.length) return [];
 
-    var byUrl = {};
-    for (var i=0;i<entries.length;i++){
-      var e = entries[i]; if (!e || !e.url) continue;
-      var b = byUrl[e.url];
-      if (!b) byUrl[e.url] = { url:e.url, title:e.title||"", ts:e.ts||0, visits:1 };
-      else { b.visits++; if ((e.ts||0) > b.ts){ b.ts = e.ts; b.title = e.title || b.title; } }
-    }
-    var now = Date.now(), buckets = {};
-    for (var k in byUrl){
-      var v = byUrl[k], h = hostOf(v.url); if (!h) continue;
-      var w = v.visits * Math.pow(0.5, Math.max(0,(now - v.ts)/3600000) / HALF_LIFE_H);
-      var key = classify(h) + ":" + h, bk = buckets[key];
-      if (!bk) buckets[key] = { cat:classify(h), host:h, best:v, bestW:w, score:w, visits:v.visits, last:v.ts };
-      else { bk.score += w; bk.visits += v.visits; if (w > bk.bestW){ bk.bestW = w; bk.best = v; } if (v.ts > bk.last) bk.last = v.ts; }
-    }
-    var cards = [], tops = [];
-    for (var kk in buckets){ var b2 = buckets[kk]; if (b2.cat !== "general") cards.push(b2); else if (!GRID[b2.host]) tops.push(b2); }
-    cards.sort(function(a,b){ return b.score - a.score; });
-    tops.sort(function(a,b){ return b.visits - a.visits; });
-    if (!cards.length && !tops.length) return;
+    var uh = {}, user = userSc();
+    for (var i = 0; i < user.length; i++) { var uh2 = hostOf(user[i].u); if (uh2) uh[uh2] = 1; }
+    var hid = hiddenHosts();
 
-    var html = '<div class="d-h"><span class="d-t">Discover</span></div>';
-    var shown = 0;
-    for (var ci=0; ci<cards.length && shown<MAX_CARDS; ci++, shown++){
-      var c = cards[ci];
-      var vid = c.cat === "video" ? ytId(c.best.url) : null;
-      var catLabel = c.cat === "music" ? "Music" : (c.cat === "news" ? "News" : "Video");
-      var lead = vid
-        ? '<span class="media"><span class="ava2">\u25B6</span><img data-yt="'+vid+'" alt=""></span>'
-        : '<span class="ava">'+esc((c.host.charAt(0)||"?").toUpperCase())+'</span>';
-      html += '<div class="card" data-u="'+esc(c.best.url)+'">'+lead+
-        '<span class="meta"><span class="mt">'+esc(pretty(c.best))+'</span>'+
-        '<span class="ms">'+esc(c.host)+' \u00B7 '+catLabel+' \u00B7 '+rel(c.last)+'</span></span></div>';
+    var m = {};
+    for (var j = 0; j < entries.length; j++) {
+      var e = entries[j]; if (!e || !e.url) continue;
+      var h = hostOf(e.url); if (!h) continue;
+      if (matchesAny(h, KNOWN)) continue;
+      if (uh[h]) continue;
+      if (matchesAny(h, hid)) continue;
+      if (!m[h]) m[h] = { h: h, visits: 0 };
+      m[h].visits++;
     }
-    if (tops.length){
-      html += '<div class="d-h" style="margin-top:18px"><span class="d-t">Often visited</span></div>';
-      for (var ti=0; ti<tops.length && shown<MAX_CARDS+MAX_TOPS && ti<MAX_TOPS; ti++){
-        var t2 = tops[ti];
-        html += '<div class="card" data-u="'+esc(t2.best.url)+'">'+
-          '<span class="ava">'+esc((t2.host.charAt(0)||"?").toUpperCase())+'</span>'+
-          '<span class="meta"><span class="mt">'+esc(pretty(t2.best))+'</span>'+
-          '<span class="ms">'+esc(t2.host)+' \u00B7 '+t2.visits+' visits</span></span></div>';
+    var arr = [];
+    for (var k in m) arr.push(m[k]);
+    arr.sort(function (a, b) { return b.visits - a.visits; });
+    var out = [];
+    for (var x = 0; x < arr.length && out.length < MAX_AUTO; x++) {
+      if (arr[x].visits >= 2) {
+        out.push({ n: labelFromHost(arr[x].h), u: "https://" + arr[x].h });
       }
     }
-    box.innerHTML = html;
-    box.style.display = "block";
-
-    var items = box.querySelectorAll(".card");
-    for (var di=0; di<items.length; di++){
-      items[di].addEventListener("click", function(){ var u = this.getAttribute("data-u"); if (u) open(u); });
-    }
-    var imgs = box.querySelectorAll(".media img");
-    for (var ii=0; ii<imgs.length; ii++){
-      (function(img){
-        img.onload = function(){ img.style.display = "block"; };
-        img.onerror = function(){ if (img.parentNode) img.parentNode.removeChild(img); };
-        img.src = "https://i.ytimg.com/vi/" + img.getAttribute("data-yt") + "/mqdefault.jpg";
-      })(imgs[ii]);
-    }
+    return out;
   }
 
-  if (document.readyState === "complete" || document.readyState === "interactive") render();
-  else document.addEventListener("DOMContentLoaded", render);
+  // ---------- render ----------
+  function render() {
+    grid.innerHTML = "";
+    for (var i = 0; i < DEFAULTS.length; i++) addTile(DEFAULTS[i], "default");
+    var us = userSc();
+    for (var j = 0; j < us.length; j++) addTile({ n: us[j].n, u: us[j].u }, "user");
+    addTile({ n: "Add", u: null, svg: PLUS_SVG }, "plus");
+    var au = autoList();
+    for (var k = 0; k < au.length; k++) addTile(au[k], "auto");
+  }
+
+  // ---------- add dialog ----------
+  var dlg = document.getElementById("dlg");
+  function openDlg() {
+    document.getElementById("scName").value = "";
+    document.getElementById("scUrl").value = "";
+    renderChips();
+    dlg.classList.add("on");
+    setTimeout(function () { document.getElementById("scUrl").focus(); }, 80);
+  }
+  function closeDlg() { dlg.classList.remove("on"); }
+
+  function alreadyAdded(u) {
+    var h = hostOf(u);
+    var us = userSc();
+    for (var i = 0; i < us.length; i++) if (us[i].u === u || (h && hostOf(us[i].u) === h)) return true;
+    return false;
+  }
+  function addToUser(o) {
+    if (alreadyAdded(o.u)) return false;
+    var us = userSc();
+    us.push({ n: o.n, u: o.u });
+    lsSet(LS_SC, us.slice(-MAX_USER));
+    return true;
+  }
+  function renderChips() {
+    var box = document.getElementById("chips");
+    box.innerHTML = "";
+    var us = userSc();
+    for (var i = 0; i < POPULAR.length; i++) {
+      (function (p) {
+        if (alreadyAdded(p.u)) return;
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "chip" + (p.hot ? " hot" : "");
+        b.textContent = (p.hot ? "\u266B " : "") + p.n;
+        b.addEventListener("click", function () {
+          addToUser(p);
+          closeDlg();
+          render();
+        });
+        box.appendChild(b);
+      })(POPULAR[i]);
+    }
+  }
+  document.getElementById("dlgCancel").addEventListener("click", closeDlg);
+  document.getElementById("dlgAdd").addEventListener("click", function () {
+    var u = normUrl(document.getElementById("scUrl").value);
+    if (!u || u.indexOf("://") < 0) { document.getElementById("scUrl").focus(); return; }
+    var h = hostOf(u);
+    var n = document.getElementById("scName").value.trim() || labelFromHost(h || "Site");
+    addToUser({ n: n, u: u });
+    closeDlg();
+    render();
+  });
+  dlg.addEventListener("click", function (ev) { if (ev.target === dlg) closeDlg(); });
+
+  // ---------- tile long-press menu ----------
+  var tm = document.getElementById("tileMenu"), tmCtx = null;
+  function tileMenu(o, mode) {
+    tmCtx = { o: o, mode: mode };
+    document.getElementById("tmName").textContent = o.n || "Shortcut";
+    document.getElementById("tmUrl").textContent = String(o.u || "");
+    document.getElementById("tmYes").textContent = (mode === "auto") ? "Hide" : "Remove";
+    tm.classList.add("on");
+  }
+  document.getElementById("tmCancel").addEventListener("click", function () { tm.classList.remove("on"); tmCtx = null; });
+  document.getElementById("tmYes").addEventListener("click", function () {
+    if (tmCtx) {
+      if (tmCtx.mode === "auto") {
+        var h = hostOf(tmCtx.o.u);
+        if (h) {
+          var hid = hiddenHosts();
+          if (!matchesAny(h, hid)) { hid.push(h); lsSet(LS_HI, hid.slice(-50)); }
+        }
+      } else {
+        var us = userSc();
+        var out = [];
+        for (var i = 0; i < us.length; i++) if (us[i].u !== tmCtx.o.u) out.push(us[i]);
+        lsSet(LS_SC, out);
+      }
+    }
+    tm.classList.remove("on"); tmCtx = null;
+    render();
+  });
+  tm.addEventListener("click", function (ev) { if (ev.target === tm) { tm.classList.remove("on"); tmCtx = null; } });
+
+  render();
 })();
 </script>
 </body>
