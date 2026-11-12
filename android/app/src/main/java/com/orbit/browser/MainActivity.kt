@@ -3,6 +3,7 @@ package com.orbit.browser
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DownloadManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -17,6 +18,7 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
@@ -41,6 +43,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.URLUtil
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -759,6 +762,35 @@ class MainActivity : Activity() {
         wv.setFindListener { ordinal, matches, done ->
             if (findBar.visibility == View.VISIBLE) {
                 findCount.text = if (matches > 0) "${ordinal + 1}/$matches" else "0/0"
+            }
+        }
+        // v1.3.6 — FILE/APK DOWNLOADS: WebView khud file download nahi karta —
+        // GitHub release APK jaise attachment links pe onDownloadStart aata hai
+        // aur bina listener ke kuch nahi hota tha. Android DownloadManager ko
+        // de do (system downloader — redirect-follow, notification progress,
+        // Downloads folder me save). Enqueue fail ho to system browser fallback.
+        wv.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
+            val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
+                .getOrDefault("orbit-download")
+            val ok = runCatching {
+                val req = DownloadManager.Request(Uri.parse(url))
+                    .setTitle(name)
+                    .setDescription("Orbit Browser download")
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+                    .allowScanningByMediaScanner()
+                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(req)
+            }.isSuccess
+            if (ok) {
+                Toast.makeText(this, "Download shuru: $name", Toast.LENGTH_SHORT).show()
+            } else {
+                runCatching {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }
             }
         }
         return wv

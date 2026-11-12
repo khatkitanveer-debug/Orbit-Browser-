@@ -22,8 +22,30 @@
 
   .tabs { display: flex; gap: 8px; margin: 16px 0 12px; }
   .tab { flex: 1; height: 40px; border-radius: 20px; border: 1px solid #5f6368; background: transparent;
-         color: #e8eaed; font-size: 14px; font-family: inherit; cursor: pointer; font-weight: 600; }
+         color: #e8eaed; font-size: 13px; font-family: inherit; cursor: pointer; font-weight: 600;
+         white-space: nowrap; padding: 0 6px; }
   .tab.on { background: #8ab4f8; border-color: #8ab4f8; color: #202124; }
+
+  /* v1.3.6 — Mochy Music install card (user request: GitHub repo ko link karo) */
+  .mochy { background: #303134; border-radius: 16px; padding: 16px 14px; }
+  .mochy-top { display: flex; align-items: center; gap: 12px; }
+  .mochy-ico { width: 52px; height: 52px; border-radius: 14px; background: #1e3a5f; color: #8ab4f8;
+               font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+               flex-shrink: 0; }
+  .mochy-name { font-size: 16px; color: #e8eaed; font-weight: 600; }
+  .mochy-sub { font-size: 11.5px; color: #9aa0a6; margin-top: 3px; }
+  .mochy-feats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .mochy-feats span { font-size: 11px; color: #8ab4f8; background: #202124; border-radius: 10px;
+                      padding: 5px 10px; }
+  .mochy-note { font-size: 12px; color: #9aa0a6; line-height: 1.65; margin: 12px 0 14px; }
+  .mochy-btns { display: flex; gap: 8px; }
+  .mochy-dl { flex: 1; height: 42px; border-radius: 21px; border: 0; background: #8ab4f8; color: #202124;
+              font-weight: 700; font-size: 13.5px; font-family: inherit; cursor: pointer; }
+  .mochy-dl:active { background: #a5c6fb; }
+  .mochy-web { flex: 1; height: 42px; border-radius: 21px; border: 1px solid #5f6368; background: transparent;
+               color: #e8eaed; font-size: 13.5px; font-family: inherit; cursor: pointer; }
+  .mochy-web:active { background: #3c4043; }
+  .mochy-src { font-size: 10.5px; color: #5f6368; text-align: center; margin-top: 10px; line-height: 1.6; }
 
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
   .chip { height: 30px; padding: 0 13px; border-radius: 15px; background: #303134; border: 0;
@@ -95,12 +117,40 @@
   </div>
 
   <div class="tabs">
-    <button class="tab on" id="tabRadio" type="button">Radio (Live)</button>
-    <button class="tab" id="tabSongs" type="button">Songs (Trending)</button>
+    <button class="tab on" id="tabRadio" type="button">Radio</button>
+    <button class="tab" id="tabSongs" type="button">Songs</button>
+    <button class="tab" id="tabMochy" type="button">Mochy Music</button>
   </div>
 
   <div class="chips" id="chips"></div>
   <div id="list"></div>
+
+  <!-- v1.3.6 — Mochy Music link (user request): free open-source music app,
+       GitHub: realidkroo/Mochy-Music (GPL-3.0). Ye alag app hai — isliye
+       download card; install ke baad background/lock-screen playback khud
+       karti hai. Download Orbit ke naye DownloadManager se hota hai. -->
+  <div class="mochy" id="mochyCard" style="display:none">
+    <div class="mochy-top">
+      <div class="mochy-ico">M</div>
+      <div class="mochy-hd">
+        <div class="mochy-name">Mochy Music</div>
+        <div class="mochy-sub">Free &middot; Open-source (GPL-3.0) &middot; Android app</div>
+      </div>
+    </div>
+    <div class="mochy-feats">
+      <span>Unlimited songs + search</span>
+      <span>Lyrics support</span>
+      <span>Playlist import (Spotify/Apple)</span>
+      <span>No account needed</span>
+      <span>Background + lock-screen play</span>
+    </div>
+    <p class="mochy-note">Ye Orbit ke andar ka web player nahi — ek alag free music app hai (GitHub: realidkroo/Mochy-Music). &ldquo;Download APK&rdquo; dabao, APK Orbit ke Downloads me save hoga, phir install karke chalao. Install ke baad ye app apne aap background me aur lock-screen par bhi gata hai.</p>
+    <div class="mochy-btns">
+      <button type="button" class="mochy-dl" id="mochyDl">Download APK</button>
+      <button type="button" class="mochy-web" id="mochyWeb">Website</button>
+    </div>
+    <div class="mochy-src">Open-source &middot; GPL-3.0 &middot; github.com/realidkroo/Mochy-Music</div>
+  </div>
   <div class="src-note" id="srcNote">
     Radio: radio-browser.info open-source database (GitHub: radio-browser/radio-browser)<br>
     Songs: Audius — artists ka apna free music platform (GitHub: AudiusProject/audius-protocol)
@@ -136,6 +186,19 @@
   var mode = "radio";
   var stations = [], songs = [];
   var curGenre = 0;
+
+  // v1.3.6 — Mochy Music card open/close helpers
+  var mochyCard = document.getElementById("mochyCard");
+  var srcNote = document.getElementById("srcNote");
+  function openMochy(u) {
+    try { OrbitBridge.navigate(u, false); } catch (e) { location.href = u; }
+  }
+  document.getElementById("mochyDl").addEventListener("click", function () {
+    openMochy("https://github.com/realidkroo/Mochy-Music/releases");
+  });
+  document.getElementById("mochyWeb").addEventListener("click", function () {
+    openMochy("https://realidkroo.github.io/Mochy-Music/");
+  });
 
   var MIRRORS = ["https://de1.api.radio-browser.info", "https://nl1.api.radio-browser.info", "https://at1.api.radio-browser.info"];
   var GENRES = [["Bollywood", "bollywood"], ["Hindi", "hindi"], ["Punjabi", "punjabi"], ["Ghazal", "ghazal"],
@@ -330,15 +393,24 @@
 
   // ---------- tabs ----------
   var tabRadio = document.getElementById("tabRadio"), tabSongs = document.getElementById("tabSongs");
+  var tabMochy = document.getElementById("tabMochy");
   function setMode(m) {
     mode = m;
     tabRadio.classList.toggle("on", m === "radio");
     tabSongs.classList.toggle("on", m === "songs");
+    tabMochy.classList.toggle("on", m === "mochy");
     chipsBox.style.display = (m === "radio") ? "flex" : "none";
-    if (m === "radio") loadStations(); else loadSongs();
+    list.style.display = (m === "mochy") ? "none" : "block";
+    srcNote.style.display = (m === "mochy") ? "none" : "block";
+    mochyCard.style.display = (m === "mochy") ? "block" : "none";
+    // NOTE: radio/songs switch par dobara load hota hai; agar pehle se wahi
+    // data render hai to ek hi baar fetch karne ke liye cache flag use hota hai
+    if (m === "radio") { if (!stations.length) loadStations(); else renderStations(); }
+    else if (m === "songs") { if (!songs.length) loadSongs(); else renderSongs(); }
   }
   tabRadio.addEventListener("click", function () { setMode("radio"); });
   tabSongs.addEventListener("click", function () { setMode("songs"); });
+  tabMochy.addEventListener("click", function () { setMode("mochy"); });
 
   renderChips();
   loadStations();

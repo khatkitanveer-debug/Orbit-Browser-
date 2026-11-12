@@ -1,7 +1,7 @@
 {
-  "versionCode": 20,
-  "versionName": "1.3.5",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.5/orbit-browser-1.3.5.apk",
-  "notes": "v1.3.5 — New Tab bilkul naya: ab sirf JioSaavn + YouTube default, aur ek '+' button jisse aap apne shortcuts add kar sakte ho (jo site zyada kholte ho wo apne aap tile ban jaati hai). Search karte waqt omnibox ke icons ab mix nahi hote (Chrome-jaisa focus mode + X clear button + shield badge fix). Naya FREE MUSIC LIBRARY: '+' dabao → 'Free Music' chip → unlimited free radio (Bollywood/Hindi/Punjabi live stations) + trending songs, sab legal (open-source radio-browser.info + Audius artists) aur lock-screen par bhi chalta hai. versionCode 20",
+  "versionCode": 21,
+  "versionName": "1.3.6",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.6/orbit-browser-1.3.6.apk",
+  "notes": "v1.3.6 — Mochy Music ab Orbit me link ho gaya: Orbit Music page me naya 'Mochy Music' tab — free open-source music app (unlimited songs, lyrics, playlist import, no account). Wahan 'Download APK' dabao to APK seedha Orbit ke Downloads me save hoga. Saath me browser me file/APK downloads bhi fix — pehle download link kaam nahi karta tha. versionCode 21",
   "minVersionCode": 1
 }
