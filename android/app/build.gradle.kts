@@ -5,30 +5,65 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// GLM API key local.properties se aata hai (gitignored) — repo me kabhi nahi jata.
-// Format: ORBIT_GLM_KEY=...  (optional — AI backend URL ke bina bhi browser chalta hai)
-val orbitKey: String = run {
-    val lf = rootProject.file("local.properties")
-    if (lf.exists()) {
-        val p = Properties().apply { lf.inputStream().use { load(it) } }
-        p.getProperty("ORBIT_GLM_KEY", "")
-    } else ""
+// ---------------------------------------------------------------- credentials
+// SIGNING + API credentials — 3-layer resolution (priority order):
+//   1. ENVIRONMENT VARIABLES      → GitHub Actions secrets / shell exports
+//      (ORBIT_KEYSTORE_PATH, ORBIT_STORE_PASSWORD, ORBIT_KEY_ALIAS,
+//       ORBIT_KEY_PASSWORD, ORBIT_GLM_KEY)
+//   2. local.properties           → local dev machine (gitignored, repo me kabhi nahi)
+//   3. Committed fallback         → orbit.keystore repo me (stable OTA signing)
+//
+// RULE: key MATERIAL hamesha SAME rehna chahiye — chahe source koi bhi ho.
+// Agar keystore/alias/password kisi build me badal gaya to Android naya version
+// purane ke UPAR install hone se block kar deta hai ("App not installed",
+// signature conflict) — isliye fallback chain deliberately identical rakha hai.
+
+val localProps: Properties by lazy {
+    Properties().apply {
+        val lf = rootProject.file("local.properties")
+        if (lf.exists()) lf.inputStream().use { load(it) }
+    }
 }
+
+fun signingValue(envKey: String, propKey: String, fallback: String): String =
+    System.getenv(envKey)?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty(propKey)?.takeIf { it.isNotBlank() }
+        ?: fallback
+
+val orbitKeystorePath = signingValue("ORBIT_KEYSTORE_PATH", "ORBIT_KEYSTORE_PATH", "orbit.keystore")
+val orbitStorePassword = signingValue("ORBIT_STORE_PASSWORD", "ORBIT_STORE_PASSWORD", "orbitbrowser")
+val orbitKeyAlias = signingValue("ORBIT_KEY_ALIAS", "ORBIT_KEY_ALIAS", "orbit")
+val orbitKeyPassword = signingValue("ORBIT_KEY_PASSWORD", "ORBIT_KEY_PASSWORD", "orbitbrowser")
+
+// GLM API key (optional — AI backend URL ke bina bhi browser chalta hai)
+val orbitKey: String = signingValue("ORBIT_GLM_KEY", "ORBIT_GLM_KEY", "")
 
 android {
     namespace = "com.orbit.browser"
     compileSdk = 35
 
-    // STABLE signing — repo me committed orbit.keystore. Har build (local + CI)
-    // SAME key se sign hota hai, isliye naya version purane ke UPAR install hota
-    // hai (data safe). Bina iske CI ka ephemeral debug key har release me badal
-    // jata tha aur OTA upgrade fail ho jata tha ("App not installed").
+    // STABLE signing — har build (local + CI) SAME key se sign hota hai, isliye
+    // naya version purane ke UPAR install hota hai (data safe) aur Play Protect
+    // ko bhi consistent signature milta hai (unknown-app friction kam hota hai).
     signingConfigs {
         create("orbit") {
-            storeFile = rootProject.file("orbit.keystore")
-            storePassword = "orbitbrowser"
-            keyAlias = "orbit"
-            keyPassword = "orbitbrowser"
+            val kf = rootProject.file(orbitKeystorePath)
+            if (!kf.exists()) {
+                throw GradleException(
+                    "Orbit keystore not found at: $kf\n" +
+                        "Set ORBIT_KEYSTORE_PATH (env) or ORBIT_KEYSTORE_PATH (local.properties), " +
+                        "or keep the committed orbit.keystore in android/.",
+                )
+            }
+            storeFile = kf
+            storePassword = orbitStorePassword
+            keyAlias = orbitKeyAlias
+            keyPassword = orbitKeyPassword
+            // Signing schemes: v1 (JAR, Android<7 fallback) + v2 (7+ fast verify)
+            // + v3 (9+ key rotation support) — sab ON, koi scheme-missing reflow nahi.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

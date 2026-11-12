@@ -34,6 +34,32 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # OPTIONAL SECRET SIGNING — agar repo me GitHub Secrets set hain to keystore
+      # base64 se decode karke env vars inject hote hain; secrets NAHI hain to
+      # committed orbit.keystore fallback use hota hai (identical signature).
+      # Secrets (see README/guide):
+      #   ORBIT_KEYSTORE_B64   = base64(android/orbit.keystore)
+      #   ORBIT_STORE_PASSWORD / ORBIT_KEY_ALIAS / ORBIT_KEY_PASSWORD
+      - name: Decode keystore from secrets (optional, fallback = committed keystore)
+        env:
+          ORBIT_KEYSTORE_B64: ${{ secrets.ORBIT_KEYSTORE_B64 }}
+          ORBIT_STORE_PASSWORD: ${{ secrets.ORBIT_STORE_PASSWORD }}
+          ORBIT_KEY_ALIAS: ${{ secrets.ORBIT_KEY_ALIAS }}
+          ORBIT_KEY_PASSWORD: ${{ secrets.ORBIT_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ORBIT_KEYSTORE_B64" ]; then
+            echo "$ORBIT_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/orbit.keystore"
+            {
+              echo "ORBIT_KEYSTORE_PATH=$RUNNER_TEMP/orbit.keystore"
+              echo "ORBIT_STORE_PASSWORD=$ORBIT_STORE_PASSWORD"
+              echo "ORBIT_KEY_ALIAS=$ORBIT_KEY_ALIAS"
+              echo "ORBIT_KEY_PASSWORD=$ORBIT_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Signing from GitHub Secrets"
+          else
+            echo "Secrets absent — committed orbit.keystore fallback (same key)"
+          fi
+
       - name: Gradle setup
         uses: gradle/actions/setup-gradle@v4
         with:
