@@ -58,7 +58,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -120,7 +119,7 @@ class MainActivity : Activity() {
     private lateinit var omniIcon: ImageView
     private lateinit var btnReload: ImageButton
     private lateinit var btnClear: ImageButton
-    private lateinit var progress: ProgressBar
+    private lateinit var ringLoader: OrbitRingLoader
     private lateinit var pullRefresh: SwipeRefreshLayout
     private lateinit var tabCount: TextView
     private lateinit var tabSwitcher: FrameLayout
@@ -217,7 +216,7 @@ class MainActivity : Activity() {
         omnibox = findViewById(R.id.omnibox)
         omniIcon = findViewById(R.id.omni_icon)
         btnReload = findViewById(R.id.btn_reload)
-        progress = findViewById(R.id.progress)
+        ringLoader = findViewById(R.id.ring_loader)
         pullRefresh = findViewById(R.id.pull_refresh)
         tabCount = findViewById(R.id.tab_count)
         tabSwitcher = findViewById(R.id.tab_switcher)
@@ -297,6 +296,11 @@ class MainActivity : Activity() {
         // launch-crash (v1.1 se). Click-only target, isliye View cast — kabhi nahi tootega.
         findViewById<View>(R.id.btn_tabs).setOnClickListener { showTabSwitcher() }
         findViewById<ImageButton>(R.id.btn_menu).setOnClickListener { showMenu() }
+
+        // v1.4.1 — HOME button: kisi bhi site se ek tap me Orbit home (newtab)
+        findViewById<ImageButton>(R.id.btn_home).setOnClickListener {
+            activeTab?.id?.let { navigate(it, NEWTAB) }
+        }
 
         // Chrome pull-to-refresh
         pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
@@ -804,8 +808,14 @@ class MainActivity : Activity() {
             }
 
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progress.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
-                progress.progress = newProgress
+                // v1.4.1 — blue line ki jagah ORBIT RING: arc + satellite dot
+                // progress ke saath advance (Orbit logo motif), lock icon load ke waqt hidden
+                pageLoading = newProgress in 1..99
+                ringLoader.visibility = if (pageLoading) View.VISIBLE else View.GONE
+                ringLoader.setProgress(newProgress)
+                if (!omnibox.hasFocus()) {
+                    omniIcon.visibility = if (pageLoading) View.INVISIBLE else View.VISIBLE
+                }
                 // Chrome jaisa: loading me pill ka button X (stop) ban jata hai
                 btnReload.setImageResource(if (newProgress in 1..99) R.drawable.ic_close else R.drawable.ic_refresh)
             }
@@ -905,6 +915,8 @@ class MainActivity : Activity() {
     }
 
     private fun navigate(tabId: Long, url: String) {
+        // v1.4.1 — navigation ka matlab keyboard ka kaam khatam: IME turant close
+        hideKeyboard()
         val tab = tabs.firstOrNull { it.id == tabId } ?: return
         tab.url = url
         when {
@@ -1333,6 +1345,10 @@ class MainActivity : Activity() {
 
         override fun onPageFinished(view: WebView?, url: String?) {
             pullRefresh.isRefreshing = false
+            // v1.4.1 — ring loader safety stop (kuch pages progress-100 event nahi bhejte)
+            pageLoading = false
+            ringLoader.visibility = View.GONE
+            if (!omnibox.hasFocus()) omniIcon.visibility = View.VISIBLE
             updateShieldBadge()
             // internal entry (back-nav included) — clean chrome, history me kuch nahi
             if (url == NEWTAB || url == "https://orbit.local/" || tab.isInternal) {
@@ -1400,6 +1416,17 @@ class MainActivity : Activity() {
     private fun domainOf(url: String): String = runCatching {
         java.net.URI(url).host ?: url
     }.getOrDefault(url)
+
+    /** v1.4.1 — keyboard band karne ka ek hi zor-shor helper. Omnibox GO,
+     *  suggestion tap, newtab search (Bridge.search), shortcut tap — sab paths
+     *  navigate() se guzarte hain, isliye keyboard apne aap band ho jata hai. */
+    private fun hideKeyboard() {
+        runCatching {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            val focus = currentFocus ?: findViewById<View>(R.id.container)
+            imm?.hideSoftInputFromWindow(focus.windowToken, 0)
+        }
+    }
 
     // ---------------------------------------------------------------- Chrome tab switcher
 
@@ -2628,7 +2655,7 @@ class MainActivity : Activity() {
             btnStar.visibility = View.GONE
             btnClear.visibility = if (omnibox.text.isBlank()) View.GONE else View.VISIBLE
         } else {
-            omniIcon.visibility = View.VISIBLE
+            omniIcon.visibility = if (pageLoading) View.INVISIBLE else View.VISIBLE
             btnReload.visibility = View.VISIBLE
             btnClear.visibility = View.GONE
             updateShieldBadge()

@@ -36,6 +36,17 @@
                 android:tint="@color/chrome_text_dim"
                 android:importantForAccessibility="no" />
 
+            <!-- v1.4.1 — Orbit ring loader: blue loading line ki jagah. Page load
+                 ke saath arc advance + satellite dot orbit (Orbit logo motif). -->
+            <com.orbit.browser.OrbitRingLoader
+                android:id="@+id/ring_loader"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="9dp"
+                android:visibility="gone"
+                android:importantForAccessibility="no" />
+
             <EditText
                 android:id="@+id/omnibox"
                 android:layout_width="match_parent"
@@ -64,8 +75,6 @@
                 android:contentDescription="@string/bookmark"
                 android:tint="@color/chrome_text_dim"
                 android:visibility="gone" />
-
-            <!-- Brave Shields badge — is page par kitne ads/trackers block hue -->
             <TextView
                 android:id="@+id/shield_badge"
                 android:layout_width="wrap_content"
@@ -106,6 +115,16 @@
                 android:visibility="gone" />
         </FrameLayout>
 
+        <!-- v1.4.1 — HOME button: kisi bhi site se ek tap me Orbit home (newtab) -->
+        <ImageButton
+            android:id="@+id/btn_home"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_home"
+            android:contentDescription="Home"
+            android:tint="@color/chrome_text" />
+
         <!-- Chrome tab-count button: rounded square + number -->
         <FrameLayout
             android:id="@+id/btn_tabs"
@@ -142,16 +161,7 @@
             android:tint="@color/chrome_text" />
     </LinearLayout>
 
-    <!-- Chrome loading progress — toolbar ke theek neeche patli blue line -->
-    <ProgressBar
-        android:id="@+id/progress"
-        style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="3dp"
-        android:progressTint="@color/chrome_blue"
-        android:progressBackgroundTint="@android:color/transparent"
-        android:max="100"
-        android:visibility="gone" />
+    <!-- v1.4.1 — blue loading line REMOVED: ab omnibox ke andar Orbit ring loader hai -->
 
     <!-- Find in page bar (Chrome jaisa, toolbar ke neeche) -->
     <LinearLayout
