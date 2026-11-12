@@ -1,7 +1,7 @@
 {
-  "versionCode": 19,
-  "versionName": "1.3.4",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.4/orbit-browser-1.3.4.apk",
-  "notes": "v1.3.4 — YouTube Ad Shield: YouTube ki ads ab Orbit me block (Brave/uBlock jaisa legal client-side ad-blocking — content/DRM touch nahi hota). Video ads, masthead/feed ads, overlay ads — sab filtered + skip button turant. Screen-lock background play + Music shortcuts (JioSaavn/YT Music) pehle wale version se hi hain. versionCode 19",
+  "versionCode": 20,
+  "versionName": "1.3.5",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.5/orbit-browser-1.3.5.apk",
+  "notes": "v1.3.5 — New Tab bilkul naya: ab sirf JioSaavn + YouTube default, aur ek '+' button jisse aap apne shortcuts add kar sakte ho (jo site zyada kholte ho wo apne aap tile ban jaati hai). Search karte waqt omnibox ke icons ab mix nahi hote (Chrome-jaisa focus mode + X clear button + shield badge fix). Naya FREE MUSIC LIBRARY: '+' dabao → 'Free Music' chip → unlimited free radio (Bollywood/Hindi/Punjabi live stations) + trending songs, sab legal (open-source radio-browser.info + Audius artists) aur lock-screen par bhi chalta hai. versionCode 20",
   "minVersionCode": 1
 }
