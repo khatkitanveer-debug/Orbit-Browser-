@@ -65,6 +65,7 @@ import com.orbit.browser.media.PlaybackSink
 import com.orbit.browser.render.BackgroundWebView
 import com.orbit.browser.render.MediaWatchBootstrap
 import com.orbit.browser.render.ViewportBootstrap
+import com.orbit.browser.render.YouTubeAdShield
 import com.orbit.browser.sync.OrbitSync
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
@@ -678,6 +679,13 @@ class MainActivity : Activity() {
             append(ViewportBootstrap.SCRIPT)
             append("\n;")
             append(MediaWatchBootstrap.SCRIPT)
+            if (RemoteConfig.ytShieldEnabled()) {
+                // v1.3.4 — YouTube Ad Shield: player JSON se adPlacements strip +
+                // skip-button autoclick + ad containers hide. Kill-switch:
+                // ota/hotfix.json me "ytShield": false push karke bina APK off.
+                append("\n;")
+                append(YouTubeAdShield.SCRIPT)
+            }
             if (antiFpEnabled()) {
                 // FIREFOX MODULE — anti-fingerprinting: canvas noise + hardware spoof
                 append("\n;")

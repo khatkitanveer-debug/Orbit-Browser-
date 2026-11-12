@@ -13,6 +13,9 @@ import java.util.concurrent.TimeUnit
  *
  *   • blockDomains  — AdBlocker me live extra domains (naye ad/tracker hosts
  *     aaye to APK release ka intezaar nahi)
+ *   • ytShield      — YouTube Ad Shield ON/OFF (v1.3.4). Absent/true = on.
+ *     YouTube engine update karke shield tode to bina APK release,
+ *     hotfix.json me false push karke turant off + page saaf chalu.
  *
  * Trust anchor: hotfix.json WAHI repo serve karta hai jahan se APK aata hai
  * (UpdateChecker jaisa hi trust model). Sanitization strict hai — sirf
@@ -40,7 +43,16 @@ object RemoteConfig {
     data class Hotfix(
         val version: Int = 0,
         val blockDomains: List<String> = emptyList(),
+        val ytShield: Boolean = true,
     )
+
+    /** Last known hotfix (loadCached + refreshAsync dono update karte hain).
+     *  Nayi WebView creation par live flag uthane ke liye. */
+    @Volatile
+    private var lastHotfix: Hotfix = Hotfix()
+
+    /** v1.3.4 — YouTube Ad Shield abhi on hai? (kill-switch hotfix se off hota hai) */
+    fun ytShieldEnabled(): Boolean = lastHotfix.ytShield
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -53,7 +65,9 @@ object RemoteConfig {
     fun loadCached(ctx: Context): Hotfix {
         val f = File(ctx.filesDir, CACHE_FILE)
         if (!f.exists()) return Hotfix()
-        return runCatching { parse(f.readText()) }.getOrNull() ?: Hotfix()
+        val h = runCatching { parse(f.readText()) }.getOrNull() ?: Hotfix()
+        lastHotfix = h
+        return h
     }
 
     /* ------------------------------- refresh -------------------------------- */
@@ -81,6 +95,7 @@ object RemoteConfig {
             val hotfix = runCatching { parse(body) }.getOrNull() ?: return@Thread
 
             // valid hotfix — cache + live apply
+            lastHotfix = hotfix
             runCatching {
                 File(appCtx.filesDir, CACHE_FILE).writeText(body)
             }
@@ -101,6 +116,11 @@ object RemoteConfig {
         return Hotfix(
             version = o.optInt("version", 0),
             blockDomains = domains,
+            // sirf explicit false hi off karta hai — corrupt/missing value = ON (safe default)
+            ytShield = when (o.opt("ytShield")) {
+                is Boolean -> o.optBoolean("ytShield", true)
+                else -> true
+            },
         )
     }
 
