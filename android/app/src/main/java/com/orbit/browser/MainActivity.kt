@@ -121,6 +121,8 @@ class MainActivity : Activity() {
     private lateinit var btnClear: ImageButton
     private lateinit var ringLoader: OrbitRingLoader
     private lateinit var pullRefresh: SwipeRefreshLayout
+    // v1.4.1 — active tab load state (ring loader + lock-icon visibility ke liye)
+    private var pageLoading = false
     private lateinit var tabCount: TextView
     private lateinit var tabSwitcher: FrameLayout
     private lateinit var switcherGrid: GridLayout
