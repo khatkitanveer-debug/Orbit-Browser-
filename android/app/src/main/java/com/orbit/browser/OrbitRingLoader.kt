@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.util.AttributeSet
 import android.view.View
 
 /**
@@ -14,7 +15,12 @@ import android.view.View
  * 100 par WebViewClient se hide hota hai. Blue accent wahi Chrome-blue
  * (#8AB4F8) — theme untouched.
  */
-class OrbitRingLoader(context: Context) : View(context) {
+class OrbitRingLoader : View {
+
+    // XML inflation ke liye (Context, AttributeSet) constructor ZARURI hai —
+    // iske bina activity_main.xml se inflate par crash hota (CI-safe).
+    constructor(context: Context) : super(context)
+    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
 
     private var prog = 0
 
