@@ -18,7 +18,10 @@ package com.orbit.browser.render
  *   2. JSON     — ytInitialPlayerResponse setter trap: adPlacements/
  *                 adSlots/playerAds strip → player ad schedule hi nahi
  *                 banata, isliye video ads chalte hi nahi
- *   3. Network  — fetch + XHR hooks: /youtubei/v1/* responses strip
+ *   3. Network  — fetch + XHR hooks youtubei player API par — responses
+ *                 ke JSON se ads strip (Kotlin block comments NEST hote
+ *                 hain, isliye comment ke andar comment-opener likhna
+ *                 mana hai — isliye yahan path bina star ke likha)
  *   4. DOM sweep — phir bhi ad slip ho jaye to skip button turant
  *                 auto-click (YouTube ka apna "Skip" button hi dabate
  *                 hain — koi stream modification nahi)
