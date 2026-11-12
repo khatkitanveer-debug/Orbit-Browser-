@@ -1,7 +1,7 @@
 {
-  "versionCode": 22,
-  "versionName": "1.3.7",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.7/orbit-browser-1.3.7.apk",
-  "notes": "v1.3.7 — Mochy Music ab Orbit me link ho gaya: Orbit Music page me naya 'Mochy Music' tab — free open-source music app (unlimited songs, lyrics, playlist import, no account). Wahan 'Download APK' dabao to APK seedha Orbit ke Downloads me save hoga. Saath me browser me file/APK downloads bhi fix — pehle download link kaam nahi karta tha. versionCode 22",
+  "versionCode": 23,
+  "versionName": "1.3.8",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.8/orbit-browser-1.3.8.apk",
+  "notes": "v1.3.8 — Orbit Music me SEARCH aa gaya: ab koi bhi gaana ya radio station naam se search karke seedha play karo — bina login, bina kisi app install kiye (Audius free songs + live radio, dono open-source APIs). Mochy Music app ka link bhi Music page par hai. versionCode 23",
   "minVersionCode": 1
 }

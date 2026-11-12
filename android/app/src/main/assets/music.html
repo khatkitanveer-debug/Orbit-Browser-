@@ -53,6 +53,20 @@
   .chip.on { background: #1e3a5f; color: #8ab4f8; font-weight: 600; }
   .chip:active { background: #3c4043; }
 
+  /* v1.3.8 — SEARCH: bina login seedha play (Audius songs + radio stations) */
+  .searchbar { margin-bottom: 12px; }
+  .searchbar form { display: flex; gap: 8px; }
+  .searchbar input { flex: 1; min-width: 0; height: 44px; border-radius: 22px; background: #303134;
+                     border: 1px solid #5f6368; color: #e8eaed; font-size: 14px; padding: 0 16px;
+                     outline: 0; -webkit-appearance: none; font-family: inherit; }
+  .searchbar input:focus { border-color: #8ab4f8; }
+  .searchbar input::placeholder { color: #9aa0a6; }
+  .searchbar button { height: 44px; padding: 0 18px; border-radius: 22px; border: 0; background: #8ab4f8;
+                      color: #202124; font-weight: 700; font-family: inherit; font-size: 13.5px;
+                      cursor: pointer; flex-shrink: 0; }
+  .searchbar button:active { background: #a5c6fb; }
+  .sec-h { font-size: 12px; color: #8ab4f8; font-weight: 700; margin: 14px 2px 6px; letter-spacing: .3px; }
+
   .row { display: flex; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 12px;
          cursor: pointer; }
   .row:active, .row.playing { background: #303134; }
@@ -119,7 +133,17 @@
   <div class="tabs">
     <button class="tab on" id="tabRadio" type="button">Radio</button>
     <button class="tab" id="tabSongs" type="button">Songs</button>
-    <button class="tab" id="tabMochy" type="button">Mochy Music</button>
+    <button class="tab" id="tabSearch" type="button">Search</button>
+    <button class="tab" id="tabMochy" type="button">Mochy</button>
+  </div>
+
+  <!-- v1.3.8 — search bar: song/station naam likho, seedha play (no login) -->
+  <div class="searchbar" id="searchBox" style="display:none">
+    <form id="searchForm">
+      <input id="searchQ" type="search" placeholder="Gaana ya radio ka naam likho" enterkeyhint="search"
+             autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button type="button" id="searchGo">Play</button>
+    </form>
   </div>
 
   <div class="chips" id="chips"></div>
@@ -316,26 +340,29 @@
   function renderStations() {
     list.innerHTML = "";
     for (var i = 0; i < stations.length; i++) {
-      (function (st) {
-        var row = document.createElement("div");
-        row.className = "row";
-        row.setAttribute("data-src", st.url_resolved);
-        var ava = document.createElement("div"); ava.className = "ava";
-        ava.textContent = (st.name || "?").trim().charAt(0).toUpperCase();
-        var meta = document.createElement("div"); meta.className = "meta";
-        var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = st.name || "Radio";
-        var ms = document.createElement("span"); ms.className = "ms";
-        ms.textContent = (st.country || "") + (st.bitrate ? " \u00B7 " + st.bitrate + " kbps" : "") + " \u00B7 " + fmtCount(st.votes) + " votes";
-        meta.appendChild(mt); meta.appendChild(ms);
-        var live = document.createElement("span"); live.className = "live"; live.textContent = "LIVE";
-        row.appendChild(ava); row.appendChild(meta); row.appendChild(live);
-        row.addEventListener("click", function () {
-          play(st.url_resolved, st.name, "Live radio \u00B7 " + (st.country || GENRES[curGenre][0]));
-        });
-        list.appendChild(row);
-      })(stations[i]);
+      list.appendChild(makeStationRow(stations[i]));
     }
     markRows();
+  }
+
+  // v1.3.8 — row-builder extract: search bhi isi ko reuse karta hai
+  function makeStationRow(st) {
+    var row = document.createElement("div");
+    row.className = "row";
+    row.setAttribute("data-src", st.url_resolved);
+    var ava = document.createElement("div"); ava.className = "ava";
+    ava.textContent = (st.name || "?").trim().charAt(0).toUpperCase();
+    var meta = document.createElement("div"); meta.className = "meta";
+    var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = st.name || "Radio";
+    var ms = document.createElement("span"); ms.className = "ms";
+    ms.textContent = (st.country || "") + (st.bitrate ? " \u00B7 " + st.bitrate + " kbps" : "") + " \u00B7 " + fmtCount(st.votes) + " votes";
+    meta.appendChild(mt); meta.appendChild(ms);
+    var live = document.createElement("span"); live.className = "live"; live.textContent = "LIVE";
+    row.appendChild(ava); row.appendChild(meta); row.appendChild(live);
+    row.addEventListener("click", function () {
+      play(st.url_resolved, st.name, "Live radio \u00B7 " + (st.country || "Radio"));
+    });
+    return row;
   }
 
   // ---------- SONGS (Audius trending — free, legal, artist-uploaded) ----------
@@ -344,35 +371,38 @@
   function renderSongs() {
     list.innerHTML = "";
     for (var i = 0; i < songs.length; i++) {
-      (function (t) {
-        var row = document.createElement("div");
-        row.className = "row";
-        var streamUrl = audiusHost + "/v1/tracks/" + t.id + "/stream?app_name=OrbitBrowser";
-        row.setAttribute("data-src", streamUrl);
-        var ava = document.createElement("div"); ava.className = "ava";
-        var art = (t.artwork && (t.artwork["150x150"] || t.artwork["480x480"])) || "";
-        if (art) {
-          var img = document.createElement("img"); img.alt = "";
-          img.src = art;
-          img.addEventListener("error", function () { img.remove(); ava.textContent = (t.title || "?").charAt(0).toUpperCase(); });
-          ava.appendChild(img);
-        } else {
-          ava.textContent = (t.title || "?").charAt(0).toUpperCase();
-        }
-        var meta = document.createElement("div"); meta.className = "meta";
-        var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = t.title;
-        var ms = document.createElement("span"); ms.className = "ms";
-        var dur = Math.round((t.duration || 0) / 60);
-        ms.textContent = (t.user && t.user.name ? t.user.name : "Artist") + " \u00B7 " + fmtCount(t.play_count) + " plays" + (dur ? " \u00B7 " + dur + " min" : "");
-        meta.appendChild(mt); meta.appendChild(ms);
-        row.appendChild(ava); row.appendChild(meta);
-        row.addEventListener("click", function () {
-          play(streamUrl, t.title, (t.user && t.user.name ? t.user.name : "Audius") + " \u00B7 Audius free stream");
-        });
-        list.appendChild(row);
-      })(songs[i]);
+      list.appendChild(makeSongRow(songs[i]));
     }
     markRows();
+  }
+
+  // v1.3.8 — row-builder extract: search bhi isi ko reuse karta hai
+  function makeSongRow(t) {
+    var row = document.createElement("div");
+    row.className = "row";
+    var streamUrl = audiusHost + "/v1/tracks/" + t.id + "/stream?app_name=OrbitBrowser";
+    row.setAttribute("data-src", streamUrl);
+    var ava = document.createElement("div"); ava.className = "ava";
+    var art = (t.artwork && (t.artwork["150x150"] || t.artwork["480x480"])) || "";
+    if (art) {
+      var img = document.createElement("img"); img.alt = "";
+      img.src = art;
+      img.addEventListener("error", function () { img.remove(); ava.textContent = (t.title || "?").charAt(0).toUpperCase(); });
+      ava.appendChild(img);
+    } else {
+      ava.textContent = (t.title || "?").charAt(0).toUpperCase();
+    }
+    var meta = document.createElement("div"); meta.className = "meta";
+    var mt = document.createElement("span"); mt.className = "mt"; mt.textContent = t.title;
+    var ms = document.createElement("span"); ms.className = "ms";
+    var dur = Math.round((t.duration || 0) / 60);
+    ms.textContent = (t.user && t.user.name ? t.user.name : "Artist") + " \u00B7 " + fmtCount(t.play_count) + " plays" + (dur ? " \u00B7 " + dur + " min" : "");
+    meta.appendChild(mt); meta.appendChild(ms);
+    row.appendChild(ava); row.appendChild(meta);
+    row.addEventListener("click", function () {
+      play(streamUrl, t.title, (t.user && t.user.name ? t.user.name : "Audius") + " \u00B7 Audius free stream");
+    });
+    return row;
   }
 
   function loadSongs() {
@@ -391,15 +421,102 @@
     });
   }
 
+  // ---------- SEARCH (v1.3.8) — bina login seedha play ----------
+  // Audius track-search (free, legal, artist-uploaded) + radio-browser
+  // station naam-search (open-source DB). Koi account nahi, sab in-browser.
+  var searchDone = false, lastSongs = [], lastRadios = [], lastQuery = "";
+  var searchQ = document.getElementById("searchQ");
+
+  function ensureAudiusHost(cb) {
+    if (audiusHost) { cb(); return; }
+    fetch("https://api.audius.co").then(function (r) { return r.json(); })
+      .then(function (cfg) {
+        audiusHost = (cfg && cfg.data && cfg.data[0]) || "";
+        if (!audiusHost) throw new Error("no host");
+        cb();
+      })
+      .catch(function () {
+        statusError("Audius server se connect nahi hua", doSearch);
+      });
+  }
+
+  function addSection(t) {
+    var h = document.createElement("div"); h.className = "sec-h"; h.textContent = t;
+    list.appendChild(h);
+  }
+
+  function renderSearchResults() {
+    list.innerHTML = "";
+    var any = false;
+    if (lastSongs.length) {
+      any = true;
+      addSection("Songs \u00B7 Audius (free, no login)");
+      var lim = Math.min(lastSongs.length, 20);
+      for (var i = 0; i < lim; i++) list.appendChild(makeSongRow(lastSongs[i]));
+    }
+    if (lastRadios.length) {
+      any = true;
+      addSection("Radio \u00B7 live stations");
+      var lim2 = Math.min(lastRadios.length, 15);
+      for (var j = 0; j < lim2; j++) list.appendChild(makeStationRow(lastRadios[j]));
+    }
+    if (!any) {
+      list.innerHTML = '<div class="status">\u201C' + esc(lastQuery) + '\u201D ke liye kuch nahi mila.<br>Audius par mostly indie/artist songs hain — Bollywood radio ke liye Radio tab dekho.</div>';
+    }
+    markRows();
+  }
+
+  function doSearch() {
+    var q = (searchQ.value || "").trim();
+    if (!q) { searchQ.focus(); return; }
+    lastQuery = q;
+    ensureAudiusHost(function () {
+      statusLoading();
+      var pending = 2;
+      function settle() { pending--; if (pending === 0) { searchDone = true; renderSearchResults(); } }
+
+      // 1) Audius track search — no login
+      fetch(audiusHost + "/v1/tracks/search?query=" + encodeURIComponent(q) + "&app_name=OrbitBrowser")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          lastSongs = ((d && d.data) || []).filter(function (t) { return t && t.id && t.title; });
+        })
+        .catch(function () { lastSongs = []; })
+        .then(settle);
+
+      // 2) Radio station naam-search — mirror fallback
+      var mi = 0;
+      function tryRadio() {
+        if (mi >= MIRRORS.length) { lastRadios = []; settle(); return; }
+        var url = MIRRORS[mi++] + "/json/stations/search?name=" + encodeURIComponent(q) + "&limit=20&hidebroken=true&order=votes&reverse=true";
+        fetch(url).then(function (r) { if (!r.ok) throw new Error("http"); return r.json(); })
+          .then(function (d) {
+            lastRadios = (d || []).filter(function (s) { return s && s.url_resolved && String(s.url_resolved).indexOf("https://") === 0; });
+            settle();
+          })
+          .catch(tryRadio);
+      }
+      tryRadio();
+    });
+  }
+
+  document.getElementById("searchForm").addEventListener("submit", function (e) {
+    e.preventDefault(); doSearch();
+  });
+  document.getElementById("searchGo").addEventListener("click", doSearch);
+
   // ---------- tabs ----------
   var tabRadio = document.getElementById("tabRadio"), tabSongs = document.getElementById("tabSongs");
-  var tabMochy = document.getElementById("tabMochy");
+  var tabMochy = document.getElementById("tabMochy"), tabSearch = document.getElementById("tabSearch");
+  var searchBox = document.getElementById("searchBox");
   function setMode(m) {
     mode = m;
     tabRadio.classList.toggle("on", m === "radio");
     tabSongs.classList.toggle("on", m === "songs");
+    tabSearch.classList.toggle("on", m === "search");
     tabMochy.classList.toggle("on", m === "mochy");
     chipsBox.style.display = (m === "radio") ? "flex" : "none";
+    searchBox.style.display = (m === "search") ? "block" : "none";
     list.style.display = (m === "mochy") ? "none" : "block";
     srcNote.style.display = (m === "mochy") ? "none" : "block";
     mochyCard.style.display = (m === "mochy") ? "block" : "none";
@@ -407,9 +524,17 @@
     // data render hai to ek hi baar fetch karne ke liye cache flag use hota hai
     if (m === "radio") { if (!stations.length) loadStations(); else renderStations(); }
     else if (m === "songs") { if (!songs.length) loadSongs(); else renderSongs(); }
+    else if (m === "search") {
+      if (searchDone) { renderSearchResults(); }
+      else {
+        list.innerHTML = '<div class="status">Upar box me gaana ya radio station ka naam likho aur Play dabao.<br><br>Bina login, seedha play \u2014 Audius songs + live radio, dono free &amp; legal.</div>';
+        setTimeout(function () { try { searchQ.focus(); } catch (e2) {} }, 120);
+      }
+    }
   }
   tabRadio.addEventListener("click", function () { setMode("radio"); });
   tabSongs.addEventListener("click", function () { setMode("songs"); });
+  tabSearch.addEventListener("click", function () { setMode("search"); });
   tabMochy.addEventListener("click", function () { setMode("mochy"); });
 
   renderChips();
