@@ -92,21 +92,21 @@ object UpdateChecker {
         Thread {
             val latest = fetchLatest()
             if (latest == null) {
-                if (manual) toast(ctx, "Update check nahi ho paya (network?)")
+                if (manual) toast(ctx, "Couldn't check for updates (network?)")
                 return@Thread
             }
             if (!isUpdateAvailable(latest)) {
-                if (manual) toast(ctx, "Orbit up-to-date hai (v${BuildConfig.VERSION_NAME})")
+                if (manual) toast(ctx, "Orbit is up to date (v${BuildConfig.VERSION_NAME})")
                 return@Thread
             }
             // pehle se downloaded VALID apk hai? (pichhli baar) — download skip, seedha Install
             val cached = cachedApk(ctx, latest.versionName, latest.versionCode)
             if (cached == null && manual) {
-                toast(ctx, "Orbit ${latest.versionName} background me download ho raha hai…")
+                toast(ctx, "Orbit ${latest.versionName} is downloading in the background…")
             }
             val apk = cached ?: download(ctx, latest)
             if (apk == null) {
-                if (manual) toast(ctx, "Download fail ho gaya — thodi der me dobara try karo")
+                if (manual) toast(ctx, "Download failed — try again in a moment")
                 return@Thread
             }
             val compatible = signaturesCompatible(ctx, apk)
@@ -157,10 +157,10 @@ object UpdateChecker {
                 }
                 // server ke bataye size se milaan — adhoora download pakdo
                 if (expectedLen > 0 && out.length() != expectedLen) {
-                    error("adhoora download (${out.length()}/${expectedLen} bytes)")
+                    error("incomplete download (${out.length()}/${expectedLen} bytes)")
                 }
                 validateApk(ctx, out, info.versionCode)
-                    ?: error("downloaded file valid APK nahi hai")
+                    ?: error("downloaded file is not a valid APK")
             }
         }.getOrNull()
     }
@@ -267,7 +267,7 @@ object UpdateChecker {
                 }
                 true
             }.getOrDefault(false)
-            if (!ok) toast(appCtx, "Install nahi ho paya — Settings me 'Install unknown apps' allow karo, phir dobara try karo")
+            if (!ok) toast(appCtx, "Install didn't happen — allow 'Install unknown apps' for Orbit in Settings, then try again")
         }.start()
     }
 
@@ -280,7 +280,7 @@ object UpdateChecker {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }.onFailure {
-            toast(ctx, "Uninstall screen nahi khuli — Settings > Apps > Orbit uninstall karo")
+            toast(ctx, "Uninstall screen didn't open — uninstall Orbit from Settings > Apps")
         }
     }
 
@@ -290,7 +290,7 @@ object UpdateChecker {
             ctx.startActivity(
                 Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
-        }.onFailure { toast(ctx, "Browser nahi khula") }
+        }.onFailure { toast(ctx, "Browser didn't open") }
     }
 
     /** APK public Downloads me copy — uninstall ke baad bhi zinda rehta hai (cache wipe ho jata hai) */

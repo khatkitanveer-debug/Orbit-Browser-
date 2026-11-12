@@ -29,40 +29,40 @@ class UpdateStatusActivity : Activity() {
         val blocked = status == PackageInstaller.STATUS_FAILURE_BLOCKED
 
         val title = when {
-            conflict -> "Update install nahi hua (security key alag hai)"
-            blocked -> "Install roka gaya (Play Protect)"
-            else -> "Install fail ho gaya"
+            conflict -> "Update didn't install (different signing key)"
+            blocked -> "Install blocked (Play Protect)"
+            else -> "Install failed"
         }
 
         val baseMsg = if (conflict) {
-            "Aapke phone me purana Orbit kisi ALAG build key se bana tha — Android security " +
-                "rule ki wajah se uske upar naya version nahi lagta. YE SIRF IS EK BAAR hai — " +
-                "v1.0.3 se aage ke saare updates khud-ba-khud install honge.\n\n" +
-                "Ab ye karo:\n" +
-                "1. Neeche 'APK Downloads me save karo' dabao\n" +
-                "2. Purana Orbit uninstall karo (data — bookmarks/history — waise bhi local thi)\n" +
-                "3. Files/Downloads app me saved APK kholke install karo"
+            "The old Orbit on this phone was built with a DIFFERENT signing key — Android security " +
+                "rules won't install the new version on top of it. This happens ONLY ONCE — " +
+                "updates after this will install automatically.\n\n" +
+                "Do this:\n" +
+                "1. Tap 'Save APK to Downloads' below\n" +
+                "2. Uninstall the old Orbit (data — bookmarks/history — was local anyway)\n" +
+                "3. Open the saved APK from the Files/Downloads app"
         } else {
-            "Wajah: ${if (msg.isNotBlank()) msg else "status code $status"}\n\n" +
-                "Thodi der me dobara try karo — naya update aate hi Orbit khud download karke " +
-                "Install button dikhayega."
+            "Reason: ${if (msg.isNotBlank()) msg else "status code $status"}\n\n" +
+                "Try again in a moment — when the next update arrives, Orbit will download it " +
+                "and show an Install button automatically."
         }
 
         val dialog = AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle(title)
             .setMessage(baseMsg)
             .setPositiveButton("OK") { _, _ -> finish() }
-            .setNeutralButton("", null) // conflict me "APK Downloads me save karo" ban jayega
+            .setNeutralButton("", null) // conflict me "Save APK to Downloads" ban jayega
             .create()
 
         dialog.setOnShowListener {
             if (conflict && apkPath != null) {
                 val btn = dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-                btn.text = "APK Downloads me save karo"
+                btn.text = "Save APK to Downloads"
                 btn.setOnClickListener {
                     val apk = File(apkPath)
                     if (!apk.exists() || apk.length() < 100_000) {
-                        Toast.makeText(applicationContext, "Downloaded APK gayab hai — update phir aayega", Toast.LENGTH_LONG).show()
+                        Toast.makeText(applicationContext, "Downloaded APK is gone — the update will arrive again", Toast.LENGTH_LONG).show()
                         finish()
                         return@setOnClickListener
                     }
@@ -72,17 +72,17 @@ class UpdateStatusActivity : Activity() {
                         Handler(Looper.getMainLooper()).post {
                             if (path != null) {
                                 dialog.setMessage(
-                                    baseMsg.substringBefore("\n\n") + "\n\nAPK yahan save ho gaya: " + path +
-                                        "\n\nAb: purana Orbit uninstall karo, phir Files/Downloads me is APK ko kholo."
+                                    baseMsg.substringBefore("\n\n") + "\n\nAPK saved here: " + path +
+                                        "\n\nNow: uninstall the old Orbit, then open this APK from Files/Downloads."
                                 )
                             } else {
                                 dialog.setMessage(
-                                    "Downloads me save nahi ho paya.\n\nChrome me ye page kholke APK " +
-                                        "seedha download karo: github.com/khatkitanveer-debug/Orbit-Browser-/releases"
+                                    "Couldn't save to Downloads.\n\nOpen this page in your browser and " +
+                                        "download the APK directly: github.com/khatkitanveer-debug/Orbit-Browser-/releases"
                                 )
                             }
                             btn.isEnabled = true
-                            btn.text = "Dobara save karo"
+                            btn.text = "Try saving again"
                         }
                     }.start()
                 }

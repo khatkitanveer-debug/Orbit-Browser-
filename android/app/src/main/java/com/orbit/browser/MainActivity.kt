@@ -33,6 +33,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.animation.AnimationUtils
+import android.view.animation.TranslateAnimation
+import android.widget.CheckBox
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
@@ -70,6 +73,9 @@ import com.orbit.browser.render.MediaWatchBootstrap
 import com.orbit.browser.render.ViewportBootstrap
 import com.orbit.browser.render.YouTubeAdShield
 import com.orbit.browser.sync.OrbitSync
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -131,6 +137,14 @@ class MainActivity : Activity() {
     private var menuPopup: PopupWindow? = null
     private var suggestPopup: PopupWindow? = null
     private lateinit var shieldBadge: TextView
+
+    // v1.4.0 — omnibox bookmark star + full-screen pages (history/bookmarks/settings)
+    private lateinit var btnStar: ImageButton
+    private lateinit var pageOverlay: FrameLayout
+    private var pageOpen = false
+
+    // v1.4.0 — VPN UI refresh hooks (sheet/menu/settings switches)
+    private val vpnUiHooks = mutableListOf<() -> Unit>()
 
     // EDGE MODULE — sleeping tabs ka timer
     private val sleeper = Handler(Looper.getMainLooper())
@@ -216,6 +230,29 @@ class MainActivity : Activity() {
 
         // Brave Shields badge click — is page ke block stats
         shieldBadge.setOnClickListener { showShieldStats() }
+
+        // v1.4.0 — omnibox bookmark star (Chrome parity): tap = save/remove bookmark
+        btnStar = findViewById(R.id.btn_star)
+        btnStar.setOnClickListener { toggleCurrentBookmark() }
+
+        // v1.4.0 — full-screen page overlay (history / bookmarks / settings pages)
+        // android.R.id.content = FrameLayout root — iske upar kuch bhi overlap ho sakta hai
+        pageOverlay = FrameLayout(this).apply {
+            visibility = View.GONE
+            setBackgroundColor(0xFF202124.toInt())
+        }
+        findViewById<ViewGroup>(android.R.id.content).addView(pageOverlay)
+
+        // v1.4.0 — Orbit VPN (relay engine) init + silent auto-restore
+        RelayEngine.setRelayCacheDir(this)
+        RelayEngine.onUiChanged = {
+            runOnUiThread {
+                runCatching {
+                    vpnUiHooks.forEach { it() }
+                    if (pageOpen) refreshChrome()
+                }
+            }
+        }
 
         // CHROME MODULE — omnibox typing par history/bookmark suggestions.
         // v1.3.5 FIX: typing ke waqt X-button bhi toggle (icons-mix bug ka hissa)
@@ -311,6 +348,8 @@ class MainActivity : Activity() {
         // silent auto-update: naya version mila to background me khud download,
         // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
         runAutoUpdate(manual = false)
+        // v1.4.0 — VPN pref ON tha to background me wapas connect (silent)
+        RelayEngine.autoRestore(this)
     }
 
     // ---------------------------------------------------------- survival mode
@@ -356,9 +395,6 @@ class MainActivity : Activity() {
             }
 
             root.addView(txt("Orbit crash report", 22f, 0xFFFFFFFF.toInt(), bold = true))
-            root.addView(txt(CrashGuard.deviceInfo(this), 13f, 0xFF9AA0A6.toInt()).apply {
-                setPadding(0, dp(8), 0, 0)
-            })
 
             // WebView provider gayab/buggy ho to seedha FIX batao
             if (full.contains("MissingWebViewPackage") || full.contains("WebViewFactory") ||
@@ -366,13 +402,13 @@ class MainActivity : Activity() {
                 full.contains("UnsupportedOperationException")
             ) {
                 root.addView(txt(
-                    "FIX: Play Store kholo → 'Android System WebView' search karo → " +
-                        "Update/Enable karo → phone RESTART karo → Orbit kholo.",
+                    "FIX: Open Play Store → search 'Android System WebView' → " +
+                        "Update/Enable it → RESTART your phone → open Orbit again.",
                     14f, 0xFFFBBC05.toInt(), bold = true,
                 ).apply { setPadding(0, dp(8), 0, 0) })
             }
 
-            root.addView(txt("Wakt: $whenStr", 13f, 0xFF9AA0A6.toInt()).apply {
+            root.addView(txt("When: $whenStr", 13f, 0xFF9AA0A6.toInt()).apply {
                 setPadding(0, dp(12), 0, 0)
             })
             root.addView(txt(firstLine, 15f, 0xFFFF8A80.toInt(), bold = true).apply {
@@ -387,21 +423,21 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
             ).apply { topMargin = dp(10); bottomMargin = dp(4) })
 
-            btn("Report copy karo", 0xFF8AB4F8.toInt(), 0xFF101418.toInt()) {
+            btn("Copy report", 0xFF8AB4F8.toInt(), 0xFF101418.toInt()) {
                 runCatching {
                     val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(
                         ClipData.newPlainText("orbit-crash", CrashGuard.deviceInfo(this) + "\n\n" + full),
                     )
-                    CrashGuard.toast(this, "Copy ho gaya — chat me paste kar do")
+                    CrashGuard.toast(this, "Copied — paste it in the chat")
                 }
             }
-            btn("Safe mode me kholo (bina extras)", 0xFF81C995.toInt(), 0xFF101418.toInt()) {
+            btn("Open in safe mode (no extras)", 0xFF81C995.toInt(), 0xFF101418.toInt()) {
                 safeMode = true
                 CrashGuard.clear(this)
                 startNormalMode()
             }
-            btn("Normal mode try karo", 0xFF3C4043.toInt(), 0xFFFFFFFF.toInt()) {
+            btn("Try normal mode", 0xFF3C4043.toInt(), 0xFFFFFFFF.toInt()) {
                 safeMode = false
                 CrashGuard.clear(this)
                 startNormalMode()
@@ -417,6 +453,11 @@ class MainActivity : Activity() {
         // emergency/survival screen chal rahi hai (init adhoora) — kuch na touch karo
         if (!this::tabSwitcher.isInitialized) {
             super.onBackPressed()
+            return
+        }
+        // v1.4.0 — history/bookmarks/settings page khula hai to pehle wo band karo
+        if (pageOpen) {
+            closePage()
             return
         }
         if (tabSwitcher.visibility == View.VISIBLE) {
@@ -475,10 +516,12 @@ class MainActivity : Activity() {
         val tab = Tab(nextTabId++, NEWTAB, "New Tab")
         tab.isInternal = true
         tab.isIncognito = incognito
+        // v1.4.0 — Settings me "Desktop site" default ON ho to naye tabs desktop UA se khulenge
+        tab.desktopSite = !incognito && LocalStore.getSetting(this, "desktopDefault", "off") == "on"
         tabs.add(tab)
         selectTab(tab.id)
         if (incognito) {
-            Toast.makeText(this, "Incognito tab — history me kuch save nahi hoga", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Incognito tab — nothing is saved to history", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -602,13 +645,43 @@ class MainActivity : Activity() {
         }
         pullRefresh.isEnabled = !tab.isInternal
         if (tab.isIncognito) {
-            omnibox.hint = "Incognito — Search karo ya URL likho"
+            omnibox.hint = "Incognito — Search or type URL"
             toolbar.setBackgroundColor(0xFF3C4043.toInt())
         } else {
             omnibox.hint = getString(R.string.search_hint)
             toolbar.setBackgroundColor(0xFF202124.toInt())
         }
         updateOmniIcon(tab)
+        updateBookmarkStar(tab)
+    }
+
+    /** v1.4.0 — Chrome-jaisa bookmark star: har site par dikhta hai; gold = saved.
+     *  Internal pages (NTP) par nahi — Chrome bhi NTP par star nahi dikhata. */
+    private fun updateBookmarkStar(tab: Tab) {
+        val show = !tab.isInternal && !tab.isIncognito && tab.url.startsWith("http")
+        btnStar.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) {
+            val saved = runCatching { LocalStore.isBookmarked(this, tab.url) }.getOrDefault(false)
+            btnStar.setColorFilter(if (saved) 0xFFFBBC04.toInt() else 0xFF9AA0A6.toInt())
+        }
+    }
+
+    /** v1.4.0 — star toggle (omnibox star + menu "Add bookmark" dono isse call karte hain) */
+    private fun toggleCurrentBookmark() {
+        val tab = activeTab ?: return
+        if (tab.isInternal || !tab.url.startsWith("http")) {
+            Toast.makeText(this, "This page can't be bookmarked", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val nowSaved = runCatching {
+            LocalStore.toggleBookmark(this, tab.url, tab.title.ifBlank { domainOf(tab.url) })
+        }.getOrDefault(false)
+        Toast.makeText(
+            this,
+            if (nowSaved) "Bookmark added" else "Bookmark removed",
+            Toast.LENGTH_SHORT,
+        ).show()
+        updateBookmarkStar(tab)
     }
 
     /** Chrome jaisa: https = lock, http = "not secure" info icon */
@@ -647,7 +720,9 @@ class MainActivity : Activity() {
         // wala fix — dekho render/BackgroundWebView.kt).
         val wv = BackgroundWebView(this)
         wv.setBackgroundColor(0xFF202124.toInt())
-        wv.settings.javaScriptEnabled = true
+        // v1.4.0 — Settings toggles ab LIVE apply hote hain (JavaScript/popups/cookies/images).
+        // Internal pages (newtab) JS-ON force hote hain loadInternal() me.
+        wv.settings.javaScriptEnabled = jsEnabledPref()
         wv.settings.domStorageEnabled = true
         // GOOGLE SERVICES FIX: real WebView UA (engine version sach me match karta
         // hai) + third-party cookies + multiple windows — bina inke Google login,
@@ -658,9 +733,9 @@ class MainActivity : Activity() {
             safeMode -> runCatching { WebSettings.getDefaultUserAgent(this) }.getOrDefault(realUA)
             else -> realUA
         }
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
-        wv.settings.javaScriptCanOpenWindowsAutomatically = true
+        CookieManager.getInstance().setAcceptCookie(cookiesEnabledPref())
+        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, cookiesEnabledPref())
+        wv.settings.javaScriptCanOpenWindowsAutomatically = !blockPopupsPref()
         wv.settings.setSupportMultipleWindows(true)
         wv.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         wv.settings.builtInZoomControls = true
@@ -673,7 +748,7 @@ class MainActivity : Activity() {
         // false — M3 ke lock-screen play/pause control JS ke liye zaroori.
         wv.settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
         wv.settings.textZoom = (resources.configuration.fontScale * 100f).toInt().coerceIn(50, 250)
-        wv.settings.mediaPlaybackRequiresUserGesture = false
+        wv.settings.mediaPlaybackRequiresUserGesture = !autoplayPref()
         // MODULE 3 FIX (screen-lock playback) — Chromium apne MEDIA PIPELINE me
         // video pause kar deta hai jab screen off / app background hoti hai. Ye
         // page-JS visibility-lock se NAHI rukta (pipeline-level pause hai).
@@ -683,7 +758,7 @@ class MainActivity : Activity() {
             wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         }
         wv.settings.databaseEnabled = true
-        wv.settings.loadsImagesAutomatically = true
+        wv.settings.loadsImagesAutomatically = imagesPref()
         wv.settings.allowFileAccess = false
         // MODULE 3 (background playback) — har WebView ka apna media sink.
         // Document-start bootstrap: viewport (M1) + media-watch (M3) + fingerprint
@@ -735,9 +810,10 @@ class MainActivity : Activity() {
                 btnReload.setImageResource(if (newProgress in 1..99) R.drawable.ic_close else R.drawable.ic_refresh)
             }
 
-            // target=_blank / window.open — Chrome ki tarah NAYE TAB me
-            // HARDENED: koi bhi system-callback null/odd ho to app crash nahi karegi
+            // v1.4.0 — "Block pop-ups" setting ON ho to target=_blank window.open
+            // bhi block (Chrome "Pop-ups and redirects" parity)
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+                if (blockPopupsPref()) return false
                 if (view == null || resultMsg == null) return false
                 val ok = runCatching {
                     val temp = WebView(this@MainActivity)
@@ -784,7 +860,7 @@ class MainActivity : Activity() {
                 dm.enqueue(req)
             }.isSuccess
             if (ok) {
-                Toast.makeText(this, "Download shuru: $name", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Download started: $name", Toast.LENGTH_SHORT).show()
             } else {
                 runCatching {
                     startActivity(
@@ -823,7 +899,7 @@ class MainActivity : Activity() {
                 val looksLikeUrl = !x.contains(" ") &&
                     (x.contains(".") || x.contains(":")) &&
                     !x.endsWith(".")
-                if (looksLikeUrl) "https://$x" else GOOGLE_SEARCH + java.net.URLEncoder.encode(x, "UTF-8")
+                if (looksLikeUrl) "https://$x" else searchEngineUrl() + java.net.URLEncoder.encode(x, "UTF-8")
             }
         }
     }
@@ -846,13 +922,16 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun loadInternal(tab: Tab, url: String) {
         tab.isInternal = true
+        // v1.4.0 — internal pages (newtab/music/ai) ke liye JS ALWAYS on
+        // (page khud JS se banta hai; user ka "JavaScript OFF" pref sirf real sites par)
+        val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
+        wv.settings.javaScriptEnabled = true
         tab.title = when {
             url == NEWTAB -> "New Tab"
             url.startsWith("orbit://search") -> "Orbit AI Search"
             url == "orbit://music" -> "Orbit Music"
             else -> "Orbit"
         }
-        val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         when {
             url == NEWTAB -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
             // v1.3.5 — FREE MUSIC LIBRARY: GitHub-repo powered (radio-browser.info +
@@ -876,6 +955,7 @@ class MainActivity : Activity() {
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
         // native browser jaisa chalega.
+        wv.settings.javaScriptEnabled = jsEnabledPref()
         wv.loadUrl(url)
         refreshChrome()
     }
@@ -894,7 +974,7 @@ class MainActivity : Activity() {
         val backend = LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND)
         val wv = tab.webView ?: return
         if (backend.isBlank() || backend == "unset") {
-            wv.evaluateJavascript("window.__aiError('Pehle Settings me apna Orbit AI backend URL set karo (menu -> Settings)')", null)
+            wv.evaluateJavascript("window.__aiError('Set your Orbit AI backend URL in Settings first (menu -> Settings)')", null)
             return
         }
         aiJob = Thread {
@@ -927,9 +1007,9 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun search(q: String) {
-            // newtab search bar — default GOOGLE search (browser ki tarah)
+            // newtab search bar — Settings me chuna hua search engine (default Google)
             runOnUiThread {
-                navigate(tab.id, GOOGLE_SEARCH + java.net.URLEncoder.encode(q, "UTF-8"))
+                navigate(tab.id, searchEngineUrl() + java.net.URLEncoder.encode(q, "UTF-8"))
             }
         }
 
@@ -1011,12 +1091,12 @@ class MainActivity : Activity() {
             OrbitSync.handleSignInResult(this, resultCode, data)
             return
         }
-        // MODULE 4 — VPN consent ka result
+        // MODULE 4 — VPN consent ka result (relay proxy engine use karta hai — consent rare)
         if (requestCode == REQ_VPN_CONSENT) {
             CrashGuard.toast(
                 this,
-                if (resultCode == RESULT_OK) "VPN permission save ho gayi — backend agli update me active hoga"
-                else "VPN permission nahi mili",
+                if (resultCode == RESULT_OK) "VPN permission saved"
+                else "VPN permission denied",
             )
             return
         }
@@ -1112,14 +1192,14 @@ class MainActivity : Activity() {
         val isUrl = lower.startsWith("http://") || lower.startsWith("https://")
         val isUpi = lower.startsWith("upi://") || lower.startsWith("tez://")
         val title = when {
-            isUpi -> "UPI QR scan ho gaya"
-            isUrl -> "Link scan ho gaya"
-            else -> "QR/Barcode scan ho gaya"
+            isUpi -> "UPI QR code scanned"
+            isUrl -> "Link scanned"
+            else -> "QR/Barcode scanned"
         }
         val action = when {
-            isUpi -> "Payment app me kholo"
-            isUrl -> "Kholo"
-            else -> "Google par search karo"
+            isUpi -> "Open in payment app"
+            isUrl -> "Open"
+            else -> "Search on Google"
         }
         runCatching {
             AlertDialog.Builder(this, R.style.OrbitDialog)
@@ -1129,7 +1209,7 @@ class MainActivity : Activity() {
                     when {
                         isUpi -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(t))) }
                             .onFailure {
-                                CrashGuard.toast(this, "Payment app nahi mili — copy kar diya")
+                                CrashGuard.toast(this, "No payment app found — copied instead")
                                 copyLensText(t)
                             }
                         isUrl -> activeTab?.id?.let { navigate(it, t) }
@@ -1139,7 +1219,7 @@ class MainActivity : Activity() {
                     }
                 }
                 .setNeutralButton("Copy") { _, _ -> copyLensText(t) }
-                .setNegativeButton("Band", null)
+                .setNegativeButton("Close", null)
                 .show()
         }
     }
@@ -1148,7 +1228,7 @@ class MainActivity : Activity() {
         runCatching {
             val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(ClipData.newPlainText("orbit-lens", text))
-            CrashGuard.toast(this, "Copy ho gaya")
+            CrashGuard.toast(this, "Copied")
         }
     }
 
@@ -1156,7 +1236,7 @@ class MainActivity : Activity() {
      *  → results URL APP KE ANDAR khulta hai. Endpoint drift/network fail ho to
      *  pehle jaisa: Google app (Lens image-share), warna lens.google.com. */
     private fun lensImageFallback(file: File) {
-        CrashGuard.toast(this, "Google Lens me khoj rahe hain…")
+        CrashGuard.toast(this, "Searching on Google Lens…")
         Thread {
             val uploadCopy = File(file.parentFile, "up_${file.name}")
             var resultsUrl: String? = null
@@ -1204,7 +1284,7 @@ class MainActivity : Activity() {
             } else false
         }.getOrDefault(false)
         if (ok) {
-            CrashGuard.toast(this, "Google app me khoj rahe hain…")
+            CrashGuard.toast(this, "Searching in Google app…")
         } else {
             activeTab?.id?.let { navigate(it, LENS_WEB) }
         }
@@ -1270,7 +1350,7 @@ class MainActivity : Activity() {
         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
             // sirf main frame — subresource errors page todte nahi
             if (request?.isForMainFrame == true) {
-                showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page load nahi hua")
+                showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page failed to load")
             }
         }
 
@@ -1334,7 +1414,8 @@ class MainActivity : Activity() {
         tabSwitcher.visibility = View.GONE
     }
 
-    /** Chrome tab switcher: 2-column cards grid — thumbnail/letter avatar + title + X */
+    /** Chrome tab switcher: 2-column cards grid — 1:1 square preview + floating X
+     *  (v1.4.0: user ne square previews + har card par × manga tha). */
     private fun renderSwitcherCards() {
         switcherTitle.text = "Tabs (${tabs.size})"
         switcherGrid.removeAllViews()
@@ -1345,10 +1426,10 @@ class MainActivity : Activity() {
                 background = getDrawable(if (tab.isIncognito) R.drawable.card_bg_incognito else R.drawable.card_bg)
                 setPadding(dp(6), dp(6), dp(6), dp(6))
             }
-            // thumbnail (ya letter avatar)
+            // thumbnail — 1:1 square (Chrome tab grid parity)
             val thumbHolder = FrameLayout(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(96),
+                    LinearLayout.LayoutParams.MATCH_PARENT, colWidth,
                 )
                 setBackgroundColor(0xFF3C4043.toInt())
             }
@@ -1365,42 +1446,48 @@ class MainActivity : Activity() {
                     Gravity.CENTER,
                 )
                 text = domainOf(tab.url).removePrefix("www.").take(1).uppercase().ifBlank { "?" }
-                textSize = 26f
+                textSize = 34f
                 setTextColor(0xFFE8EAED.toInt())
                 if (tab.thumb != null) visibility = View.GONE
             }
-            thumbHolder.addView(iv)
-            thumbHolder.addView(letter)
-            card.addView(thumbHolder)
-
-            // title + close row
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(4), dp(6), dp(0), dp(0))
-            }
-            val title = TextView(this).apply {
-                text = (if (tab.sleeping) "😴 " else "") +
-                    (if (tab.isIncognito) "[Incognito] " else "") +
-                    tab.title.ifBlank { domainOf(tab.url) }
-                textSize = 11f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setTextColor(0xFFE8EAED.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val x = ImageButton(this).apply {
+            // floating X — preview ke top-right corner par (Chrome jaisa cancel)
+            val closeBtn = ImageButton(this).apply {
                 setImageResource(R.drawable.ic_close)
-                setColorFilter(0xFF9AA0A6.toInt())
-                background = getDrawable(R.drawable.btn_ripple)
-                layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+                setColorFilter(0xFFE8EAED.toInt())
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xE6202124.toInt())
+                }
+                layoutParams = FrameLayout.LayoutParams(dp(30), dp(30), Gravity.TOP or Gravity.END).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                }
                 setOnClickListener {
                     closeTabInternal(tab)
                     if (tabs.isEmpty()) { hideTabSwitcher(); newTab() }
                 }
             }
+            thumbHolder.addView(iv)
+            thumbHolder.addView(letter)
+            thumbHolder.addView(closeBtn)
+            card.addView(thumbHolder)
+
+            // title row (favicon letter + title)
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(6), dp(4), dp(0))
+            }
+            val title = TextView(this).apply {
+                text = (if (tab.sleeping) "😴 " else "") +
+                    (if (tab.isIncognito) "[Incognito] " else "") +
+                    tab.title.ifBlank { domainOf(tab.url) }
+                textSize = 11.5f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(0xFFE8EAED.toInt())
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
             row.addView(title)
-            row.addView(x)
             card.addView(row)
 
             card.setOnClickListener {
@@ -1430,84 +1517,120 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------------- menu (Chrome order)
 
-    /** Chrome-jaisa 3-dot menu — btn_menu ke neeche se slide hoke khulta hai, right-aligned. */
+    /** Chrome-jaisa 3-dot menu — btn_menu ke neeche se slide hoke khulta hai, right-aligned.
+     *  v1.4.0 — Chrome parity rebuild: icon rows + real ON/OFF switches + Downloads +
+     *  Sign in with Google + VPN switch. Scrollable (Chrome menu bhi overflow par scroll hota hai). */
     private fun showMenu() {
         if (isFinishing || isDestroyed) return
         if (menuPopup?.isShowing == true) { menuPopup?.dismiss(); return }
         val anchor = findViewById<View>(R.id.btn_menu)
-        val content = layoutInflater.inflate(R.layout.popup_menu, null)
-        val list = content.findViewById<LinearLayout>(R.id.menu_items)
+        val list = layoutInflater.inflate(R.layout.popup_menu, null) as LinearLayout
 
         val tab = activeTab
-        data class Item(val icon: Int, val label: String, val action: () -> Unit)
-        val items = listOf(
-            Item(R.drawable.ic_newtab, "New tab") { newTab() },
-            Item(R.drawable.ic_private, "Incognito tab") { newTab(incognito = true) },
-            null, // divider
-            Item(R.drawable.ic_history, "History") { showHistory() },
-            Item(R.drawable.ic_star, "Bookmarks") { showBookmarks() },
-            Item(R.drawable.ic_ai, "AI Search") { showAiSearchPrompt() },
-            Item(R.drawable.ic_find, "Find in page") { showFindBar() },
-            null, // divider
-            Item(R.drawable.ic_desktop, if (tab?.desktopSite == true) "✓ Desktop site" else "Desktop site") { toggleDesktopSite() },
-            Item(R.drawable.ic_share, "Share karo") { sharePage() },
-            Item(R.drawable.ic_shield, if (shieldsEnabled()) "✓ Shields (ads block)" else "Shields (ads block)") { toggleShields(); renderSwitcherCards() },
-            Item(R.drawable.ic_lock, if (antiFpEnabled()) "✓ Anti-fingerprint" else "Anti-fingerprint") { toggleAntiFp() },
-            Item(R.drawable.ic_fire, "Fire Button (sab data clear)") { fireButton() },
-            null, // divider
-            Item(R.drawable.ic_sync, "Orbit Sync (Google)") { showSync() },
-            Item(R.drawable.ic_vpn, "VPN (beta)") { showVpn() },
-            null, // divider
-            Item(R.drawable.ic_update, "Check update") { runAutoUpdate(manual = true) },
-            Item(R.drawable.ic_settings, "Settings") { showSettings() },
-            Item(R.drawable.ic_about, "About Orbit") { showAbout() },
-        )
 
-        for (item in items) {
-            if (item == null) {
-                val div = View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
-                        setMargins(dp(6), dp(4), dp(6), dp(4))
-                    }
-                    setBackgroundColor(0xFF3C4043.toInt())
+        fun divider() {
+            list.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                    setMargins(dp(6), dp(4), dp(6), dp(4))
                 }
-                list.addView(div)
-                continue
-            }
-            val row = LinearLayout(this).apply {
+                setBackgroundColor(0xFF3C4043.toInt())
+            })
+        }
+
+        fun row(iconRes: Int, label: String, action: () -> Unit) {
+            val r = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(20), 0, dp(20), 0)
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46))
+                setPadding(dp(18), 0, dp(18), 0)
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
                 background = getDrawable(R.drawable.btn_ripple)
                 isClickable = true
                 isFocusable = true
             }
             val iv = ImageView(this).apply {
-                setImageResource(item.icon)
+                setImageResource(iconRes)
                 setColorFilter(0xFFE8EAE9.toInt())
                 layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
             }
             val tv = TextView(this).apply {
-                text = item.label
+                text = label
                 setTextColor(0xFFE8EAE9.toInt())
                 textSize = 15f
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(20)
+                    marginStart = dp(18)
                 }
             }
-            row.addView(iv)
-            row.addView(tv)
-            row.setOnClickListener {
+            r.addView(iv)
+            r.addView(tv)
+            r.setOnClickListener {
                 menuPopup?.dismiss()
-                item.action()
+                action()
             }
-            list.addView(row)
+            list.addView(r)
         }
 
+        fun rowToggle(iconRes: Int, label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(18), 0, dp(18), 0)
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                isFocusable = true
+            }
+            val iv = ImageView(this).apply {
+                setImageResource(iconRes)
+                setColorFilter(0xFFE8EAE9.toInt())
+                layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
+            }
+            val tv = TextView(this).apply {
+                text = label
+                setTextColor(0xFFE8EAE9.toInt())
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(18)
+                }
+            }
+            val tgl = makeToggle(checked) { on -> onToggle(on) }
+            r.addView(iv)
+            r.addView(tv)
+            r.addView(tgl)
+            // poora row click bhi switch ko hi trigger kare (Chrome toggle-row parity)
+            r.setOnClickListener { tgl.performClick() }
+            list.addView(r)
+        }
+
+        // Chrome Android menu order
+        row(R.drawable.ic_newtab, "New tab") { newTab() }
+        row(R.drawable.ic_private, "New Incognito tab") { newTab(incognito = true) }
+        divider()
+        row(R.drawable.ic_history, "History") { showHistory() }
+        row(R.drawable.ic_star, "Bookmarks") { showBookmarks() }
+        row(R.drawable.ic_download, "Downloads") { openDownloads() }
+        row(R.drawable.ic_star, "Add bookmark") { toggleCurrentBookmark() }
+        row(R.drawable.ic_find, "Find in page") { showFindBar() }
+        row(R.drawable.ic_share, "Share") { sharePage() }
+        divider()
+        rowToggle(R.drawable.ic_desktop, "Desktop site", tab?.desktopSite == true) { toggleDesktopSite() }
+        rowToggle(R.drawable.ic_shield, "Shields (block ads & trackers)", shieldsEnabled()) { toggleShields() }
+        rowToggle(R.drawable.ic_lock, "Anti-fingerprint", antiFpEnabled()) { toggleAntiFp() }
+        rowToggle(R.drawable.ic_vpn, "VPN", RelayEngine.isEnabled(this)) { on ->
+            if (on) RelayEngine.connect(this) else RelayEngine.disconnect(this)
+        }
+        divider()
+        row(R.drawable.ic_google, "Sign in with Google") { showGoogleSignIn() }
+        row(R.drawable.ic_ai, "AI Search") { showAiSearchPrompt() }
+        row(R.drawable.ic_fire, "Fire Button (clear all data)") { fireButton() }
+        divider()
+        row(R.drawable.ic_update, "Check for updates") { runAutoUpdate(manual = true) }
+        row(R.drawable.ic_settings, "Settings") { showSettings() }
+
+        // Chrome menu overflow par scroll hota hai — same
+        val scroller = ScrollView(this).apply { addView(list) }
         menuPopup = PopupWindow(
-            content,
-            dp(262),
+            scroller,
+            dp(292),
             ViewGroup.LayoutParams.WRAP_CONTENT,
             true,
         ).apply {
@@ -1517,6 +1640,901 @@ class MainActivity : Activity() {
             isOutsideTouchable = true
             showAsDropDown(anchor, -dp(2), dp(2), Gravity.END)
         }
+    }
+
+    /** v1.4.0 — premium ON/OFF pill switch (Material 3 style, dark theme).
+     *  Track blue = ON, gray = OFF, thumb animate hota hai. Har "on/off ki
+     *  zaroorat" wali jagah ye hi toggle dikhta hai. */
+    private fun makeToggle(initial: Boolean, onChanged: (Boolean) -> Unit): View {
+        var on = initial
+        val track = View(this).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(34), dp(18), Gravity.CENTER_VERTICAL)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(9).toFloat()
+                setColor(if (on) 0xFF8AB4F8.toInt() else 0xFF5F6368.toInt())
+            }
+        }
+        val thumb = View(this).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER_VERTICAL)
+            translationX = if (on) dp(16).toFloat() else dp(2).toFloat()
+            background = GradientDrawable().apply {
+                cornerRadius = dp(7).toFloat()
+                setColor(if (on) 0xFF202124.toInt() else 0xFFE8EAED.toInt())
+            }
+        }
+        val holder = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            addView(track)
+            addView(thumb)
+        }
+        fun render() {
+            (track.background as? GradientDrawable)?.setColor(if (on) 0xFF8AB4F8.toInt() else 0xFF5F6368.toInt())
+            (thumb.background as? GradientDrawable)?.setColor(if (on) 0xFF202124.toInt() else 0xFFE8EAED.toInt())
+            thumb.animate().translationX(if (on) dp(16).toFloat() else dp(2).toFloat()).setDuration(120).start()
+        }
+        holder.setOnClickListener { on = !on; render(); onChanged(on) }
+        return holder
+    }
+
+    /** v1.4.0 — Downloads: system Downloads UI (Orbit ke DownloadManager items yahan dikhte hain) */
+    private fun openDownloads() {
+        runCatching {
+            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {
+            Toast.makeText(this, "Downloads app not found", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** v1.4.0 — Google sign-in card: Continue dabao → accounts.google.com Orbit ke
+     *  WebView me khulta hai. Google ka apna account-chooser dialog phone me jo
+     *  accounts saved hain wo dikhata hai; session Orbit ke cookies me persist
+     *  hota hai — YouTube/Gmail waghera baad me auto logged-in milte hain. */
+    private fun showGoogleSignIn() {
+        val pad = dp(22)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(20), pad, dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
+            }
+        }
+        val iv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_google)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        }
+        val title = TextView(this).apply {
+            text = "Sign in with Google"
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(6))
+        }
+        val msg = TextView(this).apply {
+            text = "Use the Google account already signed in on this phone.\n\n" +
+                "Orbit opens Google's own account picker — pick your account and you're in. " +
+                "Your Google session stays inside Orbit, so YouTube, Gmail and other Google sites stay signed in."
+            textSize = 14f
+            setTextColor(0xFF9AA0A6.toInt())
+            setLineSpacing(0f, 1.25f)
+        }
+        box.addView(iv)
+        box.addView(title)
+        box.addView(msg)
+
+        fun pill(label: String, bg: Int, fg: Int, action: () -> Unit) {
+            val b = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(fg)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(13), dp(16), dp(13))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(bg)
+                }
+                setOnClickListener { action() }
+            }
+            box.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        pill("Continue with Google", 0xFF8AB4F8.toInt(), 0xFF1E1F22.toInt()) {
+            hideCardOverlay()
+            val tab = activeTab
+            if (tab == null) return@pill
+            navigate(
+                tab.id,
+                "https://accounts.google.com/ServiceLogin?continue=" +
+                    java.net.URLEncoder.encode("https://www.google.com/", "UTF-8"),
+            )
+        }
+        pill("Not now", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) { hideCardOverlay() }
+
+        showCardOverlay(box)
+    }
+
+    // ------------------------------------------------- v1.4.0 overlay infra
+    // Chrome se ALAG premium look: dim + centered rounded card (dialogs) aur
+    // full-screen pages (history/bookmarks/settings) slide-in animation ke saath.
+
+    private var pageDialog: FrameLayout? = null
+
+    /** Centered premium card — dim background, tap-outside dismiss, slide-up anim */
+    private fun showCardOverlay(card: View) {
+        hideCardOverlay()
+        pageDialog = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setOnClickListener { hideCardOverlay() }
+        }
+        card.isClickable = true
+        card.layoutParams = FrameLayout.LayoutParams(dp(336), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER)
+        pageDialog!!.addView(card)
+        findViewById<ViewGroup>(android.R.id.content).addView(pageDialog!!)
+        card.translationY = dp(26).toFloat()
+        card.alpha = 0f
+        card.animate().translationY(0f).alpha(1f).setDuration(180).start()
+    }
+
+    private fun hideCardOverlay() {
+        pageDialog?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        pageDialog = null
+    }
+
+    /** Full-screen page (history/bookmarks/settings) — Chrome page jaisa, slide-in */
+    private fun openPage(
+        title: String,
+        actionIcon: Int = 0,
+        onAction: () -> Unit = {},
+        build: (LinearLayout) -> Unit,
+    ) {
+        pageOverlay.removeAllViews()
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(10), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58),
+            )
+        }
+        val back = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_back)
+            setColorFilter(0xFFE8EAED.toInt())
+            background = getDrawable(R.drawable.btn_ripple)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+            setOnClickListener { closePage() }
+        }
+        val tv = TextView(this).apply {
+            text = title
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(12)
+            }
+        }
+        bar.addView(back)
+        bar.addView(tv)
+        if (actionIcon != 0) {
+            val act = ImageButton(this).apply {
+                setImageResource(actionIcon)
+                setColorFilter(0xFFE8EAED.toInt())
+                background = getDrawable(R.drawable.btn_ripple)
+                layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+                setOnClickListener { onAction() }
+            }
+            bar.addView(act)
+        }
+        pageOverlay.addView(bar)
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(4), dp(14), dp(24))
+        }
+        build(content)
+        val scroll = ScrollView(this).apply {
+            addView(content)
+            isVerticalScrollBarEnabled = false
+        }
+        pageOverlay.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        pageOverlay.visibility = View.VISIBLE
+        pageOpen = true
+        pageOverlay.clearAnimation()
+        val anim = TranslateAnimation(dp(36).toFloat(), 0f, 0f, 0f).apply { duration = 170 }
+        pageOverlay.startAnimation(anim)
+    }
+
+    private fun closePage() {
+        pageOpen = false
+        vpnUiHooks.clear()
+        pageOverlay.visibility = View.GONE
+        pageOverlay.removeAllViews()
+        hideCardOverlay()
+    }
+
+    /** page row factory — icon + title + subtitle (+ optional right widget) */
+    private fun pageRow(
+        iconRes: Int,
+        title: String,
+        sub: String,
+        right: View? = null,
+        onClick: (() -> Unit)? = null,
+    ): LinearLayout {
+        val r = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(14), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58),
+            ).apply { topMargin = dp(2) }
+            if (onClick != null) {
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onClick() }
+            }
+        }
+        val iv = ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(0xFF9AA0A6.toInt())
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(16); marginEnd = dp(8)
+            }
+        }
+        val t = TextView(this).apply {
+            text = title
+            textSize = 15.5f
+            setTextColor(0xFFE8EAED.toInt())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val s = TextView(this).apply {
+            text = sub
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        col.addView(t)
+        col.addView(s)
+        r.addView(iv)
+        r.addView(col)
+        right?.let { r.addView(it) }
+        return r
+    }
+
+    private fun pageHeader(label: String, into: LinearLayout) {
+        into.addView(TextView(this).apply {
+            text = label
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFF8AB4F8.toInt())
+            setPadding(dp(14), dp(18), dp(8), dp(6))
+        })
+    }
+
+    private fun pageDivider(into: LinearLayout) {
+        into.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+                setMargins(dp(14), dp(6), dp(14), dp(6))
+            }
+            setBackgroundColor(0xFF3C4043.toInt())
+        })
+    }
+
+    private fun pageEmpty(msg: String): View = TextView(this).apply {
+        text = msg
+        textSize = 14f
+        setTextColor(0xFF9AA0A6.toInt())
+        gravity = Gravity.CENTER
+        setPadding(dp(24), dp(60), dp(24), dp(24))
+    }
+
+    // ------------------------------------------------- history page (Chrome-style)
+
+    /** v1.4.0 — Chrome jaisa HISTORY page: day-groups, per-row delete, trash →
+     *  clear-browsing-data card. (Pehle ka plain AlertDialog history gaya.) */
+    private fun showHistory() {
+        openPage("History", actionIcon = R.drawable.ic_trash, onAction = { showClearDataCard() }) { content ->
+            val items = LocalStore.listHistory(this)
+            if (items.isEmpty()) {
+                content.addView(pageEmpty("Pages you visit will show up here.\n\nBrowsing history stays on this device only."))
+                return@openPage
+            }
+            val dayFmt = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault())
+            var lastDay = ""
+            items.forEachIndexed { i, h ->
+                val day = dayFmt.format(Date(h.ts))
+                if (day != lastDay) {
+                    lastDay = day
+                    val pretty = when {
+                        android.text.format.DateUtils.isToday(h.ts) -> "Today"
+                        System.currentTimeMillis() - h.ts < 48 * 3600_000L -> "Yesterday"
+                        else -> day
+                    }
+                    content.addView(TextView(this).apply {
+                        text = pretty
+                        textSize = 13f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(0xFF9AA0A6.toInt())
+                        setPadding(dp(14), dp(14), dp(8), dp(6))
+                    })
+                }
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(10), 0, dp(6), 0)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(56),
+                    )
+                    background = getDrawable(R.drawable.btn_ripple)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { newTabWithUrl(h.url) }
+                }
+                // letter avatar circle
+                val letter = domainOf(h.url).removePrefix("www.").take(1).uppercase().ifBlank { "?" }
+                val avatar = TextView(this).apply {
+                    text = letter
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(0xFFE8EAED.toInt())
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(0xFF3C4043.toInt())
+                    }
+                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+                }
+                val col = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = dp(12); marginEnd = dp(4)
+                    }
+                }
+                val t = TextView(this).apply {
+                    text = h.title.ifBlank { h.url }
+                    textSize = 14.5f
+                    setTextColor(0xFFE8EAED.toInt())
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                val u = TextView(this).apply {
+                    text = domainOf(h.url)
+                    textSize = 12f
+                    setTextColor(0xFF9AA0A6.toInt())
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                col.addView(t)
+                col.addView(u)
+                val del = ImageButton(this).apply {
+                    setImageResource(R.drawable.ic_close)
+                    setColorFilter(0xFF9AA0A6.toInt())
+                    background = getDrawable(R.drawable.btn_ripple)
+                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+                    setOnClickListener {
+                        runCatching { LocalStore.removeHistoryAt(this@MainActivity, i) }
+                        showHistory()
+                    }
+                }
+                row.addView(avatar)
+                row.addView(col)
+                row.addView(del)
+                content.addView(row)
+            }
+        }
+    }
+
+    /** v1.4.0 — clear browsing data card (Chrome "Delete browsing data" parity):
+     *  checkboxes + premium card + real clearing */
+    private fun showClearDataCard() {
+        val pad = dp(22)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(20), pad, dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
+            }
+        }
+        box.addView(TextView(this).apply {
+            text = "Clear browsing data"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        box.addView(TextView(this).apply {
+            text = "Basic"
+            textSize = 12f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(0, 0, 0, dp(6))
+        })
+
+        var cbHistory: CheckBox? = null
+        var cbCookies: CheckBox? = null
+        var cbCache: CheckBox? = null
+        fun checkRow(label: String, initial: Boolean, assign: (CheckBox) -> Unit): View {
+            val cb = CheckBox(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(0xFFE8EAED.toInt())
+                isChecked = initial
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                buttonTintList = android.content.res.ColorStateList.valueOf(0xFF8AB4F8.toInt())
+            }
+            assign(cb)
+            box.addView(cb, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+            return cb
+        }
+        checkRow("Browsing history", true) { cbHistory = it }
+        checkRow("Cookies and site data", true) { cbCookies = it }
+        checkRow("Cached images and files", false) { cbCache = it }
+
+        fun pill(label: String, bg: Int, fg: Int, action: () -> Unit) {
+            val b = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(fg)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(13), dp(16), dp(13))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(bg)
+                }
+                setOnClickListener { action() }
+            }
+            box.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        pill("Clear data", 0xFF8AB4F8.toInt(), 0xFF1E1F22.toInt()) {
+            if (cbHistory?.isChecked == true) runCatching { LocalStore.clearHistory(this) }
+            if (cbCookies?.isChecked == true) runCatching {
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+                runCatching { WebStorage.getInstance().deleteAllData() }
+                runCatching { WebViewDatabase.getInstance(this).clearFormData() }
+            }
+            if (cbCache?.isChecked == true) runCatching {
+                tabs.forEach { it.webView?.clearCache(true) }
+            }
+            hideCardOverlay()
+            if (pageOpen) showHistory()
+            Toast.makeText(this, "Browsing data cleared", Toast.LENGTH_SHORT).show()
+        }
+        pill("Cancel", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) { hideCardOverlay() }
+        showCardOverlay(box)
+    }
+
+    // ------------------------------------------------- bookmarks page (Chrome-style)
+
+    /** v1.4.0 — BOOKMARKS ka apna section: list + gold star + per-row delete.
+     *  (Pehle plain AlertDialog tha.) */
+    private fun showBookmarks() {
+        openPage("Bookmarks") { content ->
+            val items = LocalStore.listBookmarks(this)
+            if (items.isEmpty()) {
+                content.addView(pageEmpty("No bookmarks yet.\n\nTap the star in the address bar to save the page you're on."))
+                return@openPage
+            }
+            items.forEachIndexed { i, b ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(10), 0, dp(6), 0)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(56),
+                    )
+                    background = getDrawable(R.drawable.btn_ripple)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener { newTabWithUrl(b.url) }
+                }
+                val star = ImageView(this).apply {
+                    setImageResource(R.drawable.ic_star)
+                    setColorFilter(0xFFFBBC04.toInt())
+                    layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+                }
+                val col = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = dp(14); marginEnd = dp(4)
+                    }
+                }
+                val t = TextView(this).apply {
+                    text = b.title.ifBlank { b.url }
+                    textSize = 14.5f
+                    setTextColor(0xFFE8EAED.toInt())
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                val u = TextView(this).apply {
+                    text = domainOf(b.url)
+                    textSize = 12f
+                    setTextColor(0xFF9AA0A6.toInt())
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                col.addView(t)
+                col.addView(u)
+                val del = ImageButton(this).apply {
+                    setImageResource(R.drawable.ic_close)
+                    setColorFilter(0xFF9AA0A6.toInt())
+                    background = getDrawable(R.drawable.btn_ripple)
+                    layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+                    setOnClickListener {
+                        runCatching { LocalStore.removeBookmarkAt(this@MainActivity, i) }
+                        showBookmarks()
+                        refreshChrome()
+                    }
+                }
+                row.addView(star)
+                row.addView(col)
+                row.addView(del)
+                content.addView(row)
+            }
+        }
+    }
+
+    // ------------------------------------------------- settings page (Chrome-style)
+
+    /** v1.4.0 — Chrome jaisa SETTINGS page: Basics / Advanced / Sync & sign-in /
+     *  Orbit AI / About sections, har on-off cheez par real switch. */
+    private fun showSettings() {
+        openPage("Settings") { content ->
+            fun toggleRow(iconRes: Int, title: String, sub: String, key: String, def: String, liveApply: (Boolean) -> Unit = {}) {
+                val initial = LocalStore.getSetting(this, key, def) != "off"
+                val tgl = makeToggle(initial) { on ->
+                    LocalStore.setSetting(this, key, if (on) "on" else "off")
+                    liveApply(on)
+                }
+                content.addView(pageRow(iconRes, title, sub, right = tgl))
+            }
+
+            pageHeader("Basics", content)
+            // Search engine picker
+            val engine = LocalStore.getSetting(this, "searchEngine", "google")
+            val engineName = when (engine) {
+                "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
+            }
+            content.addView(pageRow(R.drawable.ic_find, "Search engine", engineName) { showSearchEngineCard() })
+            // VPN row — live status (hook se update hota hai)
+            val vpnSub = TextView(this).apply {
+                text = RelayEngine.statusText
+                textSize = 12f
+                setTextColor(0xFF9AA0A6.toInt())
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            val vpnRow = pageRow(R.drawable.ic_vpn, "VPN", RelayEngine.statusText, right = null) { showVpnSheet() }
+            // pageRow apna subtitle khud banata hai — hook ke liye usko pakdo
+            val vpnCol = vpnRow.getChildAt(1) as? LinearLayout
+            val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView ?: vpnSub
+            vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
+            content.addView(vpnRow)
+            toggleRow(R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
+            toggleRow(R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
+            toggleRow(R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
+            toggleRow(R.drawable.ic_lock, "Accept cookies", "Sites remember your sign-ins", "cookiesEnabled", "on") { on ->
+                runCatching {
+                    CookieManager.getInstance().setAcceptCookie(on)
+                    tabs.forEach { t ->
+                        t.webView?.let { CookieManager.getInstance().setAcceptThirdPartyCookies(it, on) }
+                    }
+                }
+            }
+            toggleRow(R.drawable.ic_settings, "Load images", "Show images on web pages", "imagesEnabled", "on") { on ->
+                tabs.forEach { t -> t.webView?.settings?.loadsImagesAutomatically = on }
+            }
+            toggleRow(R.drawable.ic_settings, "JavaScript", "Run scripts on sites (recommended: on)", "jsEnabled", "on") { on ->
+                // live reload non-internal active tab — warna purana page purani setting par hi rahega
+                val t = activeTab
+                if (t != null && !t.isInternal) t.webView?.let { wv ->
+                    wv.settings.javaScriptEnabled = on
+                    wv.reload()
+                }
+            }
+            content.addView(pageRow(R.drawable.ic_trash, "Clear browsing data", "History, cookies, cache") { showClearDataCard() })
+            content.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
+
+            pageHeader("Advanced", content)
+            toggleRow(R.drawable.ic_desktop, "Desktop site default", "New tabs open as desktop", "desktopDefault", "off")
+            toggleRow(R.drawable.ic_settings, "Media autoplay", "Play videos without tapping", "autoplay", "on") { on ->
+                tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
+            }
+            toggleRow(R.drawable.ic_update, "Sleeping tabs", "Freeze inactive tabs to save battery", "sleepTabs", "on")
+            toggleRow(R.drawable.ic_settings, "Memory saver", "Free up RAM from old tabs", "memorySaver", "on")
+
+            pageHeader("Sign in & sync", content)
+            content.addView(pageRow(R.drawable.ic_google, "Sign in with Google", "Use your phone's Google account") { showGoogleSignIn() })
+            content.addView(pageRow(R.drawable.ic_sync, "Orbit Sync", "Bookmarks + history backup") { showSync() })
+
+            pageHeader("Orbit AI", content)
+            content.addView(pageRow(R.drawable.ic_ai, "AI backend", LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND).ifBlank { "Not set" }) { showAiBackendCard() })
+
+            pageHeader("About", content)
+            content.addView(pageRow(R.drawable.ic_update, "Check for updates", "Orbit v${BuildConfig.VERSION_NAME}") { runAutoUpdate(manual = true) })
+            content.addView(pageRow(R.drawable.ic_about, "About Orbit", "Fast. Private. Yours.") { showAbout() })
+        }
+    }
+
+    /** v1.4.0 — search engine picker card */
+    private fun showSearchEngineCard() {
+        val pad = dp(22)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, dp(20), pad, dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
+            }
+        }
+        box.addView(TextView(this).apply {
+            text = "Search engine"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        val engines = listOf(
+            "google" to "Google",
+            "bing" to "Bing",
+            "ddg" to "DuckDuckGo",
+            "brave" to "Brave",
+        )
+        val current = LocalStore.getSetting(this, "searchEngine", "google")
+        engines.forEach { (key, name) ->
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(48),
+                )
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                isFocusable = true
+            }
+            r.addView(TextView(this).apply {
+                text = name
+                textSize = 15.5f
+                setTextColor(0xFFE8EAED.toInt())
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            r.addView(ImageView(this).apply {
+                setImageResource(if (key == current) R.drawable.ic_star else R.drawable.ic_down)
+                setColorFilter(if (key == current) 0xFF8AB4F8.toInt() else 0x00000000)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            })
+            r.setOnClickListener {
+                LocalStore.setSetting(this, "searchEngine", key)
+                hideCardOverlay()
+                Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
+            }
+            box.addView(r)
+        }
+        showCardOverlay(box)
+    }
+
+    // ------------------------------------------------- VPN sheet (premium bottom card)
+
+    /** v1.4.0 — ORBIT VPN sheet: ON/OFF switch, live status, free relay list,
+     *  refresh. Tor-jaisa browser-scoped routing — websites ko relay ka IP dikhta hai. */
+    private fun showVpnSheet() {
+        hideCardOverlay()
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setOnClickListener { hideCardOverlay() }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f)
+                setColor(0xFF292A2D.toInt())
+            }
+            background = bg
+            setPadding(dp(20), dp(14), dp(20), dp(24))
+            isClickable = true
+        }
+        root.addView(card, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        ))
+
+        // drag handle
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(0xFF5F6368.toInt())
+            }
+        })
+
+        val statusDot = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                gravity = Gravity.CENTER_VERTICAL; marginEnd = dp(8)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF9AA0A6.toInt())
+            }
+        }
+        val statusText = TextView(this).apply {
+            text = RelayEngine.statusText
+            textSize = 14f
+            setTextColor(0xFF9AA0A6.toInt())
+        }
+        val relayList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val vpnToggle = makeToggle(RelayEngine.isEnabled(this)) { on ->
+            if (on) RelayEngine.connect(this) else RelayEngine.disconnect(this)
+        }
+
+        fun renderRelays() {
+            relayList.removeAllViews()
+            statusText.text = RelayEngine.statusText
+            (statusDot.background as? GradientDrawable)?.setColor(
+                when (RelayEngine.state) {
+                    "on" -> 0xFF81C995.toInt()
+                    "connecting" -> 0xFFFBBC05.toInt()
+                    else -> 0xFF9AA0A6.toInt()
+                },
+            )
+            val rs = RelayEngine.relays
+            if (rs.isEmpty()) {
+                relayList.addView(TextView(this).apply {
+                    text = if (RelayEngine.state == "connecting") "Finding working relays…"
+                    else "Tap the switch to connect.\nOrbit picks the fastest working relay automatically."
+                    textSize = 13f
+                    setTextColor(0xFF9AA0A6.toInt())
+                    setPadding(dp(4), dp(8), dp(4), dp(8))
+                })
+            } else {
+                rs.forEach { r ->
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(8), 0, dp(8), 0)
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dp(44),
+                        )
+                        background = getDrawable(R.drawable.btn_ripple)
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { RelayEngine.useRelay(r) }
+                    }
+                    row.addView(TextView(this).apply {
+                        text = r.country
+                        textSize = 14.5f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(0xFFE8EAED.toInt())
+                        layoutParams = LinearLayout.LayoutParams(dp(64), ViewGroup.LayoutParams.WRAP_CONTENT)
+                    })
+                    row.addView(TextView(this).apply {
+                        text = "${r.host}:${r.port}"
+                        textSize = 12f
+                        setTextColor(0xFF9AA0A6.toInt())
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            marginStart = dp(8)
+                        }
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                    })
+                    row.addView(TextView(this).apply {
+                        text = "${r.latencyMs}ms" + (if (RelayEngine.activeRelay == r) "  •" else "")
+                        textSize = 12f
+                        setTextColor(if (RelayEngine.activeRelay == r) 0xFF81C995.toInt() else 0xFF9AA0A6.toInt())
+                    })
+                    relayList.addView(row)
+                }
+            }
+        }
+
+        // title row: VPN + switch
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(12), 0, dp(6))
+        }
+        titleRow.addView(TextView(this).apply {
+            text = "VPN"
+            textSize = 22f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        titleRow.addView(vpnToggle)
+        card.addView(titleRow)
+
+        val statusRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, dp(10))
+        }
+        statusRow.addView(statusDot)
+        statusRow.addView(statusText)
+        card.addView(statusRow)
+
+        card.addView(TextView(this).apply {
+            text = "Routes your browser traffic through free community relays — " +
+                "websites see the relay's IP, not yours (like Tor, inside the browser). " +
+                "Browser traffic only. Free public relays — speed varies."
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val headRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        headRow.addView(TextView(this).apply {
+            text = "Free relays"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFF8AB4F8.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        headRow.addView(ImageButton(this).apply {
+            setImageResource(R.drawable.ic_refresh)
+            setColorFilter(0xFF9AA0A6.toInt())
+            background = getDrawable(R.drawable.btn_ripple)
+            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34))
+            setOnClickListener { RelayEngine.refresh(this@MainActivity, RelayEngine.isEnabled(this@MainActivity)) }
+        })
+        card.addView(headRow)
+        card.addView(relayList)
+
+        if (!RelayEngine.proxySupported()) {
+            card.addView(TextView(this).apply {
+                text = "This device's WebView doesn't support proxy routing — VPN can't work here."
+                textSize = 12f
+                setTextColor(0xFFF28B82.toInt())
+                setPadding(0, dp(10), 0, 0)
+            })
+        }
+
+        renderRelays()
+        val hook: () -> Unit = { runOnUiThread { renderRelays() } }
+        vpnUiHooks.add(hook)
+
+        findViewById<ViewGroup>(android.R.id.content).addView(root)
+        pageDialog = root
+        card.translationY = dp(40).toFloat()
+        card.animate().translationY(0f).setDuration(200).start()
+    }
+
+    // ------------------------------------------------- preferences helpers (v1.4.0)
+
+    private fun jsEnabledPref(): Boolean = LocalStore.getSetting(this, "jsEnabled", "on") != "off"
+    private fun blockPopupsPref(): Boolean = LocalStore.getSetting(this, "blockPopups", "on") != "off"
+    private fun cookiesEnabledPref(): Boolean = LocalStore.getSetting(this, "cookiesEnabled", "on") != "off"
+    private fun imagesPref(): Boolean = LocalStore.getSetting(this, "imagesEnabled", "on") != "off"
+    private fun autoplayPref(): Boolean = LocalStore.getSetting(this, "autoplay", "on") != "off"
+
+    /** Settings me chuna hua search engine (default Google) */
+    private fun searchEngineUrl(): String = when (LocalStore.getSetting(this, "searchEngine", "google")) {
+        "bing" -> "https://www.bing.com/search?q="
+        "ddg" -> "https://duckduckgo.com/?q="
+        "brave" -> "https://search.brave.com/search?q="
+        else -> GOOGLE_SEARCH
     }
 
     private fun showFindBar() {
@@ -1541,7 +2559,7 @@ class MainActivity : Activity() {
     private fun sharePage() {
         val tab = activeTab ?: return
         if (tab.isInternal) {
-            Toast.makeText(this, "Internal page share nahi hota", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Internal pages can't be shared", Toast.LENGTH_SHORT).show()
             return
         }
         val i = Intent(Intent.ACTION_SEND).apply {
@@ -1549,7 +2567,7 @@ class MainActivity : Activity() {
             putExtra(Intent.EXTRA_TEXT, tab.url)
             putExtra(Intent.EXTRA_SUBJECT, tab.title)
         }
-        runCatching { startActivity(Intent.createChooser(i, "Share karo")) }
+        runCatching { startActivity(Intent.createChooser(i, "Share via")) }
     }
 
     // ---------------------------------------------------------------- modules (v1.2.0)
@@ -1563,7 +2581,7 @@ class MainActivity : Activity() {
     private fun toggleShields() {
         val on = shieldsEnabled()
         LocalStore.setSetting(this, "shields", if (on) "off" else "on")
-        Toast.makeText(this, if (on) "Shields OFF — ads dikhenge" else "Shields ON — ads/trackers block", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, if (on) "Shields OFF — ads will show" else "Shields ON — ads/trackers blocked", Toast.LENGTH_SHORT).show()
     }
 
     private fun toggleAntiFp() {
@@ -1571,14 +2589,15 @@ class MainActivity : Activity() {
         LocalStore.setSetting(this, "antiFp", if (on) "off" else "on")
         Toast.makeText(
             this,
-            if (on) "Anti-fingerprint OFF (naye tabs me)" else "Anti-fingerprint ON (naye tabs me)",
+            if (on) "Anti-fingerprint OFF (new tabs)" else "Anti-fingerprint ON (new tabs)",
             Toast.LENGTH_SHORT,
         ).show()
     }
 
     /** Brave Shields badge — omnibox pill me blocked count.
      *  v1.3.5 FIX: badge visible hote hi omnibox ka end-padding badhao — warna
-     *  URL/search text badge ke NEECHE se guzar ke icons ke saath MIX hota tha. */
+     *  URL/search text badge ke NEECHE se guzar ke icons ke saath MIX hota tha.
+     *  v1.4.0: star bhi end icons me hai — dono ke liye sahi padding. */
     private fun updateShieldBadge() {
         val n = activeTab?.blockedCount ?: 0
         runOnUiThread {
@@ -1588,28 +2607,32 @@ class MainActivity : Activity() {
                 shieldBadge.visibility = View.VISIBLE
                 shieldBadge.post {
                     val w = shieldBadge.width.takeIf { it > 0 } ?: dp(52)
-                    omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44) + w + dp(8), omnibox.paddingBottom)
+                    val starSpace = if (btnStar.visibility == View.VISIBLE) dp(32) else 0
+                    omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44) + starSpace + w + dp(8), omnibox.paddingBottom)
                 }
             } else {
                 shieldBadge.visibility = View.GONE
-                omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44), omnibox.paddingBottom)
+                val starSpace = if (btnStar.visibility == View.VISIBLE) dp(34) else 0
+                omnibox.setPadding(omnibox.paddingLeft, omnibox.paddingTop, dp(44) + starSpace, omnibox.paddingBottom)
             }
         }
     }
 
-    /** v1.3.5 — Chrome-jaisa omnibox focus mode: typing ke waqt lock/shield/reload
+    /** v1.3.5 — Chrome-jaisa omnibox focus mode: typing ke waqt lock/shield/star/reload
      *  icons hide + X dikhao. Suggestions popup aur icons ka "mix" isi se fixed. */
     private fun applyOmniFocus(focused: Boolean) {
         if (focused) {
             omniIcon.visibility = View.GONE
             shieldBadge.visibility = View.GONE
             btnReload.visibility = View.GONE
+            btnStar.visibility = View.GONE
             btnClear.visibility = if (omnibox.text.isBlank()) View.GONE else View.VISIBLE
         } else {
             omniIcon.visibility = View.VISIBLE
             btnReload.visibility = View.VISIBLE
             btnClear.visibility = View.GONE
             updateShieldBadge()
+            activeTab?.let { updateBookmarkStar(it) }
         }
     }
 
@@ -1618,9 +2641,9 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle("🛡 Orbit Shields")
             .setMessage(
-                "Is page par ${tab?.blockedCount ?: 0} ads/trackers block hue.\n" +
-                    "Is session me total ${AdBlocker.totalBlocked} blocked.\n\n" +
-                    "Network-level blocking — matched requests server tak jaane se pehle drop hote hain.",
+                "${tab?.blockedCount ?: 0} ads/trackers blocked on this page.\n" +
+                    "${AdBlocker.totalBlocked} blocked in this session.\n\n" +
+                    "Network-level blocking — matched requests are dropped before they ever reach the server.",
             )
             .setPositiveButton("OK", null)
             .show()
@@ -1630,8 +2653,8 @@ class MainActivity : Activity() {
     private fun fireButton() {
         AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle("🔥 Fire Button")
-            .setMessage("Cookies, cache, site data aur history — SAB clear ho jayega, sab tabs band. Pakka?")
-            .setPositiveButton("🔥 Jala do") { _, _ -> doFire() }
+            .setMessage("Cookies, cache, site data and history will ALL be cleared and all tabs closed. Sure?")
+            .setPositiveButton("🔥 Burn it all") { _, _ -> doFire() }
             .setNegativeButton("Cancel", null)
             .show()
     }
@@ -1658,13 +2681,15 @@ class MainActivity : Activity() {
             flash.animate().alpha(0f).setDuration(320)
                 .withEndAction { (flash.parent as? ViewGroup)?.removeView(flash) }.start()
             newTab()
-            Toast.makeText(this, "🔥 Sab data jala diya — fresh start", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "🔥 All data wiped — fresh start", Toast.LENGTH_SHORT).show()
         }.start()
     }
 
     /** OPERA MODULE lite — max live WebViews, baaki oldest ka WebView destroy
-     *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai) */
+     *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai).
+     *  v1.4.0 — Settings me "Memory saver" OFF ho to eviction band. */
     private fun evictExcessTabs() {
+        if (LocalStore.getSetting(this, "memorySaver", "on") == "off") return
         // MODULE 3 FIX — media owner tab eviction se OUT: video background me
         // chal rahi ho to uska WebView kabhi destroy nahi hoga
         var live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
@@ -1692,6 +2717,11 @@ class MainActivity : Activity() {
         override fun run() {
             // activity chali gayi to timer band — dead activity ko callbacks nahi
             if (isFinishing || isDestroyed) return
+            // v1.4.0 — "Sleeping tabs" setting OFF = battery feature band
+            if (LocalStore.getSetting(this@MainActivity, "sleepTabs", "on") == "off") {
+                sleeper.postDelayed(this, 30_000)
+                return
+            }
             val now = System.currentTimeMillis()
             for (tab in tabs) {
                 if (tab === activeTab || tab.sleeping || tab.webView == null || tab.isInternal) continue
@@ -1781,7 +2811,7 @@ class MainActivity : Activity() {
         // suggestion hota hai — tappable search-link, tap karo aur seedha jao
         if (typed.isNotEmpty()) {
             content.addView(
-                suggestionRow(R.drawable.ic_find, typed, "Google par search karo") {
+                suggestionRow(R.drawable.ic_find, typed, "Search") {
                     suggestPopup?.dismiss()
                     omnibox.clearFocus()
                     navigateInput(typed)
@@ -1811,75 +2841,128 @@ class MainActivity : Activity() {
 
     /** AI search optional hai — menu se. Default search Google hai. */
     private fun showAiSearchPrompt() {
-        val input = EditText(this)
-        input.hint = "AI se kya poochna hai?"
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Orbit AI Search")
-            .setView(input)
-            .setPositiveButton("Search") { _, _ ->
-                val q = input.text.toString().trim()
-                val tab = activeTab ?: return@setPositiveButton
-                if (q.isNotEmpty()) navigate(tab.id, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
             }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showHistory() {
-        val items = LocalStore.listHistory(this)
-        if (items.isEmpty()) {
-            Toast.makeText(this, "History khali hai", Toast.LENGTH_SHORT).show()
-            return
         }
-        val labels = items.map { it.title.ifBlank { it.url } }.toTypedArray()
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("History")
-            .setItems(labels) { _, which -> newTabWithUrl(items[which].url) }
-            .setNeutralButton("Clear") { _, _ ->
-                LocalStore.clearHistory(this)
-                Toast.makeText(this, "History clear", Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton("Band karo", null)
-            .show()
-    }
-
-    private fun showBookmarks() {
-        val items = LocalStore.listBookmarks(this)
-        if (items.isEmpty()) {
-            Toast.makeText(this, "Koi bookmark nahi", Toast.LENGTH_SHORT).show()
-            return
+        box.addView(TextView(this).apply {
+            text = "Orbit AI Search"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        val input = EditText(this).apply {
+            hint = "What do you want to ask?"
+            setHintTextColor(0xFF9AA0A6.toInt())
+            setTextColor(0xFFE8EAED.toInt())
+            textSize = 15f
+            background = getDrawable(R.drawable.omnibox_bg)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
         }
-        val labels = items.map { it.title.ifBlank { it.url } }.toTypedArray()
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Bookmarks")
-            .setItems(labels) { _, which -> newTabWithUrl(items[which].url) }
-            .setNegativeButton("Band karo", null)
-            .show()
-    }
-
-    private fun showSettings() {
-        val view = layoutInflater.inflate(R.layout.dialog_settings, null)
-        val backendInput = view.findViewById<EditText>(R.id.input_backend)
-        backendInput.setText(LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND))
-        val versionText = view.findViewById<TextView>(R.id.text_version)
-        versionText.text = "Orbit Browser v${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})\n" +
-            "Data 100% aapke device me — history, bookmarks, sab local."
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Settings")
-            .setView(view)
-            .setPositiveButton("Save") { _, _ ->
-                LocalStore.setSetting(this, "aiBackend", backendInput.text.toString().trim())
-                Toast.makeText(this, "Settings save ho gayi", Toast.LENGTH_SHORT).show()
+        box.addView(input, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        fun pill(label: String, bg: Int, fg: Int, action: () -> Unit) {
+            val b = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(fg)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(13), dp(16), dp(13))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(bg)
+                }
+                setOnClickListener { action() }
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            box.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        pill("Search", 0xFF8AB4F8.toInt(), 0xFF1E1F22.toInt()) {
+            val q = input.text.toString().trim()
+            val tab = activeTab
+            if (q.isNotEmpty() && tab != null) navigate(tab.id, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
+            hideCardOverlay()
+        }
+        pill("Cancel", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) { hideCardOverlay() }
+        showCardOverlay(box)
     }
 
-    // ---------------------------------------------------------------- MODULE 4 (sync + vpn)
+    /** v1.4.0 — AI backend card (Settings → Orbit AI → AI backend) */
+    private fun showAiBackendCard() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(20), dp(22), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
+            }
+        }
+        box.addView(TextView(this).apply {
+            text = "AI backend"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(4))
+        })
+        box.addView(TextView(this).apply {
+            text = "Your deployed Orbit web app URL. AI search answers stream from here."
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        val input = EditText(this).apply {
+            setText(LocalStore.getSetting(this@MainActivity, "aiBackend", DEFAULT_AI_BACKEND))
+            hint = "https://your-orbit-web-app"
+            setHintTextColor(0xFF9AA0A6.toInt())
+            setTextColor(0xFFE8EAED.toInt())
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            background = getDrawable(R.drawable.omnibox_bg)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        box.addView(input, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        fun pill(label: String, bg: Int, fg: Int, action: () -> Unit) {
+            val b = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(fg)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(13), dp(16), dp(13))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(bg)
+                }
+                setOnClickListener { action() }
+            }
+            box.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        pill("Save", 0xFF8AB4F8.toInt(), 0xFF1E1F22.toInt()) {
+            LocalStore.setSetting(this, "aiBackend", input.text.toString().trim())
+            hideCardOverlay()
+            Toast.makeText(this, "AI backend saved", Toast.LENGTH_SHORT).show()
+        }
+        pill("Cancel", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) { hideCardOverlay() }
+        showCardOverlay(box)
+    }
+
+    // ---------------------------------------------------------------- MODULE 4 (sync)
 
     /** MODULE 4 — Orbit Sync: Google account se bookmarks/history sync
      *  (Firestore REST — bina google-services.json). Config khali = feature
-     *  honestly "off" bolegi. Dialog bhi existing OrbitDialog style me hi. */
+     *  honestly "off" bolegi. v1.4.0 — premium card + English. */
     private fun showSync() {
         val pad = dp(20)
         fun label(s: String) = TextView(this).apply {
@@ -1908,17 +2991,20 @@ class MainActivity : Activity() {
         val fApi = field(LocalStore.getSetting(this, "syncApiKey", ""), "Firebase Web API key")
         val fProject = field(LocalStore.getSetting(this, "syncProjectId", ""), "Firebase project ID")
 
-        fun pill(text: String, color: Int, action: () -> Unit) = TextView(this).apply {
+        fun pill(text: String, bg: Int, fg: Int, action: () -> Unit) = TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(color)
-            background = getDrawable(R.drawable.btn_ripple)
-            setPadding(0, dp(12), 0, dp(12))
+            setTextColor(fg)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(bg)
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f,
-            )
+            ).apply { marginEnd = dp(8) }
             setOnClickListener { action() }
         }
 
@@ -1937,8 +3023,19 @@ class MainActivity : Activity() {
 
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, dp(8), pad, 0)
+            setPadding(pad, dp(20), pad, dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF1E1F22.toInt())
+            }
         }
+        box.addView(TextView(this).apply {
+            text = "Orbit Sync"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(8))
+        })
         box.addView(label("Firebase config (console → Project settings → Web app):"))
         box.addView(fClient)
         box.addView(fApi)
@@ -1947,11 +3044,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(14), 0, 0)
         }
-        actions.addView(pill("Google se sign in", 0xFF8AB4F8.toInt()) {
+        actions.addView(pill("Sign in with Google", 0xFF1A73E8.toInt(), 0xFFFFFFFF.toInt()) {
             saveConfig()
             OrbitSync.signIn(this@MainActivity)
         })
-        actions.addView(pill("Abhi sync karo", 0xFF81C995.toInt()) {
+        actions.addView(pill("Sync now", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) {
             saveConfig()
             OrbitSync.syncNow(this@MainActivity) { _, msg ->
                 CrashGuard.toast(this@MainActivity, msg)
@@ -1961,51 +3058,44 @@ class MainActivity : Activity() {
         box.addView(actions)
         box.addView(status)
 
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Orbit Sync (Google)")
-            .setView(box)
-            .setPositiveButton("Save") { _, _ -> saveConfig() }
-            .setNegativeButton("Band karo", null)
-            .show()
-    }
-
-    /** MODULE 4 — VPN scaffolding: consent + lifecycle ready, routing backend
-     *  agli release me. Honest beta — jhooth bol kar "connected" nahi dikhayenge. */
-    private fun showVpn() {
-        AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Orbit VPN (beta)")
-            .setMessage(
-                "VPN ka structure ready hai: system consent + secure tunnel lifecycle.\n\n" +
-                    "Routing backend (Tor/DNS policy) agli update me aayega — tab tak ye sirf " +
-                    "permission save karta hai, traffic me kuch nahi chhoota.\n\n" +
-                    "Abhi permission de do — agli update me seedha active ho jayega.",
-            )
-            .setPositiveButton("Permission de do") { _, _ ->
-                runCatching {
-                    val intent = VpnService.prepare(this)
-                    if (intent == null) {
-                        CrashGuard.toast(this, "VPN permission pehle se hai — backend agli update me active hoga")
-                    } else {
-                        startActivityForResult(intent, REQ_VPN_CONSENT)
-                    }
-                }.onFailure {
-                    CrashGuard.toast(this, "VPN permission nahi de paye — dobara try karo")
+        fun pillBar(label: String, bg: Int, fg: Int, action: () -> Unit) {
+            val b = TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(fg)
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(13), dp(16), dp(13))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(bg)
                 }
+                setOnClickListener { action() }
             }
-            .setNegativeButton("Band karo", null)
-            .show()
+            box.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        pillBar("Save config", 0xFF8AB4F8.toInt(), 0xFF1E1F22.toInt()) {
+            saveConfig()
+            hideCardOverlay()
+            Toast.makeText(this, "Sync config saved", Toast.LENGTH_SHORT).show()
+        }
+        pillBar("Close", 0xFF3C4043.toInt(), 0xFFE8EAED.toInt()) { hideCardOverlay() }
+        showCardOverlay(box)
     }
 
     private fun showAbout() {
         AlertDialog.Builder(this, R.style.OrbitDialog)
             .setTitle("Orbit Browser")
             .setMessage(
-                "Orbit — Fast. Private. Aapka.\n\n" +
+                "Orbit — Fast. Private. Yours.\n\n" +
                     "• Real browser: Chromium engine, Google services built-in\n" +
-                    "• Chrome jaisa UI: tab switcher, omnibox, find, desktop site\n" +
-                    "• Aapka data device par hi — koi server nahi\n" +
-                    "• Incognito tab — history me kuch nahi\n" +
-                    "• OTA updates: background download, ek tap install\n\n" +
+                    "• Chrome-style UI: tab switcher, omnibox, find, desktop site\n" +
+                    "• VPN: free community relays, Tor-style browser routing\n" +
+                    "• Your data stays on your device — no servers\n" +
+                    "• Incognito tab — nothing saved to history\n" +
+                    "• OTA updates: background download, one-tap install\n\n" +
                     "v${BuildConfig.VERSION_NAME}",
             )
             .setPositiveButton("OK", null)
@@ -2030,15 +3120,15 @@ class MainActivity : Activity() {
                     return@runOnUiThread
                 }
                 AlertDialog.Builder(this, R.style.OrbitDialog)
-                    .setTitle("Orbit ${info.versionName} ready hai")
-                    .setMessage("Install dabao — purana version replace ho jayega (aapka data safe rahega).")
+                    .setTitle("Orbit ${info.versionName} is ready")
+                    .setMessage("Tap Install — the old version will be replaced (your data stays safe).")
                     .setPositiveButton("Install") { _, _ ->
                         UpdateChecker.installWithStatus(this, apk)
                     }
-                    .setNeutralButton("Chrome me APK kholo") { _, _ ->
+                    .setNeutralButton("Open APK in browser") { _, _ ->
                         UpdateChecker.openApkInBrowser(this, info.apkUrl)
                     }
-                    .setNegativeButton("Baad me", null)
+                    .setNegativeButton("Later", null)
                     .show()
             }
         }
@@ -2052,16 +3142,16 @@ class MainActivity : Activity() {
      */
     private fun showMigrationDialog(info: UpdateChecker.UpdateInfo, apk: File) {
         AlertDialog.Builder(this, R.style.OrbitDialog)
-            .setTitle("Orbit ${info.versionName} — ek baar migration chahiye")
+            .setTitle("Orbit ${info.versionName} — one-time migration needed")
             .setMessage(
-                "Purana Orbit alag build key se bana hai, isliye Android naya version uske UPAR " +
-                    "install nahi hone dega (isliye 'Install' ke baad kuch nahi hota tha).\n\n" +
-                    "1. Neeche 'APK Downloads me save karo' dabao\n" +
-                    "2. 'Purana uninstall karo' dabao\n" +
-                    "3. Files/Downloads app me saved APK kholke install karo\n\n" +
-                    "Ye SIRF IS EK BAAR hai — iske baad saare updates khud install honge.",
+                "The old Orbit was built with a different key, so Android won't install the new " +
+                    "version on top of it (that's why nothing happened after 'Install').\n\n" +
+                    "1. Tap 'Save APK to Downloads' below\n" +
+                    "2. Tap 'Uninstall old version'\n" +
+                    "3. Open the saved APK from the Files/Downloads app to install\n\n" +
+                    "This is needed ONLY ONCE — after that every update installs itself.",
             )
-            .setPositiveButton("APK Downloads me save karo") { _, _ ->
+            .setPositiveButton("Save APK to Downloads") { _, _ ->
                 Thread {
                     val path = UpdateChecker.saveApkToDownloads(this, apk)
                     runOnUiThread {
@@ -2069,26 +3159,26 @@ class MainActivity : Activity() {
                         if (path == null) {
                             Toast.makeText(
                                 this,
-                                "Save nahi hua — Chrome me APK seedha download karo: ${info.apkUrl}",
+                                "Save failed — download the APK directly in your browser: ${info.apkUrl}",
                                 Toast.LENGTH_LONG,
                             ).show()
                         } else {
                             AlertDialog.Builder(this, R.style.OrbitDialog)
-                                .setTitle("APK save ho gaya")
-                                .setMessage("$path\n\nAb purana Orbit uninstall karein?")
-                                .setPositiveButton("Haan, uninstall karo") { _, _ ->
+                                .setTitle("APK saved")
+                                .setMessage("$path\n\nUninstall the old Orbit now?")
+                                .setPositiveButton("Yes, uninstall") { _, _ ->
                                     UpdateChecker.uninstallSelf(this)
                                 }
-                                .setNegativeButton("Baad me", null)
+                                .setNegativeButton("Later", null)
                                 .show()
                         }
                     }
                 }.start()
             }
-            .setNeutralButton("Chrome me APK kholo") { _, _ ->
+            .setNeutralButton("Open APK in browser") { _, _ ->
                 UpdateChecker.openApkInBrowser(this, info.apkUrl)
             }
-            .setNegativeButton("Baad me", null)
+            .setNegativeButton("Later", null)
             .show()
     }
 

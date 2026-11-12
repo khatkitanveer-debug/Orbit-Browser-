@@ -31,12 +31,12 @@ class InstallStatusReceiver : BroadcastReceiver() {
                 runCatching {
                     ctx.startActivity(confirm?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }.onFailure {
-                    Toast.makeText(ctx, "Install screen nahi khuli — 'Install unknown apps' allow karo", Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, "Install screen didn't open — allow 'Install unknown apps' for Orbit", Toast.LENGTH_LONG).show()
                 }
             }
 
             PackageInstaller.STATUS_SUCCESS ->
-                Toast.makeText(ctx, "Orbit update ho gaya", Toast.LENGTH_LONG).show()
+                Toast.makeText(ctx, "Orbit updated successfully", Toast.LENGTH_LONG).show()
 
             else -> {
                 val i = Intent(ctx, UpdateStatusActivity::class.java)

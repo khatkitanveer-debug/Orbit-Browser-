@@ -52,6 +52,19 @@
                 android:maxLines="1"
                 android:importantForAutofill="no" />
 
+            <!-- Bookmark star (Chrome parity): tap = current page bookmark save/remove -->
+            <ImageButton
+                android:id="@+id/btn_star"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="38dp"
+                android:background="@drawable/btn_ripple"
+                android:src="@drawable/ic_star"
+                android:contentDescription="@string/bookmark"
+                android:tint="@color/chrome_text_dim"
+                android:visibility="gone" />
+
             <!-- Brave Shields badge — is page par kitne ads/trackers block hue -->
             <TextView
                 android:id="@+id/shield_badge"
@@ -88,7 +101,7 @@
                 android:layout_marginEnd="5dp"
                 android:background="@drawable/btn_ripple"
                 android:src="@drawable/ic_close"
-                android:contentDescription="Saaf karo"
+                android:contentDescription="Clear"
                 android:tint="@color/chrome_text_dim"
                 android:visibility="gone" />
         </FrameLayout>
@@ -186,7 +199,7 @@
             android:background="@drawable/btn_ripple"
             android:src="@drawable/ic_up"
             android:tint="@color/chrome_text"
-            android:contentDescription="Upar" />
+            android:contentDescription="Previous match" />
 
         <ImageButton
             android:id="@+id/find_next"
@@ -195,7 +208,7 @@
             android:background="@drawable/btn_ripple"
             android:src="@drawable/ic_down"
             android:tint="@color/chrome_text"
-            android:contentDescription="Neeche" />
+            android:contentDescription="Next match" />
 
         <ImageButton
             android:id="@+id/find_close"
@@ -204,7 +217,7 @@
             android:background="@drawable/btn_ripple"
             android:src="@drawable/ic_close"
             android:tint="@color/chrome_text"
-            android:contentDescription="Band karo" />
+            android:contentDescription="Close" />
     </LinearLayout>
 
     <!-- Content + Chrome pull-to-refresh -->

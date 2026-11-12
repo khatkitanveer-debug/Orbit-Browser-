@@ -72,9 +72,9 @@ object OrbitSync {
     fun statusLine(ctx: Context): String {
         val base = when {
             !isConfigured(ctx) ->
-                "Status: config set nahi hai — neeche 3 values bhar ke Save karo (Firebase console → Project settings → Web app + Google Web client ID)."
+                "Status: config not set — fill the 3 values below and Save (Firebase console → Project settings → Web app + Google Web client ID)."
             !isSignedIn(ctx) ->
-                "Status: config ho gayi — ab 'Google se sign in' dabao."
+                "Status: config saved — now tap 'Sign in with Google'."
             else ->
                 "Status: signed in (${LocalStore.getSetting(ctx, "syncEmail", "Google account")})."
         }
@@ -82,13 +82,13 @@ object OrbitSync {
     }
 
     private fun relative(ts: Long): String {
-        if (ts <= 0) return "kabhi nahi"
+        if (ts <= 0) return "never"
         val mins = (System.currentTimeMillis() - ts) / 60_000
         return when {
-            mins < 1 -> "abhi abhi"
-            mins < 60 -> "${mins}m pehle"
-            mins < 1440 -> "${mins / 60}h pehle"
-            else -> "${mins / 1440}d pehle"
+            mins < 1 -> "just now"
+            mins < 60 -> "${mins}m ago"
+            mins < 1440 -> "${mins / 60}h ago"
+            else -> "${mins / 1440}d ago"
         }
     }
 
@@ -97,7 +97,7 @@ object OrbitSync {
     /** Native Google sign-in — system account picker khulta hai (M4 jaisa). */
     fun signIn(activity: Activity) {
         if (!isConfigured(activity)) {
-            CrashGuard.toast(activity, "Pehle config save karo — Web client ID zaroori hai")
+            CrashGuard.toast(activity, "Save the config first — Web client ID is required")
             return
         }
         val ok = runCatching {
@@ -111,13 +111,13 @@ object OrbitSync {
             )
             true
         }.getOrDefault(false)
-        if (!ok) CrashGuard.toast(activity, "Google sign-in khula nahi — Play Services check karo")
+        if (!ok) CrashGuard.toast(activity, "Google sign-in didn't open — check Play Services")
     }
 
     /** MainActivity.onActivityResult se aata hai — idToken → Firebase session. */
     fun handleSignInResult(activity: Activity, resultCode: Int, data: Intent?) {
         if (resultCode != Activity.RESULT_OK) {
-            CrashGuard.toast(activity, "Sign-in cancel ho gaya")
+            CrashGuard.toast(activity, "Sign-in cancelled")
             return
         }
         Thread {
@@ -125,7 +125,7 @@ object OrbitSync {
             val ok = runCatching {
                 val account = GoogleSignIn.getSignedInAccountFromIntent(data)
                     .getResult(ApiException::class.java)
-                val idToken = account.idToken ?: error("Google ne idToken nahi diya")
+                val idToken = account.idToken ?: error("Google didn't return an idToken")
                 val body = JSONObject()
                     .put("postBody", "id_token=$idToken&providerId=google.com")
                     .put("requestUri", "http://localhost")
@@ -147,8 +147,8 @@ object OrbitSync {
             main.post {
                 CrashGuard.toast(
                     activity,
-                    if (ok) "Sign-in ho gaya — ab 'Abhi sync karo' dabao"
-                    else "Sign-in fail — Web client ID / API key check karo",
+                    if (ok) "Signed in — now tap 'Sync now'"
+                    else "Sign-in failed — check Web client ID / API key",
                 )
             }
         }.start()
@@ -160,7 +160,7 @@ object OrbitSync {
     fun syncNow(ctx: Context, done: (Boolean, String) -> Unit) {
         Thread {
             val result = runCatching { runSync(ctx) }.getOrElse {
-                Pair(false, "Sync fail — network ya Firebase config check karo")
+                Pair(false, "Sync failed — check network or Firebase config")
             }
             main.post { done(result.first, result.second) }
         }.start()
@@ -169,12 +169,12 @@ object OrbitSync {
     private class RemoteDoc(val url: String, val title: String, val updatedAt: Long, val deleted: Boolean)
 
     private fun runSync(ctx: Context): Pair<Boolean, String> {
-        if (!isConfigured(ctx)) return Pair(false, "Sync band — pehle Firebase config save karo")
-        if (!isSignedIn(ctx)) return Pair(false, "Sync band — pehle Google se sign in karo")
+        if (!isConfigured(ctx)) return Pair(false, "Sync is off — save the Firebase config first")
+        if (!isSignedIn(ctx)) return Pair(false, "Sync is off — sign in with Google first")
         val (_, apiKey, projectId) = cfg(ctx)
         val uid = LocalStore.getSetting(ctx, "syncUid", "")
         val token = runCatching { refreshIdToken(ctx, apiKey) }.getOrNull()
-            ?: return Pair(false, "Session expire ho gayi — dobara sign in karo")
+            ?: return Pair(false, "Session expired — sign in again")
         val base = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/orbit/$uid"
 
         var added = 0

@@ -44,6 +44,16 @@ object LocalStore {
 
     fun clearHistory(ctx: Context) = file(ctx, "history.json").delete()
 
+    /** v1.4.0 — history page me single entry delete (index = listHistory ka index) */
+    fun removeHistoryAt(ctx: Context, index: Int) {
+        val items = listHistory(ctx)
+        if (index !in items.indices) return
+        items.removeAt(index)
+        val arr = JSONArray()
+        items.forEach { arr.put(JSONObject().put("url", it.url).put("title", it.title).put("ts", it.ts)) }
+        file(ctx, "history.json").writeText(arr.toString())
+    }
+
     /** MODULE 4 (sync) — custom ts ke saath upsert (remote merge apply) */
     fun putHistory(ctx: Context, url: String, title: String, ts: Long) {
         val items = listHistory(ctx)
@@ -118,6 +128,14 @@ object LocalStore {
         val items = listBookmarks(ctx)
         val ex = items.firstOrNull { it.url == url } ?: return
         items.remove(ex)
+        saveBookmarks(ctx, items)
+    }
+
+    /** v1.4.0 — bookmarks page me single delete (index = listBookmarks ka index) */
+    fun removeBookmarkAt(ctx: Context, index: Int) {
+        val items = listBookmarks(ctx)
+        if (index !in items.indices) return
+        items.removeAt(index)
         saveBookmarks(ctx, items)
     }
 
