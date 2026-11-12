@@ -1,7 +1,7 @@
 {
-  "versionCode": 23,
-  "versionName": "1.3.8",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.3.8/orbit-browser-1.3.8.apk",
-  "notes": "v1.3.8 — Orbit Music me SEARCH aa gaya: ab koi bhi gaana ya radio station naam se search karke seedha play karo — bina login, bina kisi app install kiye (Audius free songs + live radio, dono open-source APIs). Mochy Music app ka link bhi Music page par hai. versionCode 23",
+  "versionCode": 24,
+  "versionName": "1.4.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.0/orbit-browser-1.4.0.apk",
+  "notes": "v1.4.0 — Chrome-parity UI overhaul: Brave-style boxed shortcuts (bigger icons, long-press x to remove), Chrome-style 3-dot menu with real switches, omnibox bookmark star, 1:1 tab previews with x, full History page (day groups + clear browsing data), full Bookmarks page, full Settings page (Basics/Advanced) with on/off toggles everywhere, premium dark dialogs, English-only UI, Sign in with Google, and the new Orbit VPN: free community relays (Tor-style browser routing) with an on/off switch. versionCode 24",
   "minVersionCode": 1
 }
