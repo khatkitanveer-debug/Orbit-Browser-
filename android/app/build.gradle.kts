@@ -37,7 +37,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 25
-        versionName = "1.4.1"
+        versionName = "1.4.2"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 
