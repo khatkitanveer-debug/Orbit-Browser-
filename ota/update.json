@@ -1,7 +1,7 @@
 {
-  "versionCode": 26,
-  "versionName": "1.4.4",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.4/orbit-browser-1.4.4.apk",
-  "notes": "v1.4.4 — 3 updates: (1) Orbit ring loader ab search bar ke NEECHE floating overlay me — omnibox ke andar nahi, lock icon ab hamesha dikhta hai, (2) Chrome jaisa download box: multi-segment engine (Chrome-speed), real-time speed + time left (1.2 MB/s · 45s left, UC style), bottom download bar + Downloads page — pause/resume/delete/open, file phone ke Downloads folder me save hoti hai, (3) slow websites fix: VPN relay health watchdog (8 min me health check, slow relay par faster swap) + page-stall detector. versionCode 26",
+  "versionCode": 27,
+  "versionName": "1.4.5",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.5/orbit-browser-1.4.5.apk",
+  "notes": "v1.4.5 — IMPORTANT crash fix: kuch devices par app khulte hi ya page load karte waqt crash ho raha tha (v1.4.4 ka ring loader issue) — ye update zaroor install karein. Ab loading ring har page par smooth chalega. versionCode 27",
   "minVersionCode": 1
 }
