@@ -1,7 +1,7 @@
 {
-  "versionCode": 31,
-  "versionName": "1.4.9",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.9/orbit-browser-1.4.9.apk",
-  "notes": "v1.4.9 — Silent updates: aaj ke baad updates khud download hote hai aur installer khud khulta hai, Orbit ka dialog nahi aayega. Ek baar Install dabao phir sab silent. Google scan hatane ke liye app me guide aayegi. versionCode 31",
+  "versionCode": 32,
+  "versionName": "1.5.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.5.0/orbit-browser-1.5.0.apk",
+  "notes": "v1.5.0 — Spider Mode me DuckDuckGo ab PAKKA: search engine ki setting jo bhi ho, VPN on hone par search hamesha DuckDuckGo par jayegi. Search bar me 'Search privately with DuckDuckGo' dikhega. versionCode 32",
   "minVersionCode": 1
 }
