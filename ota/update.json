@@ -1,7 +1,7 @@
 {
-  "versionCode": 27,
-  "versionName": "1.4.5",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.5/orbit-browser-1.4.5.apk",
-  "notes": "v1.4.5 — IMPORTANT crash fix: kuch devices par app khulte hi ya page load karte waqt crash ho raha tha (v1.4.4 ka ring loader issue) — ye update zaroor install karein. Ab loading ring har page par smooth chalega. versionCode 27",
+  "versionCode": 28,
+  "versionName": "1.4.6",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.6/orbit-browser-1.4.6.apk",
+  "notes": "v1.4.6 — update ke baad purana error screen na dikhe (ab crash report me build number stamp hota hai aur update par purana log clear ho jata hai) + update card turant dikhega (CDN cache fix). versionCode 28",
   "minVersionCode": 1
 }
