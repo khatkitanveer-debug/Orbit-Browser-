@@ -116,6 +116,9 @@ class MainActivity : Activity() {
 
     private lateinit var toolbar: LinearLayout
     private lateinit var container: FrameLayout
+    // v1.6.0 — home screen (newtab) par omnibox pill HIDE, Orbit brand text show
+    private lateinit var omniPill: FrameLayout
+    private lateinit var toolbarBrand: TextView
     private lateinit var omnibox: EditText
     private lateinit var omniIcon: ImageView
     private lateinit var btnReload: ImageButton
@@ -238,6 +241,8 @@ class MainActivity : Activity() {
 
         toolbar = findViewById(R.id.toolbar)
         container = findViewById(R.id.container)
+        omniPill = findViewById(R.id.omni_pill)
+        toolbarBrand = findViewById(R.id.toolbar_brand)
         omnibox = findViewById(R.id.omnibox)
         omniIcon = findViewById(R.id.omni_icon)
         btnReload = findViewById(R.id.btn_reload)
@@ -287,6 +292,17 @@ class MainActivity : Activity() {
         pageOverlay = FrameLayout(this).apply {
             visibility = View.GONE
             setBackgroundColor(0xFF202124.toInt())
+        }
+        // v1.6.0 FIX — pageOverlay android.R.id.content me hai (root ka padding isi
+        // liye us par lagta hai). Insets listener na hota to Settings/History jaisi
+        // full-screen pages STATUS BAR ke NEECHE overlap karti thin (user bug report:
+        // "Settings screen notification bar ke sath mix ho gayi hai").
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            pageOverlay.setOnApplyWindowInsetsListener { v, insets ->
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                v.setPadding(bars.left, bars.top, bars.right, 0)
+                insets
+            }
         }
         findViewById<ViewGroup>(android.R.id.content).addView(pageOverlay)
 
@@ -575,7 +591,15 @@ class MainActivity : Activity() {
         tabs.add(tab)
         selectTab(tab.id)
         if (incognito) {
-            Toast.makeText(this, "Incognito tab — nothing is saved to history", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Incognito — IP hidden via relay, nothing is saved", Toast.LENGTH_SHORT).show()
+            // v1.6.0 — INCOGNITO = IP HIDDEN (Tor-jaisa, user request): incognito tab
+            // me relay AUTO connect hota hai — saara browser traffic community relay
+            // se jata hai, sites ko relay ka IP dikhta hai. Pehle se on/connecting
+            // ho to kuch nahi karna (double connect avoid).
+            if (RelayEngine.state != "on" && RelayEngine.state != "connecting") {
+                maybeGrantNotifPermission()
+                RelayEngine.connect(this)
+            }
         }
     }
 
@@ -698,6 +722,12 @@ class MainActivity : Activity() {
             omnibox.clearFocus()
         }
         pullRefresh.isEnabled = !tab.isInternal
+        // v1.6.0 — HOME SCREEN par upar wala search bar REMOVE (user request: bich
+        // me search bar already hai). Newtab par omnibox pill gone, "Orbit" brand
+        // text dikhta hai; kisi bhi real site par pill wapas aa jati hai.
+        val onNtp = tab.isInternal && tab.url == NEWTAB
+        omniPill.visibility = if (onNtp) View.GONE else View.VISIBLE
+        toolbarBrand.visibility = if (onNtp) View.VISIBLE else View.GONE
         if (tab.isIncognito) {
             omnibox.hint = "Incognito — Search or type URL"
             toolbar.setBackgroundColor(0xFF3C4043.toInt())
@@ -842,10 +872,15 @@ class MainActivity : Activity() {
         }
         // MODULE 4 (true incognito) — incognito tab ka WebView EPHEMERAL: koi HTTP
         // cache, koi DOM storage, koi third-party cookies. Normal tab pehle jaisa.
+        // v1.6.0 — images hamesha on (setting removed) + form data bhi save nahi hota.
         if (tab.isIncognito) {
             wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE
             wv.settings.domStorageEnabled = false
+            @Suppress("DEPRECATION")
+            wv.settings.saveFormData = false
             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
+        } else {
+            wv.settings.loadsImagesAutomatically = true
         }
         wv.webViewClient = OrbitWebViewClient(tab)
         wv.webChromeClient = object : WebChromeClient() {
@@ -1100,6 +1135,45 @@ class MainActivity : Activity() {
                 .put("country", SpiderMode.lastCountry)
                 .put("rotateMin", SpiderMode.ROTATE_MINUTES)
         }.getOrDefault(org.json.JSONObject().put("state", "off")).toString()
+
+        // ---------------- v1.6.0 — newtab engine picker + incognito screen ----------------
+
+        /** Engine picker (newtab G icon) — current engine read. */
+        @JavascriptInterface
+        fun getSetting(key: String, def: String): String =
+            LocalStore.getSetting(this@MainActivity, key, def)
+
+        /** Engine picker — choice save (same "searchEngine" key jo Settings use karta hai). */
+        @JavascriptInterface
+        fun setSetting(key: String, value: String) {
+            runOnUiThread {
+                LocalStore.setSetting(this@MainActivity, key, value)
+                refreshChrome()
+            }
+        }
+
+        /** Incognito newtab screen — tab incognito hai to JS alag eclipse screen banata hai. */
+        @JavascriptInterface
+        fun isIncognito(): Boolean = tab.isIncognito
+
+        /** Incognito screen ka "IP hide" tap — relay connect (IP webview proxy se chhupta hai). */
+        @JavascriptInterface
+        fun vpnOn() {
+            runOnUiThread {
+                if (RelayEngine.state != "on" && RelayEngine.state != "connecting") {
+                    maybeGrantNotifPermission()
+                    RelayEngine.connect(this@MainActivity)
+                }
+            }
+        }
+
+        /** JS se native toast (engine picker confirm etc). */
+        @JavascriptInterface
+        fun toast(msg: String) {
+            runOnUiThread {
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // ---------------------------------------------------------------- lens scanner
@@ -1693,7 +1767,7 @@ class MainActivity : Activity() {
         }
         divider()
         row(R.drawable.ic_google, "Sign in with Google") { showGoogleSignIn() }
-        row(R.drawable.ic_ai, "AI Search") { showAiSearchPrompt() }
+        // v1.6.0 — "AI Search" menu row REMOVE (user request: Orbit AI option nahi)
         row(R.drawable.ic_fire, "Fire Button (clear all data)") { fireButton() }
         divider()
         row(R.drawable.ic_update, "Check for updates") { runAutoUpdate(manual = true) }
@@ -2551,8 +2625,7 @@ class MainActivity : Activity() {
 
             pageHeader("Basics", content)
             // Search engine picker
-            val engine = LocalStore.getSetting(this, "searchEngine", "google")
-            val engineName = when (engine) {
+            val engineName = when (LocalStore.getSetting(this, "searchEngine", "google")) {
                 "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
             }
             content.addView(pageRow(R.drawable.ic_find, "Search engine", engineName) { showSearchEngineCard() })
@@ -2570,8 +2643,8 @@ class MainActivity : Activity() {
             val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView ?: vpnSub
             vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
             content.addView(vpnRow)
-            // v1.4.9 — silent update toggle (pehla Install tap bhi ise ON kar deta hai)
-            toggleRow(R.drawable.ic_down, "Auto-install updates", "Update downloads silently and the installer opens by itself", "autoInstall", "off")
+            // v1.6.0 — "Auto-install updates" toggle REMOVE (user request: hamesha ON
+            // rahe — runAutoUpdate ab hamesha silent install karta hai, setting nahi)
             toggleRow(R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
             toggleRow(R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
             toggleRow(R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
@@ -2582,9 +2655,6 @@ class MainActivity : Activity() {
                         t.webView?.let { CookieManager.getInstance().setAcceptThirdPartyCookies(it, on) }
                     }
                 }
-            }
-            toggleRow(R.drawable.ic_settings, "Load images", "Show images on web pages", "imagesEnabled", "on") { on ->
-                tabs.forEach { t -> t.webView?.settings?.loadsImagesAutomatically = on }
             }
             toggleRow(R.drawable.ic_settings, "JavaScript", "Run scripts on sites (recommended: on)", "jsEnabled", "on") { on ->
                 // live reload non-internal active tab — warna purana page purani setting par hi rahega
@@ -2603,14 +2673,14 @@ class MainActivity : Activity() {
                 tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
             }
             toggleRow(R.drawable.ic_update, "Sleeping tabs", "Freeze inactive tabs to save battery", "sleepTabs", "on")
-            toggleRow(R.drawable.ic_settings, "Memory saver", "Free up RAM from old tabs", "memorySaver", "on")
+            // v1.6.0 — "Memory saver" toggle REMOVE (user request) — eviction hamesha
+            // active (evictExcessTabs ab setting nahi check karta)
 
             pageHeader("Sign in & sync", content)
             content.addView(pageRow(R.drawable.ic_google, "Sign in with Google", "Use your phone's Google account") { showGoogleSignIn() })
             content.addView(pageRow(R.drawable.ic_sync, "Orbit Sync", "Bookmarks + history backup") { showSync() })
 
-            pageHeader("Orbit AI", content)
-            content.addView(pageRow(R.drawable.ic_ai, "AI backend", LocalStore.getSetting(this, "aiBackend", DEFAULT_AI_BACKEND).ifBlank { "Not set" }) { showAiBackendCard() })
+            // v1.6.0 — "Orbit AI" section REMOVE (user request: option nahi chahiye)
 
             pageHeader("About", content)
             content.addView(pageRow(R.drawable.ic_update, "Check for updates", "Orbit v${BuildConfig.VERSION_NAME}") { runAutoUpdate(manual = true) })
@@ -3002,7 +3072,7 @@ class MainActivity : Activity() {
     private fun jsEnabledPref(): Boolean = LocalStore.getSetting(this, "jsEnabled", "on") != "off"
     private fun blockPopupsPref(): Boolean = LocalStore.getSetting(this, "blockPopups", "on") != "off"
     private fun cookiesEnabledPref(): Boolean = LocalStore.getSetting(this, "cookiesEnabled", "on") != "off"
-    private fun imagesPref(): Boolean = LocalStore.getSetting(this, "imagesEnabled", "on") != "off"
+    private fun imagesPref(): Boolean = true   // v1.6.0 — images ALWAYS on (toggle removed, user request)
     private fun autoplayPref(): Boolean = LocalStore.getSetting(this, "autoplay", "on") != "off"
 
     /**
@@ -3177,7 +3247,7 @@ class MainActivity : Activity() {
      *  (tab khud zinda rehta hai — URL yaad hai, select par recreate ho jata hai).
      *  v1.4.0 — Settings me "Memory saver" OFF ho to eviction band. */
     private fun evictExcessTabs() {
-        if (LocalStore.getSetting(this, "memorySaver", "on") == "off") return
+        // v1.6.0 — "Memory saver" setting removed: eviction HAMESHA active
         // MODULE 3 FIX — media owner tab eviction se OUT: video background me
         // chal rahi ho to uska WebView kabhi destroy nahi hoga
         var live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
@@ -3607,31 +3677,16 @@ class MainActivity : Activity() {
                     showMigrationDialog(info, apk)
                     return@runOnUiThread
                 }
-                // v1.4.9 — SILENT AUTO-INSTALL: user ne ek baar Install dabaya to
-                // (autoInstall=on) agli updates ka Orbit dialog NAHI aata — APK
-                // background me download hote hi system installer khud khul jata hai.
+                // v1.4.9 → v1.6.0 — SILENT AUTO-INSTALL HAMESHA (user request: auto-install
+                // ka button nahi chahiye, wo hamesha on rahe). Update download hote hi
+                // seedha system installer khul jata hai — koi Orbit dialog nahi.
                 // (Google Play Protect ka scan screen Google ka hai — wo code se nahi
-                // hat sakta, par playProtectGuideOnce se ek baar OFF kar sakte hai.)
-                if (LocalStore.getSetting(this, "autoInstall", "off") == "on") {
-                    Toast.makeText(this, "Orbit ${info.versionName} downloaded — installing update…", Toast.LENGTH_SHORT).show()
-                    UpdateChecker.installWithStatus(this, apk)
-                    return@runOnUiThread
-                }
-                AlertDialog.Builder(this, R.style.OrbitDialog)
-                    .setTitle("Orbit ${info.versionName} is ready")
-                    .setMessage("Tap Install — the old version will be replaced (your data stays safe).\n\nFrom the next update on, Orbit installs silently by itself.")
-                    .setPositiveButton("Install") { _, _ ->
-                        // v1.4.9 — pehla Install tap = agli updates silent (user request:
-                        // "1st time aaye wo thik hai, uske baad silent update")
-                        LocalStore.setSetting(this, "autoInstall", "on")
-                        UpdateChecker.installWithStatus(this, apk)
-                        showPlayProtectGuideOnce()
-                    }
-                    .setNeutralButton("Open APK in browser") { _, _ ->
-                        UpdateChecker.openApkInBrowser(this, info.apkUrl)
-                    }
-                    .setNegativeButton("Later", null)
-                    .show()
+                // hat sakta, par showPlayProtectGuideOnce ek baar OFF karne ka tareeka
+                // dikhata hai.)
+                Toast.makeText(this, "Orbit ${info.versionName} downloaded — installing update…", Toast.LENGTH_SHORT).show()
+                UpdateChecker.installWithStatus(this, apk)
+                showPlayProtectGuideOnce()
+                return@runOnUiThread
             }
         }
     }

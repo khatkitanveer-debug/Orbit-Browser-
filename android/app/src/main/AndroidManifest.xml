@@ -62,6 +62,12 @@
             android:name=".InstallStatusReceiver"
             android:exported="false" />
 
+        <!-- v1.6.0 — VPN notification action buttons (Change country / New IP):
+             notification se hi relay cycle, Settings kholne ki zaroorat nahi -->
+        <receiver
+            android:name=".VpnNotifReceiver"
+            android:exported="false" />
+
         <!-- Install fail hone par wajah + migration steps dikhane wala dialog -->
         <activity
             android:name=".UpdateStatusActivity"

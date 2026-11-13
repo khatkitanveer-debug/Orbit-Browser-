@@ -17,8 +17,12 @@
         android:paddingEnd="4dp"
         android:background="@color/chrome_bg">
 
-        <!-- Omnibox pill: lock + URL + reload (Chrome jaisa reload pill ke andar) -->
+        <!-- Omnibox pill: lock + URL + reload (Chrome jaisa reload pill ke andar).
+             v1.6.0 — newtab (home screen) par YE PILL HIDE hoti hai (user request:
+             upar wala search bar remove — middle search bar already hai), jagah par
+             Orbit brand text dikhta hai. Site par navigate karte hi pill wapas. -->
         <FrameLayout
+            android:id="@+id/omni_pill"
             android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="40dp"
@@ -103,6 +107,22 @@
                 android:tint="@color/chrome_text_dim"
                 android:visibility="gone" />
         </FrameLayout>
+
+        <!-- v1.6.0 — NTP brand: pill hidden hone par toolbar ka khaali hissa —
+             home screen par sirf [Orbit] [home] [tabs] [menu] dikhta hai -->
+        <TextView
+            android:id="@+id/toolbar_brand"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="40dp"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:textColor="@color/chrome_text"
+            android:text="Orbit"
+            android:visibility="gone"
+            android:importantForAccessibility="no" />
 
         <!-- v1.4.1 — HOME button: kisi bhi site se ek tap me Orbit home (newtab) -->
         <ImageButton

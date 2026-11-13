@@ -1,7 +1,7 @@
 {
-  "versionCode": 32,
-  "versionName": "1.5.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.5.0/orbit-browser-1.5.0.apk",
-  "notes": "v1.5.0 — Spider Mode me DuckDuckGo ab PAKKA: search engine ki setting jo bhi ho, VPN on hone par search hamesha DuckDuckGo par jayegi. Search bar me 'Search privately with DuckDuckGo' dikhega. versionCode 32",
+  "versionCode": 33,
+  "versionName": "1.6.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.6.0/orbit-browser-1.6.0.apk",
+  "notes": "v1.6.0 — Home screen redesign: upar wala search bar hataya (middle search bar hai), search bar ke Google icon par tap karke search engine badlo (Google/DuckDuckGo/Brave/Bing), Gemini card + Google Lens hata diye, shortcut cards ek box me aur '+' hamesha last. Incognito = surya-grahan eclipse logo wali alag screen, cards hidden, IP relay se hidden. VPN country change ab notification se hi (Change country / New IP buttons). Settings: status bar overlap fix, Auto-install/Load images/Memory saver/Orbit AI options hataye (auto-install hamesha on). versionCode 33",
   "minVersionCode": 1
 }

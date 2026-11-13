@@ -160,6 +160,44 @@ object RelayEngine {
         refresh(ctx, true)
     }
 
+    /**
+     * v1.6.0 — NOTIFICATION "Change country" action (user request: country change
+     * ke liye Settings me jaana na pade). Agla verified relay jo current se ALAG
+     * country ka ho. Alag-country relay pool me na mile to kam se kam naya relay
+     * (naya IP). Handshake network I/O hai — background thread par.
+     */
+    fun cycleCountry() {
+        if (state != "on") return
+        Thread {
+            val pool = relays
+            if (pool.size < 2) return@Thread
+            val cur = activeRelay ?: return@Thread
+            var pick: Relay? = null
+            val start = (pool.indexOf(cur) + 1).coerceAtLeast(0)
+            // pass 1 — current country se ALAG wala relay
+            for (i in 0 until pool.size) {
+                val cand = pool[(start + i) % pool.size]
+                if (cand.host == cur.host && cand.port == cur.port) continue
+                if (cand.country.isNotBlank() && cand.country != "Relay" &&
+                    cand.country != cur.country && connectHandshakeOk(cand.host, cand.port)
+                ) { pick = cand; break }
+            }
+            // pass 2 — alag country nahi mili, kam se kam alag relay (naya IP)
+            if (pick == null) {
+                for (i in 0 until pool.size) {
+                    val cand = pool[(start + i) % pool.size]
+                    if (cand.host == cur.host && cand.port == cur.port) continue
+                    if (connectHandshakeOk(cand.host, cand.port)) { pick = cand; break }
+                }
+            }
+            if (pick != null && state == "on") {
+                useRelay(pick)
+                statusText = "Protected · ${pick.country} · ${pick.latencyMs}ms · changed from notification"
+                notifyUi()
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)

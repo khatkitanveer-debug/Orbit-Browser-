@@ -3,7 +3,9 @@ package com.orbit.browser
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import okhttp3.OkHttpClient
@@ -113,6 +115,24 @@ object SpiderMode {
         }
         val text = if (connecting) "Securing route — finding the fastest relay…"
             else "Exit: $country • IP rotates every $ROTATE_MINUTES min"
+        // v1.6.0 — NOTIFICATION SE COUNTRY CHANGE (user request: settings me jaana
+        // na pade). Connected state me do action buttons: "Change country" (agla
+        // alag-country relay) + "New IP" (turant rotate). Connecting me buttons nahi
+        // (kuch cycle karne ko nahi).
+        if (!connecting) {
+            val cycle = PendingIntent.getBroadcast(
+                ctx, 4201,
+                Intent(ctx, VpnNotifReceiver::class.java).setAction(VpnNotifReceiver.ACTION_CYCLE),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val rotate = PendingIntent.getBroadcast(
+                ctx, 4202,
+                Intent(ctx, VpnNotifReceiver::class.java).setAction(VpnNotifReceiver.ACTION_ROTATE),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            b.addAction(R.drawable.ic_vpn, "Change country", cycle)
+            b.addAction(R.drawable.ic_refresh, "New IP", rotate)
+        }
         return b.setSmallIcon(R.drawable.ic_notif_orbit)
             .setContentTitle("Orbit VPN — Spider Mode")
             .setContentText(text)
