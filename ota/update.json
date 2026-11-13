@@ -1,7 +1,7 @@
 {
-  "versionCode": 30,
-  "versionName": "1.4.8",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.8/orbit-browser-1.4.8.apk",
-  "notes": "v1.4.8 — Spider Mode fixes: DuckDuckGo ab hamesha auto-switch (app restart par bhi), VPN dabate hi spider screen instant (connecting me bhi dikhti hai), notification bar me VPN turant — connecting se hi country dikhta hai. versionCode 30",
+  "versionCode": 31,
+  "versionName": "1.4.9",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.9/orbit-browser-1.4.9.apk",
+  "notes": "v1.4.9 — Silent updates: aaj ke baad updates khud download hote hai aur installer khud khulta hai, Orbit ka dialog nahi aayega. Ek baar Install dabao phir sab silent. Google scan hatane ke liye app me guide aayegi. versionCode 31",
   "minVersionCode": 1
 }
