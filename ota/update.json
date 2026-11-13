@@ -1,7 +1,7 @@
 {
-  "versionCode": 28,
-  "versionName": "1.4.6",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.6/orbit-browser-1.4.6.apk",
-  "notes": "v1.4.6 — update ke baad purana error screen na dikhe (ab crash report me build number stamp hota hai aur update par purana log clear ho jata hai) + update card turant dikhega (CDN cache fix). versionCode 28",
+  "versionCode": 29,
+  "versionName": "1.4.7",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.4.7/orbit-browser-1.4.7.apk",
+  "notes": "v1.4.7 — SPIDER MODE: VPN on karte hi screen bana Tor jaisa — spider web animation + dark shadow, sirf logo aur search bar, shortcuts hide. IP har 5 min badalta hai, notification me exit country dikhta hai, search engine DuckDuckGo ho jata hai. versionCode 29",
   "minVersionCode": 1
 }
