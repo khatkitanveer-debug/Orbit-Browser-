@@ -32,6 +32,17 @@ object CrashGuard {
     fun install(ctx: Context) {
         if (installed) return
         installed = true
+        val appCtx = ctx.applicationContext
+        // v1.4.6 — app UPDATE ke baad purana crash log GALAT build ka hota hai:
+        // filesDir APK update par survive karta hai, aur purani entry naye build
+        // ke fresh header ke saath dikhti thi (user ko laga "same crash abhi bhi").
+        // Ab version change par purana log clear — sirf CURRENT build ke crashes.
+        val vcFile = File(appCtx.filesDir, "crash-vc.txt")
+        val lastVc = runCatching { vcFile.readText().trim().toIntOrNull() }.getOrNull()
+        if (lastVc != null && lastVc != BuildConfig.VERSION_CODE) {
+            runCatching { logFile(appCtx).delete() }
+        }
+        runCatching { vcFile.writeText(BuildConfig.VERSION_CODE.toString()) }
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching { writeCrash(ctx.applicationContext, thread, throwable) }
@@ -74,7 +85,11 @@ object CrashGuard {
         val sw = StringWriter()
         t.printStackTrace(PrintWriter(sw))
         val ts = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-        val entry = "\n==== CRASH @ $ts (thread: ${thread.name}) ====\n${sw}\n"
+        // v1.4.6 — har entry me BUILD NUMBER stamp: emergency screen ka header to
+        // CURRENT build ka hota hai, isliye purane build ka crash dikhta to
+        // confuse hota. Stamp se ek nazar me pata chalta hai kaunsa build crash hua.
+        val entry = "\n==== CRASH @ $ts (thread: ${thread.name}) ====\n" +
+            "[app build ${BuildConfig.VERSION_CODE} — v${BuildConfig.VERSION_NAME}]\n${sw}\n"
         val f = logFile(ctx)
         // purana log shuru me rakho, naya upar — file 64KB se badi na ho
         val newText = if (f.exists()) entry + f.readText().take(MAX_LOG_BYTES) else entry

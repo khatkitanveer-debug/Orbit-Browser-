@@ -63,7 +63,10 @@ object UpdateChecker {
 
     fun fetchLatest(): UpdateInfo? {
         return runCatching {
-            val req = Request.Builder().url(UPDATE_JSON_URL).build()
+            // v1.4.6 — cache-buster: raw.githubusercontent CDN stale update.json serve
+            // karta hai (minutes ka TTL) — isliye update card der se dikhta tha.
+            val bust = UPDATE_JSON_URL + "?t=" + System.currentTimeMillis()
+            val req = Request.Builder().url(bust).build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return null
                 val body = resp.body?.string() ?: return null

@@ -119,9 +119,11 @@ class MainActivity : Activity() {
     private lateinit var omniIcon: ImageView
     private lateinit var btnReload: ImageButton
     private lateinit var btnClear: ImageButton
-    private lateinit var ringLoader: OrbitRingLoader
+    // v1.4.6 — nullable (lateinit nahi): agar kabhi init order slip ho jaye to
+    // NPE/UninitializedPropertyAccessException IMPOSSIBLE — safe-call silently skip
+    private var ringLoader: OrbitRingLoader? = null
     // v1.4.4 — ring ab omnibox ke andar NAHI, search bar ke NEECHE floating overlay
-    private lateinit var ringWrap: FrameLayout
+    private var ringWrap: FrameLayout? = null
     private lateinit var pullRefresh: SwipeRefreshLayout
     // v1.4.1 — active tab load state (ring loader + lock-icon visibility ke liye)
     private var pageLoading = false
@@ -857,8 +859,8 @@ class MainActivity : Activity() {
                 // arc + satellite dot progress ke saath advance. Lock icon ab
                 // hamesha visible (Chrome parity — load me hide nahi hota).
                 pageLoading = newProgress in 1..99
-                ringWrap.visibility = if (pageLoading) View.VISIBLE else View.GONE
-                ringLoader.setProgress(newProgress)
+                ringWrap?.visibility = if (pageLoading) View.VISIBLE else View.GONE
+                ringLoader?.setProgress(newProgress)
                 // page 15% cross kar gaya = stall-watchdog ki zaroorat nahi
                 if (newProgress >= 15) sleeper.removeCallbacks(stallCheck)
                 // Chrome jaisa: loading me pill ka button X (stop) ban jata hai
@@ -1372,7 +1374,7 @@ class MainActivity : Activity() {
             pullRefresh.isRefreshing = false
             // v1.4.4 — ring loader safety stop (kuch pages progress-100 event nahi bhejte)
             pageLoading = false
-            ringWrap.visibility = View.GONE
+            ringWrap?.visibility = View.GONE
             sleeper.removeCallbacks(stallCheck)
             if (!omnibox.hasFocus()) omniIcon.visibility = View.VISIBLE
             updateShieldBadge()
