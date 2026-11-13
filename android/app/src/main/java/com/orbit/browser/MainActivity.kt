@@ -239,6 +239,7 @@ class MainActivity : Activity() {
         omniIcon = findViewById(R.id.omni_icon)
         btnReload = findViewById(R.id.btn_reload)
         ringLoader = findViewById(R.id.ring_loader)
+        ringWrap = findViewById(R.id.ring_wrap)
         pullRefresh = findViewById(R.id.pull_refresh)
         tabCount = findViewById(R.id.tab_count)
         tabSwitcher = findViewById(R.id.tab_switcher)
