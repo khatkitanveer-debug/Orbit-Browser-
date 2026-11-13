@@ -58,9 +58,22 @@ object AdBlocker {
         activeDomains = if (extra.isEmpty()) DOMAINS else DOMAINS + extra
     }
 
+    // v1.7.0 — PATH-LEVEL ad endpoints (host match kaafi nahi hai — YouTube ke ad
+    // beacons youtube.com/googlevideo.com ke PATHS par chalte hai). Sirf YE known
+    // ad paths block hote hai, main video/content paths kabhi match nahi hote.
+    private val PATH_PATTERNS = listOf(
+        "/api/stats/ads",      // YouTube ad view beacons
+        "/pagead/",            // Google display ads
+        "/ptracking",          // YouTube ad/tracking redirect
+        "adformat=",           // ad stream variant param (main video me kabhi nahi)
+        "/get_ads",            // pre-roll ad fetch
+        "youtube.com/api/stats/qoe?el=ad", // ad QoE
+    )
+
     /** host suffix match — "ads.x.doubleclick.net" bhi "doubleclick.net" se match.
      *  Sirf dot-boundary match (naive endsWith "notdoubleclick.net" ko galat block karta) */
     fun shouldBlock(url: String): Boolean {
+        for (p in PATH_PATTERNS) if (url.contains(p)) return true
         val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull() ?: return false
         if (host.isEmpty()) return false
         for (d in activeDomains) {

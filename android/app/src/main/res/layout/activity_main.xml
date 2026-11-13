@@ -256,24 +256,21 @@
                 android:layout_height="match_parent" />
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-        <!-- v1.4.4 — Orbit ring loader SEARCH BAR KE NEECHE (floating overlay,
-             blue line ki jagah). Page load ke saath arc advance + satellite dot
-             orbit (Orbit logo motif). Omnibox ke andar ki jagah ab yahan. -->
+        <!-- v1.7.0 — Orbit LINE loader TOOLBAR KE NEECHE (user request: round ring
+             nahi, lambi line + orbit comet-dot animation). Full-width thin line:
+             track + blue gradient fill + glowing comet tip + trailing dots. -->
         <FrameLayout
             android:id="@+id/ring_wrap"
-            android:layout_width="44dp"
-            android:layout_height="44dp"
-            android:layout_gravity="top|center_horizontal"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/ring_wrap_bg"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_gravity="top"
             android:elevation="14dp"
             android:visibility="gone">
 
-            <com.orbit.browser.OrbitRingLoader
+            <com.orbit.browser.OrbitLineLoader
                 android:id="@+id/ring_loader"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
-                android:layout_gravity="center"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:importantForAccessibility="no" />
         </FrameLayout>
     </FrameLayout>

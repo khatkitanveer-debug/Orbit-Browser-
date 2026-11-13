@@ -155,6 +155,25 @@ object YouTubeAdShield {
               new MutationObserver(ask).observe(document.documentElement,
                 { childList: true, subtree: true });
             } catch (e) { setInterval(sweep, 500); }
+
+            // ——— 5. v1.7.0 HARD KILL — video ad chal raha ho to skip button ka wait
+            // NAHI: player ka currentTime seedha ad ke END par pahuncha do (playback
+            // position jump — koi stream modification nahi, sirf seek). Overlay
+            // close button bhi auto-click. 200ms loop = ad dikhte hi gayab.
+            var hardKill = function () {
+              try {
+                var p = document.querySelector('.html5-video-player.ad-showing video');
+                if (p && p.duration && isFinite(p.duration)) {
+                  try { p.muted = true; p.playbackRate = 16; } catch (e2) {}
+                  try { p.currentTime = p.duration - 0.05; } catch (e3) {}
+                }
+                var sk = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-container button');
+                for (var i = 0; i < sk.length; i++) sk[i].click();
+                var oc = document.querySelector('.ytp-ad-overlay-close-button');
+                if (oc) oc.click();
+              } catch (e) {}
+            };
+            setInterval(hardKill, 200);
           } catch (e) {}
         })();
     """.trimIndent()

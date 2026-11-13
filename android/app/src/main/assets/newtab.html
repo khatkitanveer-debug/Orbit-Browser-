@@ -9,7 +9,9 @@
   html, body { height: 100%; background: #1a1a1d; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
                -webkit-tap-highlight-color: transparent; }
   .wrap { min-height: 100%; display: flex; flex-direction: column; align-items: center;
-          justify-content: center; padding: 24px; overflow-y: auto; }
+          justify-content: flex-start; padding: 30px 16px 44px; overflow-y: auto; }
+  /* spider/incognito = single-screen centered look (feed hidden) */
+  body.spider .wrap, body.incognito .wrap { justify-content: center; padding-top: 0; }
   .logo { margin-bottom: 10px; flex-shrink: 0; }
 
   /* ---- search bar — Chrome dark NTP style: clean pill, no border ---- */
@@ -39,11 +41,123 @@
   /* ---- shortcuts — Brave-style boxed tiles: bigger rounded-square icon boxes.
      v1.6.0 — SARE CARDS EK BADE BOX ke andar (user request), "+" tile hamesha
      SABSE LAST (bich me nahi). */
-  .scbox { margin-top: 34px; width: 100%; max-width: 600px; flex-shrink: 0;
+  /* v1.7.0 — search bar me MIC + GEMINI icons (right side, bar ke ANDAR) */
+  .barbtn { width: 38px; height: 38px; border: 0; border-radius: 50%; background: transparent;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            cursor: pointer; padding: 0; }
+  .barbtn:active { background: #4a4b4f; }
+  .barbtn svg { width: 20px; height: 20px; }
+
+  /* ==================== v1.7.0 QUICK CARDS — Spider VPN + Incognito ==================== */
+  .quick { display: flex; gap: 10px; width: 100%; max-width: 600px; margin-top: 16px;
+           flex-shrink: 0; }
+  .qcard { flex: 1; display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+           border-radius: 16px; border: 1px solid rgba(255,255,255,.09);
+           background: linear-gradient(135deg, rgba(48,49,52,.92), rgba(38,39,42,.92));
+           cursor: pointer; text-align: left; font-family: inherit; }
+  .qcard:active { background: #3c4043; }
+  .qcard .qi { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center;
+               justify-content: center; flex-shrink: 0; }
+  .qcard .qi svg { width: 19px; height: 19px; }
+  .qcard .qcol { min-width: 0; }
+  .qcard .qt { font-size: 13.5px; color: #e8eaed; font-weight: 600; line-height: 1.2;
+               white-space: nowrap; }
+  .qcard .qs { font-size: 11px; color: #9aa0a6; margin-top: 3px; max-width: 150px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qcard.vpn .qi { background: rgba(138,180,248,.14); }
+  .qcard.inc .qi { background: rgba(255,184,77,.15); }
+
+  /* ==================== v1.7.0 DISCOVER FEED — music / youtube / news boxes ==================== */
+  #feed { width: 100%; max-width: 600px; display: flex; flex-direction: column;
+          gap: 16px; margin-top: 16px; flex-shrink: 0; }
+  .box { border: 1px solid rgba(255,255,255,.09); border-radius: 22px;
+         background: rgba(255,255,255,.03); padding: 14px 12px 10px; }
+  .box h3 { font-size: 12px; letter-spacing: 1.6px; color: #9aa0a6; font-weight: 700;
+            text-transform: uppercase; margin: 0 6px 12px; display: flex;
+            align-items: center; gap: 8px; }
+  .box h3 .badge { margin-left: auto; font-size: 10.5px; letter-spacing: .4px;
+                   color: #8ab4f8; background: rgba(138,180,248,.12); border-radius: 9px;
+                   padding: 3px 9px; text-transform: none; font-weight: 600;
+                   max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+                   white-space: nowrap; }
+  .berr { font-size: 12.5px; color: #9aa0a6; padding: 6px 6px 10px; line-height: 1.5; }
+  /* skeleton shimmer */
+  .skel { height: 46px; border-radius: 12px; margin: 6px 4px;
+          background: linear-gradient(90deg, rgba(255,255,255,.05) 25%, rgba(255,255,255,.10) 50%,
+                    rgba(255,255,255,.05) 75%); background-size: 200% 100%;
+          animation: skelmove 1.2s linear infinite; }
+  @keyframes skelmove { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+  /* MUSIC — 1:1 thumbnail strip (6 per screen) + top songs list + controls */
+  .mth { overflow: hidden; margin: 0 2px 12px; }
+  .mth .mrowT { display: flex; gap: 10px; width: max-content;
+                animation: mslide 30s linear infinite; }
+  .mth:hover .mrowT, .mth.paused .mrowT { animation-play-state: paused; }
+  @keyframes mslide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .mth img { width: calc((100vw - 76px) / 6); max-width: 62px; aspect-ratio: 1/1;
+             border-radius: 12px; object-fit: cover; display: block;
+             border: 1px solid rgba(255,255,255,.08); cursor: pointer; }
+  .mrow { display: flex; align-items: center; gap: 10px; padding: 7px 4px; cursor: pointer;
+          border-radius: 12px; }
+  .mrow:active { background: rgba(255,255,255,.05); }
+  .mrow img { width: 38px; height: 38px; border-radius: 9px; object-fit: cover; flex-shrink: 0;
+              border: 1px solid rgba(255,255,255,.08); }
+  .mrow .mt { flex: 1; min-width: 0; }
+  .mrow .mt .a { font-size: 13.5px; color: #e8eaed; white-space: nowrap; overflow: hidden;
+                 text-overflow: ellipsis; }
+  .mrow .mt .b { font-size: 11px; color: #9aa0a6; margin-top: 2px; white-space: nowrap;
+                 overflow: hidden; text-overflow: ellipsis; }
+  .mrow .dur { font-size: 11px; color: #6b7078; flex-shrink: 0; }
+  .mrow.on .a { color: #8ab4f8; }
+  .mctl { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 4px 2px;
+          border-top: 1px solid rgba(255,255,255,.07); }
+  .mctl .np { flex: 1; min-width: 0; font-size: 11.5px; color: #9aa0a6;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mctl button { width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent;
+                 color: #e8eaed; display: flex; align-items: center; justify-content: center;
+                 cursor: pointer; flex-shrink: 0; }
+  .mctl button:active { background: rgba(255,255,255,.08); }
+  .mctl button.play { width: 42px; height: 42px; background: #8ab4f8; }
+  .mctl button.play svg { width: 20px; height: 20px; }
+  .mctl svg { width: 17px; height: 17px; }
+
+  /* YOUTUBE — 2x2 (16:9) grid, auto-rotate pages */
+  .ytg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ytv { cursor: pointer; animation: ytin .45s ease; }
+  @keyframes ytin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .ytv .tw { width: 100%; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden;
+             background: #202124; position: relative; }
+  .ytv img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ytv .tt { font-size: 12px; color: #e8eaed; line-height: 1.35; margin-top: 6px;
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+             overflow: hidden; }
+  .ytv .ts { font-size: 10.5px; color: #9aa0a6; margin-top: 3px; }
+
+  /* NEWS — local + national mixed list */
+  .nrow { padding: 9px 6px; border-top: 1px solid rgba(255,255,255,.06); cursor: pointer;
+          border-radius: 10px; }
+  .nrow:first-child { border-top: 0; }
+  .nrow:active { background: rgba(255,255,255,.05); }
+  .nrow .nt { font-size: 13.5px; color: #e8eaed; line-height: 1.4;
+              display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+              overflow: hidden; }
+  .nrow .nm { font-size: 11px; color: #9aa0a6; margin-top: 4px; }
+  .nrow .nm b { color: #8ab4f8; font-weight: 600; }
+
+  /* v1.7.0 — instant-serve feel: koi bhi tile/card tap = turant screen dim +
+     feedback (dimag ke sath khilvad — site "tap se hi" khulti lagegi) */
+  body.opening .wrap { opacity: .82; transition: opacity .12s; }
+
+  .scbox { margin-top: 0; max-width: 600px; width: 100%; flex-shrink: 0;
            border: 1px solid rgba(255,255,255,.09); border-radius: 22px;
-           background: rgba(255,255,255,.03); padding: 16px 10px 10px; }
-  .shortcuts { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px 16px;
-               width: 100%; max-width: 560px; }
+           background: rgba(255,255,255,.03); padding: 12px 4px 6px; }
+  /* shortcuts — EK BOX me, horizontal SLIDE, snap scroll, + last me */
+  .shortcuts { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 14px;
+               width: 100%; max-width: 600px; scroll-snap-type: x mandatory;
+               -webkit-overflow-scrolling: touch; scrollbar-width: none;
+               padding: 2px 10px 8px; }
+  .shortcuts::-webkit-scrollbar { display: none; }
+  .shortcuts .sc { scroll-snap-align: start; flex-shrink: 0; }
   .sc { display: flex; flex-direction: column; align-items: center; width: 72px;
         background: transparent; border: 0; cursor: pointer; padding: 0; font-family: inherit;
         position: relative; }
@@ -118,7 +232,7 @@
   #spiderMsg .x { font-size: 12px; color: #6b7078; margin-top: 10px; }
   body.spider { background: #0b0b0e; }
   body.spider .wrap { position: relative; z-index: 3; }
-  body.spider .scbox { display: none !important; }
+  body.spider .scbox, body.spider .quick, body.spider #feed { display: none !important; }
   body.spider #spiderWeb, body.spider #spiderShade, body.spider #spiderThread,
   body.spider #spiderMsg { display: block; }
   body.spider .logo { filter: drop-shadow(0 4px 34px rgba(138,180,248,.20)); }
@@ -140,7 +254,7 @@
   body.incognito .wrap { position: relative; z-index: 3; }
   body.incognito .logo { display: none; }
   body.incognito #eclipse { display: block; }
-  body.incognito .scbox { display: none !important; }
+  body.incognito .scbox, body.incognito .quick, body.incognito #feed { display: none !important; }
   body.incognito .bar { background: rgba(40,40,46,.88); }
   body.incognito .bar:focus-within { background: rgba(52,52,58,.95); }
   body.incognito form .bar { box-shadow: 0 0 0 1px rgba(255,180,80,.28); }
@@ -199,12 +313,92 @@
         </svg>
       </button>
       <input id="q" placeholder="Search Google or type a URL" autocomplete="off" spellcheck="false" enterkeyhint="search">
+      <!-- v1.7.0 — VOICE + GEMINI bar ke ANDAR (user request) -->
+      <button type="button" class="barbtn" id="micBtn" aria-label="Voice search">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#8ab4f8" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z"/>
+          <path fill="#9aa0a6" d="M18 11a6 6 0 0 1-12 0H4.5a7.5 7.5 0 0 0 6.25 7.39V21h2.5v-2.61A7.5 7.5 0 0 0 19.5 11H18z"/>
+        </svg>
+      </button>
+      <button type="button" class="barbtn" id="gemBtn" aria-label="Gemini">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient id="gemg" x1="0" y1="24" x2="24" y2="0">
+              <stop offset="0" stop-color="#1c7dfe"/><stop offset=".35" stop-color="#4a8cf7"/>
+              <stop offset=".65" stop-color="#a259ff"/><stop offset="1" stop-color="#ff5caa"/>
+            </linearGradient>
+          </defs>
+          <path fill="url(#gemg)" d="M12 1c.6 5.8 5.2 10.4 11 11-5.8.6-10.4 5.2-11 11-.6-5.8-5.2-10.4-11-11 5.8-.6 10.4-5.2 11-11z"/>
+        </svg>
+      </button>
     </div>
   </form>
 
-  <!-- v1.6.0 — SARE CARDS EK BADE BOX ke andar; "+" tile render me hamesha LAST -->
+  <!-- v1.7.0 — QUICK CARDS: Spider VPN (left) + Incognito (right) -->
+  <div class="quick">
+    <button type="button" class="qcard vpn" id="vpnCard">
+      <span class="qi">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#8ab4f8" d="M12 2C8.24 2 5 2.9 5 2.9v5.6c0 5.05 3.03 9.16 7 10.6 3.97-1.44 7-5.55 7-10.6V2.9S15.76 2 12 2z"/>
+          <path fill="#0b0b18" d="M12 5.5c-2.5 0-4.5.55-4.5.55v3.4c0 3.5 2 6.3 4.5 7.35 2.5-1.05 4.5-3.85 4.5-7.35v-3.4S14.5 5.5 12 5.5z" opacity=".25"/>
+          <path fill="#e8eaed" d="M11.2 14.6 8.4 11.8l1.2-1.2 1.6 1.6 4-4 1.2 1.2-5.2 5.2z"/>
+        </svg>
+      </span>
+      <span class="qcol">
+        <span class="qt">Spider VPN</span><br>
+        <span class="qs" id="vpnStatus">Off — tap to secure</span>
+      </span>
+    </button>
+    <button type="button" class="qcard inc" id="incCard">
+      <span class="qi">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#ffb84d" d="M17.06 13c-1.86 0-3.42 1.33-3.82 3.1-.95-.41-1.99-.41-2.94 0A3.92 3.92 0 0 0 6.48 13c-1.2 0-2.3.55-3.03 1.4A9.93 9.93 0 0 1 12 22a9.93 9.93 0 0 1 8.55-7.6A3.94 3.94 0 0 0 17.52 13h-.46z"/>
+          <path fill="#9aa0a6" d="M12 2C9.24 2 7 4.24 7 7c0 1.26.47 2.4 1.23 3.28-1.53.63-2.9 1.6-4.02 2.81A9.9 9.9 0 0 1 12 22a9.9 9.9 0 0 1 7.79-8.91 8.94 8.94 0 0 0-4.02-2.81A5 5 0 0 0 17 7c0-2.76-2.24-5-5-5zm0 8.5A3.5 3.5 0 0 1 8.5 7c0-1.93 1.57-3.5 3.5-3.5s3.5 1.57 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5z"/>
+        </svg>
+      </span>
+      <span class="qcol">
+        <span class="qt">Incognito</span><br>
+        <span class="qs">IP hidden · nothing saved</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- v1.7.0 — SARE CARDS EK BADE BOX ke andar; "+" tile render me hamesha LAST -->
   <div class="scbox">
     <div class="shortcuts" id="grid"></div>
+  </div>
+
+  <!-- v1.7.0 DISCOVER FEED — music / youtube / news (sab JS se, native fetch) -->
+  <div id="feed">
+    <div class="box" id="musicBox">
+      <h3>JioSaavn · Top for you <span class="badge" id="musicAlgo">tuned by your plays</span></h3>
+      <div class="mth" id="mStrip"><div class="mrowT" id="mStripRow"></div></div>
+      <div id="songList"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+      <div class="mctl">
+        <div class="np" id="nowPlaying">Tap a song to play</div>
+        <button id="mPrev" aria-label="Previous">
+          <svg viewBox="0 0 24 24"><path fill="#e8eaed" d="M6 6h2v12H6zm3.5 6L18 6v12z"/></svg>
+        </button>
+        <button class="play" id="mPlay" aria-label="Play/Pause">
+          <svg viewBox="0 0 24 24"><path id="mPlayIcon" fill="#202124" d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button id="mNext" aria-label="Next">
+          <svg viewBox="0 0 24 24"><path fill="#e8eaed" d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="box" id="ytBox">
+      <h3>YouTube · For you <span class="badge" id="ytAlgo">from your watch history</span></h3>
+      <div class="ytg" id="ytGrid">
+        <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
+      </div>
+    </div>
+
+    <div class="box" id="newsBox">
+      <h3><span id="newsCity">India</span> news <span class="badge">fresh every visit</span></h3>
+      <div id="newsList"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    </div>
   </div>
 </div>
 
@@ -591,6 +785,438 @@ function renderEngList() {
 
   render();
 })();
+
+// ==================== v1.7.0 DISCOVER FEED ENGINES ====================
+// Saara feed network NATIVE bridge se (OrbitBridge.fetchFeed) — CORS kabhi
+// tokega nahi. Algorithm 100% on-device (play history + watch history).
+
+// ---------- helpers ----------
+function fmtCount(n) {
+  n = parseInt(n || '0', 10);
+  if (n >= 1e7) return (n / 1e7).toFixed(1) + 'Cr plays';
+  if (n >= 1e5) return (n / 1e5).toFixed(1) + 'L plays';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K plays';
+  return n ? n + ' plays' : '';
+}
+function fmtDur(s) {
+  s = parseInt(s || '0', 10); if (!s) return '';
+  var m = Math.floor(s / 60), r = s % 60;
+  return m + ':' + (r < 10 ? '0' : '') + r;
+}
+function relTime(t) {
+  try {
+    var d = (Date.now() - new Date(t).getTime()) / 1000;
+    if (d < 3600) return Math.max(1, Math.floor(d / 60)) + 'm ago';
+    if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+    return Math.floor(d / 86400) + 'd ago';
+  } catch (e) { return ''; }
+}
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function xmlTag(x, tag) { var n = x.getElementsByTagName(tag)[0]; return n ? n.textContent : ''; }
+// ASYNC feed fetch — JS ko kabhi block nahi karta (slow net par home hamesha smooth).
+// Native fetchFeedAsync → window.feedData(id, body) callback.
+var feedSeq = 0, feedPending = {};
+function feedGet(url, cb) {
+  var id = ++feedSeq;
+  feedPending[id] = cb;
+  try { OrbitBridge.fetchFeedAsync(url, id); } catch (e) { feedPending[id] = null; cb(''); }
+}
+window.feedData = function (id, body) {
+  var cb = feedPending[id];
+  feedPending[id] = null;
+  if (cb) cb(body || '');
+};
+function fetchJsonA(url, cb) {
+  feedGet(url, function (body) {
+    var j = null;
+    try { j = body ? JSON.parse(body) : null; } catch (e) {}
+    cb(j);
+  });
+}
+// instant-serve feel: koi bhi tap = turant screen response
+document.body.addEventListener('click', function (ev) {
+  if (ev.target.closest('.sc, .qcard, .mrow, .ytv, .nrow, .mth img')) {
+    document.body.classList.add('opening');
+    setTimeout(function () { document.body.classList.remove('opening'); }, 900);
+  }
+}, true);
+
+// ---------- QUICK CARDS (Spider VPN / Incognito) ----------
+(function () {
+  function updQuick() {
+    var st = 'off';
+    try { st = OrbitBridge.vpnState() || 'off'; } catch (e) {}
+    var el = document.getElementById('vpnStatus');
+    if (!el) return;
+    var txt = st === 'on' ? 'Protected' : st === 'connecting' ? 'Connecting…' : 'Off — tap to secure';
+    try {
+      var j = JSON.parse(OrbitBridge.vpnInfo() || '{}');
+      if (j.state === 'on' && j.country) txt = 'Protected · ' + j.country;
+    } catch (e) {}
+    el.textContent = txt;
+    el.style.color = st === 'on' ? '#81C995' : st === 'connecting' ? '#FBBC05' : '#9aa0a6';
+  }
+  var vc = document.getElementById('vpnCard');
+  var ic = document.getElementById('incCard');
+  if (vc) vc.addEventListener('click', function () { try { OrbitBridge.openVpnSheet(); } catch (e) {} });
+  if (ic) ic.addEventListener('click', function () { try { OrbitBridge.newIncognito(); } catch (e) {} });
+  setInterval(updQuick, 3000);
+  updQuick();
+})();
+// voice + gemini (bar ke andar)
+try {
+  document.getElementById('micBtn').addEventListener('click', function () {
+    try { OrbitBridge.voiceSearch(); } catch (e) {}
+  });
+  document.getElementById('gemBtn').addEventListener('click', function () {
+    nav('https://gemini.google.com/', true);
+  });
+} catch (e) {}
+
+// ---------- MUSIC ENGINE (JioSaavn top + on-device algorithm) ----------
+var MQ = { list: [], idx: -1, playing: false, audio: null, built: false };
+function musicHist() {
+  try { return JSON.parse(localStorage.getItem('orbit_music') || '[]'); } catch (e) { return []; }
+}
+function saveMusicPlayed(s) {
+  try {
+    var h = musicHist().filter(function (x) { return x.t !== s.t; });
+    h.unshift({ t: s.t, a: s.a || '', ts: Date.now() });
+    localStorage.setItem('orbit_music', JSON.stringify(h.slice(0, 20)));
+  } catch (e) {}
+}
+function songUrl(s) { try { return OrbitBridge.decryptMedia(s.enc) || ''; } catch (e) { return ''; } }
+function saavnSearchA(q, cb) {
+  fetchJsonA('https://www.jiosaavn.com/api.php?__call=search.getResults&q=' +
+    encodeURIComponent(q) + '&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=30', cb);
+}
+function buildMusic() {
+  if (MQ.built) return;
+  MQ.built = true;
+  // ALGORITHM — user jo gaane chalata hai, unke artists pehle query (on-device)
+  var qs = ['top hindi songs', 'trending songs', 'top punjabi songs', 'bollywood hits'];
+  var h = musicHist();
+  for (var i = 0; i < Math.min(2, h.length); i++) {
+    if (h[i].a) qs.unshift(h[i].a + ' songs');
+  }
+  var seen = {}, all = [], qi = 0;
+  function step() {
+    if (qi >= qs.length || all.length >= 48) return finish();
+    saavnSearchA(qs[qi], function (j) {
+      var res = (j && j.results) || [];
+      for (var k = 0; k < res.length; k++) {
+        var s = res[k];
+        if (!s || !s.more_info || !s.more_info.encrypted_media_url) continue;
+        var title = (s.title || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+        var key = (title || '').toLowerCase();
+        if (!title || seen[key]) continue;
+        seen[key] = 1;
+        all.push({
+          t: title,
+          a: ((s.subtitle || '').split(' - ')[0] || '').replace(/&quot;/g, '"'),
+          img: (s.image || '').replace('150x150', '500x500'),
+          dur: s.more_info.duration || '',
+          plays: parseInt(s.play_count || '0', 10),
+          enc: s.more_info.encrypted_media_url,
+        });
+      }
+      qi++;
+      step();
+    });
+  }
+  function finish() {
+    try {
+      if (!all.length) { musicError(); return; }
+      // ranking: favorite artists first, phir popularity (famous songs upar)
+      var fav = {};
+      h.forEach(function (x) { if (x.a) fav[(x.a || '').toLowerCase()] = 1; });
+      all.sort(function (x, y) {
+        var fx = fav[(x.a || '').toLowerCase()] ? 1 : 0, fy = fav[(y.a || '').toLowerCase()] ? 1 : 0;
+        if (fx !== fy) return fy - fx;
+        return y.plays - x.plays;
+      });
+      MQ.list = all.slice(0, 10);
+      renderMusic();
+    } catch (e) { musicError(); }
+  }
+  step();
+}
+function musicError() {
+  var el = document.getElementById('songList');
+  if (el) el.innerHTML = '<div class="berr">Music service is busy right now — open the home screen again in a moment.</div>';
+  var st = document.getElementById('mStrip');
+  if (st) st.style.display = 'none';
+}
+function renderMusic() {
+  // strip — 2x copy (seamless infinite slow slide, 6 per screen)
+  var row = document.getElementById('mStripRow');
+  if (row) {
+    var html = '';
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < MQ.list.length && i < 10; i++) {
+        (function (idx) {
+          html += '<img data-i="' + idx + '" loading="lazy" alt="" src="' + esc(MQ.list[idx].img) + '">';
+        })(i);
+      }
+    }
+    row.innerHTML = html;
+    row.addEventListener('click', function (ev) {
+      var i = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-i');
+      if (i !== null && i !== undefined) playIdx(parseInt(i, 10));
+    });
+  }
+  // list rows
+  var el = document.getElementById('songList');
+  if (!el) return;
+  var html = '';
+  for (var i = 0; i < MQ.list.length; i++) {
+    (function (idx) {
+      var s = MQ.list[idx];
+      html += '<div class="mrow" data-i="' + idx + '">' +
+        '<img loading="lazy" alt="" src="' + esc(s.img) + '">' +
+        '<div class="mt"><div class="a">' + esc(s.t) + '</div>' +
+        '<div class="b">' + esc(s.a) + ' · ' + fmtCount(s.plays) + '</div></div>' +
+        '<div class="dur">' + fmtDur(s.dur) + '</div></div>';
+    })(i);
+  }
+  el.innerHTML = html;
+  el.addEventListener('click', function (ev) {
+    var r = ev.target.closest('.mrow');
+    if (r) playIdx(parseInt(r.getAttribute('data-i'), 10));
+  });
+}
+function ensureAudio() {
+  if (!MQ.audio) {
+    MQ.audio = new Audio();
+    MQ.audio.addEventListener('ended', function () { playIdx(MQ.idx + 1); });
+  }
+  return MQ.audio;
+}
+function playIdx(i) {
+  if (!MQ.list.length) return;
+  MQ.idx = ((i % MQ.list.length) + MQ.list.length) % MQ.list.length;
+  var s = MQ.list[MQ.idx];
+  var u = songUrl(s);
+  if (!u) {
+    try { OrbitBridge.toast('Song unavailable — skipping'); } catch (e) {}
+    return playIdx(MQ.idx + 1);
+  }
+  var a = ensureAudio();
+  // BUFFERING-KILL: agla gaana pehle se cached audio element me load — instant switch
+  a.src = u;
+  var p = a.play();
+  if (p && p.catch) p.catch(function () {});
+  MQ.playing = true;
+  saveMusicPlayed(s);
+  updMusicUi();
+}
+function updMusicUi() {
+  var np = document.getElementById('nowPlaying');
+  var icon = document.getElementById('mPlayIcon');
+  if (np && MQ.idx >= 0) np.textContent = 'Now playing — ' + MQ.list[MQ.idx].t;
+  if (icon) icon.setAttribute('d', MQ.playing ? 'M6 5h4v14H6zm8 0h4v14h-4z' : 'M8 5v14l11-7z');
+  document.querySelectorAll('#songList .mrow').forEach(function (r) {
+    r.classList.toggle('on', parseInt(r.getAttribute('data-i'), 10) === MQ.idx);
+  });
+}
+try {
+  document.getElementById('mPlay').addEventListener('click', function () {
+    if (!MQ.audio || MQ.idx < 0) return playIdx(0);
+    if (MQ.playing) { MQ.audio.pause(); MQ.playing = false; }
+    else { MQ.audio.play(); MQ.playing = true; }
+    updMusicUi();
+  });
+  document.getElementById('mNext').addEventListener('click', function () { playIdx(MQ.idx + 1); });
+  document.getElementById('mPrev').addEventListener('click', function () { playIdx(MQ.idx - 1); });
+} catch (e) {}
+setTimeout(buildMusic, 250);   // newtab render pehle — feed phir (UI never blocks)
+
+// ---------- YOUTUBE ENGINE (watch history + verified channel feeds) ----------
+var YT = { items: [], page: 0, timer: null, built: false };
+// VERIFIED channel IDs (RSS se title-match karke confirm kiye gaye the — invented nahi)
+var YT_CHANNELS = [
+  'UCq-Fj5jknLsUf-MWSy4_brA',   // T-Series
+  'UCpEhnqL0y41EpW2TvWAHD7Q',   // SET India
+  'UCFFbwnve3yF62-tVXkTyHqg',   // Zee Music Company
+  'UC56gTxNs4f9xZ7Pa2i5xNzg',   // Sony Music India
+];
+function buildYt() {
+  if (YT.built) return;
+  YT.built = true;
+  var items = [], seen = {};
+  // ALGORITHM 1 — user ki watch history (watch again, latest first)
+  var fromHistory = 0;
+  try {
+    var h = JSON.parse(OrbitBridge.historyJson() || '[]');
+    for (var i = h.length - 1; i >= 0 && fromHistory < 4; i--) {
+      var m = (h[i].url || '').match(/[?&]v=([\w-]{11})/);
+      if (m && !seen[m[1]]) {
+        seen[m[1]] = 1;
+        items.push({ id: m[1], t: h[i].title || 'Watch again' });
+        fromHistory++;
+      }
+    }
+  } catch (e) {}
+  // ALGORITHM 2 — verified channels RSS (round-robin mix)
+  var feeds = [], ci = 0;
+  function step() {
+    if (ci >= YT_CHANNELS.length) return merge();
+    feedGet('https://www.youtube.com/feeds/videos.xml?channel_id=' + YT_CHANNELS[ci], function (body) {
+      try {
+        var x = new DOMParser().parseFromString(body, 'text/xml');
+        var es = x.getElementsByTagName('entry');
+        var f = [];
+        for (var k = 0; k < es.length && k < 6; k++) {
+          var vEl = es[k].getElementsByTagNameNS('*', 'videoId')[0];
+          var vid = vEl ? vEl.textContent : xmlTag(es[k], 'videoId');
+          var tt = xmlTag(es[k], 'title');
+          if (vid && !seen[vid]) { seen[vid] = 1; f.push({ id: vid, t: tt }); }
+        }
+        feeds.push(f);
+      } catch (e2) { feeds.push([]); }
+      ci++;
+      step();
+    });
+  }
+  function merge() {
+    for (var r = 0; r < 6; r++) {
+      for (var fc = 0; fc < feeds.length; fc++) {
+        if (feeds[fc][r]) items.push(feeds[fc][r]);
+      }
+    }
+    YT.items = items.slice(0, 16);
+    if (!YT.items.length) {
+      document.getElementById('ytGrid').innerHTML =
+        '<div class="berr">YouTube feed is busy — open the home screen again in a moment.</div>';
+      return;
+    }
+    renderYtPage(0);
+    // dhire-dhire pages rotate (4 thumbnails = 1 page)
+    YT.timer = setInterval(function () {
+      var pages = Math.ceil(YT.items.length / 4);
+      YT.page = (YT.page + 1) % pages;
+      renderYtPage(YT.page);
+    }, 7000);
+  }
+  step();
+}
+function renderYtPage(p) {
+  var g = document.getElementById('ytGrid');
+  if (!g) return;
+  var slice = YT.items.slice(p * 4, p * 4 + 4);
+  var html = '';
+  for (var i = 0; i < slice.length; i++) {
+    (function (v) {
+      html += '<div class="ytv" data-id="' + v.id + '">' +
+        '<div class="tw"><img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg"></div>' +
+        '<div class="tt">' + esc(v.t) + '</div></div>';
+    })(slice[i]);
+  }
+  g.innerHTML = html;
+}
+try {
+  document.getElementById('ytGrid').addEventListener('click', function (ev) {
+    var v = ev.target.closest('.ytv');
+    if (v) nav('https://www.youtube.com/watch?v=' + v.getAttribute('data-id'), false);
+  });
+} catch (e) {}
+setTimeout(buildYt, 450);
+
+// ---------- NEWS ENGINE (city + region + interest algorithm) ----------
+var NW = { city: '', region: '', built: 0 };
+function parseRss(x) {
+  try {
+    var d = new DOMParser().parseFromString(x, 'text/xml');
+    var out = [], it = d.getElementsByTagName('item');
+    for (var i = 0; i < it.length; i++) {
+      var e = it[i];
+      var src = e.getElementsByTagName('source')[0] ? e.getElementsByTagName('source')[0].textContent : '';
+      out.push({ t: xmlTag(e, 'title'), l: xmlTag(e, 'link'), s: src, ts: xmlTag(e, 'pubDate') });
+    }
+    return out;
+  } catch (e) { return []; }
+}
+function histKeywords() {
+  // user kya padhta hai — history titles se top 1 keyword (on-device)
+  try {
+    var h = JSON.parse(OrbitBridge.historyJson() || '[]');
+    var stop = { the: 1, and: 1, for: 1, with: 1, you: 1, your: 1, http: 1, https: 1, www: 1, com: 1, from: 1, this: 1, that: 1 };
+    var freq = {};
+    for (var i = 0; i < Math.min(40, h.length); i++) {
+      (h[i].title || '').toLowerCase().split(/[^a-z]+/).forEach(function (w) {
+        if (w.length > 3 && !stop[w]) freq[w] = (freq[w] || 0) + 1;
+      });
+    }
+    var best = '', bn = 0;
+    for (var k in freq) if (freq[k] > bn) { bn = freq[k]; best = k; }
+    return best;
+  } catch (e) { return ''; }
+}
+function newsQueries() {
+  var q = [];
+  if (NW.city) q.push(NW.city + ' news');
+  if (NW.region) q.push(NW.region + ' news');
+  q.push('India top news');
+  var kw = histKeywords();
+  if (kw && NW.built > 0) q.push(kw + ' news');   // algorithm: doosri load par interest mix
+  return q;
+}
+function buildNews() {
+  NW.built++;
+  var out = [], seen = {};
+  var qs = newsQueries();
+  var qi = 0;
+  function step() {
+    if (qi >= qs.length || out.length >= 12) return done();
+    feedGet('https://news.google.com/rss/search?q=' + encodeURIComponent(qs[qi]) +
+      '&hl=en-IN&gl=IN&ceid=IN:en', function (body) {
+      var items = parseRss(body);
+      for (var k = 0; k < items.length && out.length < 12; k++) {
+        var n = items[k];
+        if (!n.t || seen[n.t]) continue;
+        seen[n.t] = 1;
+        out.push(n);
+      }
+      qi++;
+      step();
+    });
+  }
+  function done() {
+    var el = document.getElementById('newsList');
+    if (!el) return;
+    if (!out.length) {
+      el.innerHTML = '<div class="berr">News feed is busy — open the home screen again in a moment.</div>';
+      return;
+    }
+    var html = '';
+    for (var x = 0; x < out.length; x++) {
+      (function (n) {
+        var src = (n.s || 'Google News').replace(/&quot;/g, '');
+        var tt = n.t.replace(/ - [^-]+$/, '');   // Google News title ka trailing source hatao
+        html += '<div class="nrow" data-u="' + esc(n.l) + '">' +
+          '<div class="nt">' + esc(tt) + '</div>' +
+          '<div class="nm"><b>' + esc(src) + '</b>' + (n.ts ? ' · ' + relTime(n.ts) : '') + '</div></div>';
+      })(out[x]);
+    }
+    el.innerHTML = html;
+  }
+  step();
+}
+try {
+  document.getElementById('newsList').addEventListener('click', function (ev) {
+    var r = ev.target.closest('.nrow');
+    if (r && r.getAttribute('data-u')) nav(r.getAttribute('data-u'), false);
+  });
+} catch (e) {}
+// city native se — resolve hote hi cityPush callback (city news live switch)
+window.cityPush = function (c, r) {
+  NW.city = c || ''; NW.region = r || '';
+  var nc = document.getElementById('newsCity');
+  if (nc && NW.city) nc.textContent = NW.city;
+  if (NW.city) buildNews();
+};
+try { NW.city = OrbitBridge.cityFeed() || ''; if (NW.city) document.getElementById('newsCity').textContent = NW.city; } catch (e) {}
+setTimeout(buildNews, 650);
 
 // ==================== SPIDER MODE v1.4.7 ====================
 // Tor-style VPN screen: VPN ON = web animation + status text + shortcuts

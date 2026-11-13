@@ -1,7 +1,7 @@
 {
-  "versionCode": 33,
-  "versionName": "1.6.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.6.0/orbit-browser-1.6.0.apk",
-  "notes": "v1.6.0 — Home screen redesign: upar wala search bar hataya (middle search bar hai), search bar ke Google icon par tap karke search engine badlo (Google/DuckDuckGo/Brave/Bing), Gemini card + Google Lens hata diye, shortcut cards ek box me aur '+' hamesha last. Incognito = surya-grahan eclipse logo wali alag screen, cards hidden, IP relay se hidden. VPN country change ab notification se hi (Change country / New IP buttons). Settings: status bar overlap fix, Auto-install/Load images/Memory saver/Orbit AI options hataye (auto-install hamesha on). versionCode 33",
+  "versionCode": 34,
+  "versionName": "1.7.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.7.0/orbit-browser-1.7.0.apk",
+  "notes": "v1.7.0 — HOME = DISCOVER FEED: Google-jaisa home — Orbit logo, search bar me mic + Gemini, Spider VPN + Incognito cards, sliding site cards. Neeche: JioSaavn top-10 music box (1:1 thumbnails auto-slide, play/next/prev, algorithm aapke plays se), YouTube 2x2 thumbnails (watch history + top channels, auto-rotate), LOCAL news (aapke city ki news, roz fresh, tap = seedha article). Loading ring ki jagah line + orbit comet animation. FASTEST: top site background me pehle se load hoti hai (tap = instant). YouTube ads HARD-BLOCKED (koi bhi halat me nahi). versionCode 34",
   "minVersionCode": 1
 }

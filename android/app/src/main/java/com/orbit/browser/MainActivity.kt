@@ -25,6 +25,7 @@ import android.os.Message
 import android.net.Uri
 import android.net.VpnService
 import android.provider.MediaStore
+import android.speech.RecognizerIntent
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -35,6 +36,9 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.animation.AnimationUtils
 import android.view.animation.TranslateAnimation
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import android.widget.CheckBox
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -125,7 +129,7 @@ class MainActivity : Activity() {
     private lateinit var btnClear: ImageButton
     // v1.4.6 — nullable (lateinit nahi): agar kabhi init order slip ho jaye to
     // NPE/UninitializedPropertyAccessException IMPOSSIBLE — safe-call silently skip
-    private var ringLoader: OrbitRingLoader? = null
+    private var ringLoader: OrbitLineLoader? = null
     // v1.4.4 — ring ab omnibox ke andar NAHI, search bar ke NEECHE floating overlay
     private var ringWrap: FrameLayout? = null
     private lateinit var pullRefresh: SwipeRefreshLayout
@@ -175,6 +179,25 @@ class MainActivity : Activity() {
 
     // EDGE MODULE — sleeping tabs ka timer
     private val sleeper = Handler(Looper.getMainLooper())
+
+    // v1.7.0 — home feed fetcher (CORS-free): newtab ka saara feed network
+    // (JioSaavn API / Google News RSS / YouTube RSS) NATIVE OkHttp se jata hai —
+    // WebView CORS na toke, feeds guaranteed milte hai. 10-min cache = feed
+    // dobara khula to instant render (fastest-browser feel).
+    private val feedHttp: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .build()
+    private val feedCache = LinkedHashMap<String, Pair<Long, String>>()
+
+    @Volatile private var cityAt = 0L
+
+    // v1.7.0 — WARM PRERENDER TAB ("fastest browser"): newtab khulte hi user ki
+    // top-visited site ek offscreen WebView me PRELOAD hoti hai. Usi site ka tile
+    // tap karte hi ALREADY LOADED WebView attach ho jata hai — network kitna bhi
+    // dheema ho, site "tap se hi khuli" lagti hai (asli speed bhi badhti hai).
+    private var warmTab: Tab? = null
+    private var warmAt = 0L
 
     /** System WebView ka REAL UA — "; wv" token hata kar. Fake/stale UA (purana
      *  Chrome/126 claim) Google ka bot-detection trigger karta tha — login/search
@@ -557,6 +580,7 @@ class MainActivity : Activity() {
         runCatching { menuPopup?.dismiss() }
         runCatching { suggestPopup?.dismiss() }
         runCatching { PlaybackCoordinator.stopAll() }
+        runCatching { dropWarmTab() }   // v1.7.0 — warm prerender WebView bhi saaf
         runCatching {
             for (tab in tabs) {
                 tab.webView?.apply {
@@ -854,13 +878,10 @@ class MainActivity : Activity() {
             append(ViewportBootstrap.SCRIPT)
             append("\n;")
             append(MediaWatchBootstrap.SCRIPT)
-            if (RemoteConfig.ytShieldEnabled()) {
-                // v1.3.4 — YouTube Ad Shield: player JSON se adPlacements strip +
-                // skip-button autoclick + ad containers hide. Kill-switch:
-                // ota/hotfix.json me "ytShield": false push karke bina APK off.
-                append("\n;")
-                append(YouTubeAdShield.SCRIPT)
-            }
+            // v1.7.0 — HAMESHA ON (user demand: "koi bhi halat me YouTube ads
+            // nahi"). Shield YouTube-par-only hai, baaki sites par zero cost.
+            append("\n;")
+            append(YouTubeAdShield.SCRIPT)
             if (antiFpEnabled()) {
                 // FIREFOX MODULE — anti-fingerprinting: canvas noise + hardware spoof
                 append("\n;")
@@ -979,6 +1000,14 @@ class MainActivity : Activity() {
     private fun navigate(tabId: Long, url: String) {
         // v1.4.1 — navigation ka matlab keyboard ka kaam khatam: IME turant close
         hideKeyboard()
+        // v1.7.0 — INSTANT SERVE: warm prerendered site match? already-loaded tab
+        // turant adopt — network wait zero. Home newtab tab site ki jagah le leta hai.
+        if (!url.startsWith("orbit://") && maybeAdoptWarm(url)) {
+            val old = tabs.firstOrNull { it.id == tabId }
+            if (old != null && old.isInternal && old.url == NEWTAB) closeTabInternal(old)
+            refreshChrome()
+            return
+        }
         val tab = tabs.firstOrNull { it.id == tabId } ?: return
         tab.url = url
         when {
@@ -1007,7 +1036,13 @@ class MainActivity : Activity() {
             else -> "Orbit"
         }
         when {
-            url == NEWTAB -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+            url == NEWTAB -> {
+                wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+                // v1.7.0 — feed engines + warm prerender (newtab render ke BAAD, UI
+                // kabhi block na ho)
+                wv.postDelayed({ runCatching { ensureCity() } }, 300)
+                wv.postDelayed({ runCatching { maybeWarmPrerender() } }, 1500)
+            }
             // v1.3.5 — FREE MUSIC LIBRARY: GitHub-repo powered (radio-browser.info +
             // Audius) built-in page. Background play MediaWatchBootstrap se free milta hai.
             url == "orbit://music" -> wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("music.html"), "text/html", "UTF-8", url)
@@ -1032,6 +1067,118 @@ class MainActivity : Activity() {
         wv.settings.javaScriptEnabled = jsEnabledPref()
         wv.loadUrl(url)
         refreshChrome()
+    }
+
+    // ------------------------------------------------- v1.7.0 instant-serve + feeds
+
+    /** Voice search — Google recognizer intent (mic permission recognizer app
+     *  khud manage karta hai). Result onActivityResult → navigateInput. */
+    private fun startVoiceSearch() {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+        }
+        runCatching { startActivityForResult(i, REQ_VOICE) }.onFailure {
+            Toast.makeText(this, "Voice search not available on this phone", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** v1.7.0 — LOCAL NEWS ka base: user ka city + region ip-api se (24h cache).
+    *   Newtab load par ensure — resolve hote hi page par cityPush callback. */
+    private fun ensureCity() {
+        val cached = LocalStore.getSetting(this, "userCity", "")
+        if (cached.isNotBlank() && System.currentTimeMillis() - cityAt < 24 * 60 * 60 * 1000L) {
+            pushCityToPage()
+            return
+        }
+        Thread {
+            var city = ""; var region = ""
+            runCatching {
+                feedHttp.newCall(
+                    Request.Builder().url("http://ip-api.com/json/?fields=status,city,regionName").build(),
+                ).execute().use { resp ->
+                    val b = resp.body?.string() ?: return@use
+                    val o = org.json.JSONObject(b)
+                    if (o.optString("status") == "success") {
+                        city = o.optString("city", "").trim()
+                        region = o.optString("regionName", "").trim()
+                    }
+                }
+            }
+            if (city.isNotBlank()) {
+                cityAt = System.currentTimeMillis()
+                LocalStore.setSetting(this, "userCity", city)
+                LocalStore.setSetting(this, "userRegion", region)
+            }
+            runOnUiThread { runCatching { pushCityToPage() } }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    private fun pushCityToPage() {
+        val t = activeTab ?: return
+        if (t.url != NEWTAB) return
+        val city = LocalStore.getSetting(this, "userCity", "")
+        val region = LocalStore.getSetting(this, "userRegion", "")
+        t.webView?.evaluateJavascript(
+            "if(window.cityPush)window.cityPush(${escapeJs(city)}, ${escapeJs(region)});", null,
+        )
+    }
+
+    /** v1.7.0 — WARM PRERENDER: top-visited site offscreen WebView me preload.
+    *   Network dheema ho to bhi tap = instant site. Connecting relay skip (net
+    *   bikharta hai), warm 90s ke baad stale. */
+    private fun maybeWarmPrerender() {
+        warmTab?.let { if (System.currentTimeMillis() - warmAt > 90_000L) dropWarmTab() }
+        if (warmTab != null) return
+        if (RelayEngine.state == "connecting") return
+        val top = runCatching {
+            LocalStore.listHistory(this).firstOrNull { h ->
+                h.url.startsWith("http") &&
+                    !h.url.contains("youtube.com") &&
+                    !h.url.contains("google.com/search")
+            }
+        }.getOrNull() ?: return
+        if (top.url == activeTab?.url) return
+        runCatching {
+            val t = Tab(nextTabId++, top.url, top.title.ifBlank { domainOf(top.url) })
+            t.isInternal = false
+            t.desktopSite = LocalStore.getSetting(this, "desktopDefault", "off") == "on"
+            val wv = buildWebView(t)
+            t.webView = wv
+            wv.visibility = View.INVISIBLE
+            wv.loadUrl(top.url)
+            warmTab = t
+            warmAt = System.currentTimeMillis()
+        }
+    }
+
+    /** Warm tab adopt — tap hui site already loaded hai? true = tab switch ho gaya. */
+    private fun maybeAdoptWarm(url: String): Boolean {
+        val t = warmTab ?: return false
+        if (System.currentTimeMillis() - warmAt > 90_000L) { dropWarmTab(); return false }
+        if (t.webView == null || t.url == url) return false
+        val h1 = domainOf(url); val h2 = domainOf(t.url)
+        if (h1.isBlank() || h1 != h2) return false
+        return runCatching {
+            tabs.add(t)
+            selectTab(t.id)
+            warmTab = null
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun dropWarmTab() {
+        val t = warmTab ?: return
+        warmTab = null
+        t.webView?.let { wv ->
+            runCatching {
+                PlaybackCoordinator.webViewDestroyed(wv)
+                wv.stopLoading()
+                (wv.parent as? ViewGroup)?.removeView(wv)
+                wv.destroy()
+            }
+        }
+        t.webView = null
     }
 
     private fun showErrorPage(wv: WebView, url: String, reason: String) {
@@ -1174,6 +1321,107 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
             }
         }
+
+        // ------------- v1.7.0 — home feed (music/news/youtube) + voice + quick cards -------------
+
+        /** Home feed ka CORS-free fetcher — Google News RSS / YouTube RSS / JioSaavn
+         *  API native OkHttp se fetch hote hai (WebView CORS na toke). 10-min cache
+         *  — feed dobara khula to instant render. */
+        @JavascriptInterface
+        fun fetchFeed(url: String): String {
+            if (!url.startsWith("http")) return ""
+            val now = System.currentTimeMillis()
+            synchronized(feedCache) {
+                feedCache[url]?.let { (t, body) -> if (now - t < 10 * 60 * 1000L) return body }
+            }
+            val body = runCatching {
+                feedHttp.newCall(
+                    Request.Builder().url(url).header("User-Agent", realUA).build(),
+                ).execute().use { resp ->
+                    if (!resp.isSuccessful) "" else resp.body?.string() ?: ""
+                }
+            }.getOrDefault("")
+            if (body.isNotBlank()) {
+                synchronized(feedCache) {
+                    feedCache[url] = now to body
+                    while (feedCache.size > 24) feedCache.remove(feedCache.keys.first())
+                }
+            }
+            return body
+        }
+
+        /** v1.7.0 ASYNC fetch — JS ko BLOCK nahi karta (sync bridge call slow network
+         *  par home screen freeze kar dega). Native thread me fetch, result wapas
+         *  window.feedData(id, body) callback me. Cache hit = instant callback. */
+        @JavascriptInterface
+        fun fetchFeedAsync(url: String, id: Int) {
+            if (!url.startsWith("http")) { pushFeed(id, ""); return }
+            val cached = synchronized(feedCache) {
+                feedCache[url]?.takeIf { System.currentTimeMillis() - it.first < 10 * 60 * 1000L }?.second
+            }
+            if (cached != null) { pushFeed(id, cached); return }
+            Thread {
+                val body = runCatching {
+                    feedHttp.newCall(
+                        Request.Builder().url(url).header("User-Agent", realUA).build(),
+                    ).execute().use { resp ->
+                        if (!resp.isSuccessful) "" else resp.body?.string() ?: ""
+                    }
+                }.getOrDefault("")
+                if (body.isNotBlank()) {
+                    synchronized(feedCache) {
+                        feedCache[url] = System.currentTimeMillis() to body
+                        while (feedCache.size > 24) feedCache.remove(feedCache.keys.first())
+                    }
+                }
+                pushFeed(id, body)
+            }.also { it.isDaemon = true }.start()
+        }
+
+        private fun pushFeed(id: Int, body: String) {
+            runOnUiThread {
+                runCatching {
+                    activeTab?.webView?.evaluateJavascript(
+                        "if(window.feedData)window.feedData($id,${escapeJs(body)});", null,
+                    )
+                }
+            }
+        }
+
+        /** JioSaavn encrypted_media_url → playable https URL. DES/ECB key = JioSaavn
+         *  web player ka public constant (saare open-source saavn tools yahi use
+         *  karte hai). http → https upgrade (mixed-content safe). */
+        @JavascriptInterface
+        fun decryptMedia(enc: String): String = runCatching {
+            val spec = javax.crypto.spec.DESKeySpec("38346591".toByteArray())
+            val key = javax.crypto.SecretKeyFactory.getInstance("DES").generateSecret(spec)
+            val c = javax.crypto.Cipher.getInstance("DES/ECB/PKCS5Padding")
+            c.init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.IvParameterSpec(ByteArray(8)))
+            val data = android.util.Base64.decode(enc, android.util.Base64.DEFAULT)
+            String(c.doFinal(data)).replace("http://", "https://")
+        }.getOrDefault("")
+
+        /** Search bar mic — Google voice recognizer; result par seedha search. */
+        @JavascriptInterface
+        fun voiceSearch() {
+            runOnUiThread { startVoiceSearch() }
+        }
+
+        /** Home ka Spider VPN card — VPN sheet kholta hai. */
+        @JavascriptInterface
+        fun openVpnSheet() {
+            runOnUiThread { showVpnSheet() }
+        }
+
+        /** Home ka Incognito card — naya incognito tab (relay auto-connect). */
+        @JavascriptInterface
+        fun newIncognito() {
+            runOnUiThread { newTab(incognito = true) }
+        }
+
+        /** Local news — user ka city (ip-api, 24h cache). Blank = abhi resolve nahi. */
+        @JavascriptInterface
+        fun cityFeed(): String = LocalStore.getSetting(this@MainActivity, "userCity", "")
     }
 
     // ---------------------------------------------------------------- lens scanner
@@ -1224,6 +1472,15 @@ class MainActivity : Activity() {
                 if (resultCode == RESULT_OK) "VPN permission saved"
                 else "VPN permission denied",
             )
+            return
+        }
+        // v1.7.0 — VOICE SEARCH result → seedha search (koi extra tap nahi)
+        if (requestCode == REQ_VOICE) {
+            if (resultCode == RESULT_OK) {
+                val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                val text = results?.firstOrNull()?.trim()
+                if (!text.isNullOrBlank()) navigateInput(text)
+            }
             return
         }
         if (requestCode != REQ_LENS_CAPTURE) return
@@ -3819,6 +4076,9 @@ class MainActivity : Activity() {
 
         // MODULE 4 — VPN consent request code
         private const val REQ_VPN_CONSENT = 4202
+
+        // v1.7.0 — voice search (home search bar mic) request code
+        private const val REQ_VOICE = 4203
 
         /** Desktop site toggle ke liye — modern desktop Chrome UA */
         const val DESKTOP_UA =
