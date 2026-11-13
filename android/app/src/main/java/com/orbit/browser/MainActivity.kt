@@ -3,7 +3,6 @@ package com.orbit.browser
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.DownloadManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -58,6 +57,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -120,6 +120,8 @@ class MainActivity : Activity() {
     private lateinit var btnReload: ImageButton
     private lateinit var btnClear: ImageButton
     private lateinit var ringLoader: OrbitRingLoader
+    // v1.4.4 — ring ab omnibox ke andar NAHI, search bar ke NEECHE floating overlay
+    private lateinit var ringWrap: FrameLayout
     private lateinit var pullRefresh: SwipeRefreshLayout
     // v1.4.1 — active tab load state (ring loader + lock-icon visibility ke liye)
     private var pageLoading = false
@@ -130,6 +132,24 @@ class MainActivity : Activity() {
     private lateinit var findBar: LinearLayout
     private lateinit var findInput: EditText
     private lateinit var findCount: TextView
+
+    // v1.4.4 — Chrome-style download bar + Downloads page state
+    private lateinit var dlBar: FrameLayout
+    private lateinit var dlName: TextView
+    private lateinit var dlSub: TextView
+    private lateinit var dlProg: ProgressBar
+    private lateinit var dlAct: ImageButton
+    private val dlRowSubs = mutableMapOf<Long, TextView>()
+    private val dlRowProgs = mutableMapOf<Long, ProgressBar>()
+    private var downloadsPageOpen = false
+    private var pendingDl: Array<String>? = null
+
+    // v1.4.4 — page-stall detector: 9s me main frame 15% cross na kare to
+    // relay swap try (sirf VPN ON par asar — warna no-op)
+    private val stallCheck = Runnable {
+        val prog = activeTab?.webView?.progress ?: 100
+        if (pageLoading && prog < 15) RelayEngine.swapIfSlow(this)
+    }
 
     private var aiJob: Thread? = null
 
@@ -231,6 +251,28 @@ class MainActivity : Activity() {
 
         // Brave Shields badge click — is page ke block stats
         shieldBadge.setOnClickListener { showShieldStats() }
+
+        // v1.4.4 — Chrome-style download bar + Orbit downloader engine
+        dlBar = findViewById(R.id.download_bar)
+        dlName = findViewById(R.id.dl_name)
+        dlSub = findViewById(R.id.dl_sub)
+        dlProg = findViewById(R.id.dl_prog)
+        dlAct = findViewById(R.id.dl_act)
+        dlBar.setOnClickListener { showDownloadsPage() }
+        dlAct.setOnClickListener {
+            val t = OrbitDownloader.runningTask() ?: return@setOnClickListener
+            if (t.status == OrbitDownloader.ST_RUNNING) OrbitDownloader.pause(this, t)
+            else OrbitDownloader.resume(this, t)
+        }
+        OrbitDownloader.init(this)
+        OrbitDownloader.uiHook = {
+            runOnUiThread {
+                runCatching {
+                    updateDownloadBar()
+                    if (downloadsPageOpen) refreshDownloadsRows()
+                }
+            }
+        }
 
         // v1.4.0 — omnibox bookmark star (Chrome parity): tap = save/remove bookmark
         btnStar = findViewById(R.id.btn_star)
@@ -810,14 +852,14 @@ class MainActivity : Activity() {
             }
 
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                // v1.4.1 — blue line ki jagah ORBIT RING: arc + satellite dot
-                // progress ke saath advance (Orbit logo motif), lock icon load ke waqt hidden
+                // v1.4.4 — ORBIT RING search bar ke NEECHE (floating overlay):
+                // arc + satellite dot progress ke saath advance. Lock icon ab
+                // hamesha visible (Chrome parity — load me hide nahi hota).
                 pageLoading = newProgress in 1..99
-                ringLoader.visibility = if (pageLoading) View.VISIBLE else View.GONE
+                ringWrap.visibility = if (pageLoading) View.VISIBLE else View.GONE
                 ringLoader.setProgress(newProgress)
-                if (!omnibox.hasFocus()) {
-                    omniIcon.visibility = if (pageLoading) View.INVISIBLE else View.VISIBLE
-                }
+                // page 15% cross kar gaya = stall-watchdog ki zaroorat nahi
+                if (newProgress >= 15) sleeper.removeCallbacks(stallCheck)
                 // Chrome jaisa: loading me pill ka button X (stop) ban jata hai
                 btnReload.setImageResource(if (newProgress in 1..99) R.drawable.ic_close else R.drawable.ic_refresh)
             }
@@ -852,35 +894,12 @@ class MainActivity : Activity() {
                 findCount.text = if (matches > 0) "${ordinal + 1}/$matches" else "0/0"
             }
         }
-        // v1.3.6 — FILE/APK DOWNLOADS: WebView khud file download nahi karta —
-        // GitHub release APK jaise attachment links pe onDownloadStart aata hai
-        // aur bina listener ke kuch nahi hota tha. Android DownloadManager ko
-        // de do (system downloader — redirect-follow, notification progress,
-        // Downloads folder me save). Enqueue fail ho to system browser fallback.
+        // v1.4.4 — FILE/APK DOWNLOADS: Orbit Download Engine — multi-segment
+        // parallel download (Chrome-jaisi speed), real-time speed + ETA (UC
+        // style), bottom download bar + in-app Downloads page. System
+        // DownloadManager gaya — ab sab Orbit ke apne UI me hota hai.
         wv.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-            val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
-                .getOrDefault("orbit-download")
-            val ok = runCatching {
-                // NOTE: allowScanningByMediaScanner() yahan chain me nahi — wo void
-                // return karta hai (req Unit ban jata tha = v1.3.6 CI compile fail)
-                val req = DownloadManager.Request(Uri.parse(url))
-                    .setTitle(name)
-                    .setDescription("Orbit Browser download")
-                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                dm.enqueue(req)
-            }.isSuccess
-            if (ok) {
-                Toast.makeText(this, "Download started: $name", Toast.LENGTH_SHORT).show()
-            } else {
-                runCatching {
-                    startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            }
+            handleDownload(url, contentDisposition, mimeType)
         }
         return wv
     }
@@ -1343,13 +1362,17 @@ class MainActivity : Activity() {
                 tab.url = url
                 refreshChrome()
             }
+            // v1.4.4 — stall-watchdog arm: 9s me 15% nahi pahuncha to relay swap
+            sleeper.removeCallbacks(stallCheck)
+            sleeper.postDelayed(stallCheck, 9000)
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
             pullRefresh.isRefreshing = false
-            // v1.4.1 — ring loader safety stop (kuch pages progress-100 event nahi bhejte)
+            // v1.4.4 — ring loader safety stop (kuch pages progress-100 event nahi bhejte)
             pageLoading = false
-            ringLoader.visibility = View.GONE
+            ringWrap.visibility = View.GONE
+            sleeper.removeCallbacks(stallCheck)
             if (!omnibox.hasFocus()) omniIcon.visibility = View.VISIBLE
             updateShieldBadge()
             // internal entry (back-nav included) — clean chrome, history me kuch nahi
@@ -1636,7 +1659,7 @@ class MainActivity : Activity() {
         divider()
         row(R.drawable.ic_history, "History") { showHistory() }
         row(R.drawable.ic_star, "Bookmarks") { showBookmarks() }
-        row(R.drawable.ic_download, "Downloads") { openDownloads() }
+        row(R.drawable.ic_download, "Downloads") { showDownloadsPage() }
         row(R.drawable.ic_star, "Add bookmark") { toggleCurrentBookmark() }
         row(R.drawable.ic_find, "Find in page") { showFindBar() }
         row(R.drawable.ic_share, "Share") { sharePage() }
@@ -1708,12 +1731,260 @@ class MainActivity : Activity() {
         return holder
     }
 
-    /** v1.4.0 — Downloads: system Downloads UI (Orbit ke DownloadManager items yahan dikhte hain) */
-    private fun openDownloads() {
-        runCatching {
-            startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }.onFailure {
-            Toast.makeText(this, "Downloads app not found", Toast.LENGTH_SHORT).show()
+    // ------------------------------------------------ v1.4.4 downloads (Chrome-style)
+
+    /** WebView DownloadListener → Orbit engine. data:/http(s) handle; baaki toast. */
+    private fun handleDownload(url: String, contentDisposition: String?, mimeType: String?) {
+        if (url.startsWith("data:")) {
+            val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
+                .getOrDefault("orbit-file-${System.currentTimeMillis() % 10000}")
+            val t = OrbitDownloader.startDataUrl(this, url, name)
+            Toast.makeText(
+                this,
+                if (t != null) "Saved: ${t.name}" else "This file can't be downloaded",
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            Toast.makeText(this, "This file type can't be downloaded", Toast.LENGTH_SHORT).show()
+            return
+        }
+        // API 26-28: public Downloads write permission pehle (API 29+ MediaStore free)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            checkSelfPermission("android.permission.WRITE_EXTERNAL_STORAGE") !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingDl = arrayOf(url, contentDisposition ?: "", mimeType ?: "")
+            requestPermissions(arrayOf("android.permission.WRITE_EXTERNAL_STORAGE"), 4100)
+            return
+        }
+        startOrbitDownload(url, contentDisposition, mimeType)
+    }
+
+    private fun startOrbitDownload(url: String, contentDisposition: String?, mimeType: String?) {
+        val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
+            .getOrDefault("orbit-download")
+        val t = OrbitDownloader.start(this, url, name, mimeType ?: "")
+        if (t == null) {
+            Toast.makeText(this, "This file can't be downloaded", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Download started: ${t.name}", Toast.LENGTH_SHORT).show()
+            updateDownloadBar()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 4100) return
+        val p = pendingDl
+        pendingDl = null
+        if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED && p != null) {
+            startOrbitDownload(p[0], p[1], p[2])
+        } else {
+            Toast.makeText(this, "Storage permission is needed to save downloads", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Bottom download bar — 500ms ticker hook se live update (speed/ETA/%) */
+    private fun updateDownloadBar() {
+        val t = OrbitDownloader.runningTask()
+        if (t == null) {
+            dlBar.visibility = View.GONE
+            return
+        }
+        dlBar.visibility = View.VISIBLE
+        dlName.text = t.name
+        val total = t.total.get()
+        if (t.status == OrbitDownloader.ST_RUNNING) {
+            dlSub.text = buildString {
+                append(OrbitDownloader.fmtSpeed(t.speed))
+                OrbitDownloader.fmtEta(t.eta).takeIf { it.isNotBlank() }?.let { append(" · ").append(it) }
+                append(" · ").append(OrbitDownloader.fmtSize(t.received.get()))
+                if (total > 0) append(" / ").append(OrbitDownloader.fmtSize(total))
+            }
+            dlAct.setImageResource(R.drawable.ic_pause)
+            if (total > 0) {
+                dlProg.isIndeterminate = false
+                dlProg.max = 100
+                dlProg.progress = ((t.received.get() * 100) / total).toInt().coerceIn(0, 100)
+            } else {
+                dlProg.isIndeterminate = true
+            }
+        } else {
+            dlSub.text = buildString {
+                append("Paused · ").append(OrbitDownloader.fmtSize(t.received.get()))
+                if (total > 0) append(" of ").append(OrbitDownloader.fmtSize(total))
+            }
+            dlAct.setImageResource(R.drawable.ic_play)
+            if (total > 0) {
+                dlProg.isIndeterminate = false
+                dlProg.max = 100
+                dlProg.progress = ((t.received.get() * 100) / total).toInt().coerceIn(0, 100)
+            } else {
+                dlProg.isIndeterminate = true
+            }
+        }
+    }
+
+    /** Chrome-jaisa Downloads page — in-app list, live progress, open/pause/delete. */
+    private fun showDownloadsPage() {
+        downloadsPageOpen = true
+        openPage("Downloads", actionIcon = R.drawable.ic_trash, onAction = {
+            LocalStore.clearFinishedDownloads(this)
+            showDownloadsPage()
+        }) { content ->
+            dlRowSubs.clear()
+            dlRowProgs.clear()
+            val items = LocalStore.listDownloads(this)
+            if (items.isEmpty()) {
+                content.addView(pageEmpty("Files you download will show up here.\n\nFiles save to your phone's Downloads folder."))
+                return@openPage
+            }
+            items.forEach { d -> content.addView(downloadRow(d)) }
+        }
+    }
+
+    private fun downloadRow(d: LocalStore.DownloadItem): LinearLayout {
+        val live = OrbitDownloader.taskById(d.id)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(8), dp(6), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            background = getDrawable(R.drawable.btn_ripple)
+            isClickable = true
+            isFocusable = true
+        }
+        val iv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_download)
+            setColorFilter(0xFF9AA0A6.toInt())
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(14); marginEnd = dp(4)
+            }
+        }
+        val t1 = TextView(this).apply {
+            text = d.name
+            textSize = 15f
+            setTextColor(0xFFE8EAED.toInt())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        val t2 = TextView(this).apply {
+            text = dlSubText(d, live)
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(2), 0, 0)
+        }
+        dlRowSubs[d.id] = t2
+        col.addView(t1)
+        col.addView(t2)
+        val status = live?.status ?: d.status
+        if (status == OrbitDownloader.ST_RUNNING || status == OrbitDownloader.ST_PAUSED) {
+            val pb = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(4),
+                ).apply { topMargin = dp(6) }
+                max = 100
+                progressTintList = android.content.res.ColorStateList.valueOf(0xFF8AB4F8.toInt())
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0xFF3C4043.toInt())
+                val tot = live?.total?.get() ?: d.total
+                if (tot > 0) {
+                    isIndeterminate = false
+                    progress = (((live?.received?.get() ?: d.received) * 100) / tot).toInt().coerceIn(0, 100)
+                } else {
+                    isIndeterminate = true
+                }
+            }
+            dlRowProgs[d.id] = pb
+            col.addView(pb)
+        }
+        row.addView(iv)
+        row.addView(col)
+
+        fun miniBtn(iconRes: Int, desc: String, action: () -> Unit): ImageButton =
+            ImageButton(this).apply {
+                setImageResource(iconRes)
+                setColorFilter(0xFF9AA0A6.toInt())
+                background = getDrawable(R.drawable.btn_ripple)
+                layoutParams = LinearLayout.LayoutParams(dp(38), dp(38))
+                contentDescription = desc
+                setOnClickListener { action() }
+            }
+
+        if (status == OrbitDownloader.ST_RUNNING || status == OrbitDownloader.ST_PAUSED) {
+            row.addView(miniBtn(
+                if (status == OrbitDownloader.ST_RUNNING) R.drawable.ic_pause else R.drawable.ic_play,
+                "Pause or resume",
+            ) {
+                val t = OrbitDownloader.taskById(d.id) ?: return@miniBtn
+                if (t.status == OrbitDownloader.ST_RUNNING) OrbitDownloader.pause(this@MainActivity, t)
+                else OrbitDownloader.resume(this@MainActivity, t)
+                refreshDownloadsRows()
+            })
+        }
+        if (status == OrbitDownloader.ST_DONE || status == OrbitDownloader.ST_FAILED || status == OrbitDownloader.ST_PAUSED) {
+            row.addView(miniBtn(R.drawable.ic_trash, "Delete download") {
+                val t = OrbitDownloader.taskById(d.id)
+                if (t != null) OrbitDownloader.cancel(this@MainActivity, t)
+                LocalStore.removeDownload(this@MainActivity, d.id)
+                runCatching { File(this@MainActivity.filesDir, "downloads/${d.id}").deleteRecursively() }
+                if (d.uri.isNotEmpty() && !d.uri.startsWith("content:")) runCatching { File(d.uri).delete() }
+                showDownloadsPage()
+            })
+        }
+        if (status == OrbitDownloader.ST_DONE) {
+            row.setOnClickListener {
+                if (!OrbitDownloader.openTask(this@MainActivity, d)) {
+                    Toast.makeText(this@MainActivity, "No app can open this file", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        return row
+    }
+
+    /** Ticker hook — sirf texts/progress in-place update (poora rebuild nahi) */
+    private fun refreshDownloadsRows() {
+        if (!downloadsPageOpen) return
+        val items = LocalStore.listDownloads(this)
+        dlRowSubs.forEach { (id, tv) ->
+            val d = items.firstOrNull { it.id == id } ?: return@forEach
+            tv.text = dlSubText(d, OrbitDownloader.taskById(id))
+        }
+        dlRowProgs.forEach { (id, pb) ->
+            val live = OrbitDownloader.taskById(id) ?: return@forEach
+            val total = live.total.get()
+            if (total > 0 && !pb.isIndeterminate) {
+                pb.progress = ((live.received.get() * 100) / total).toInt().coerceIn(0, 100)
+            }
+        }
+        updateDownloadBar()
+    }
+
+    private fun dlSubText(d: LocalStore.DownloadItem, live: OrbitDownloader.Task?): String {
+        val status = live?.status ?: d.status
+        return when (status) {
+            OrbitDownloader.ST_RUNNING -> buildString {
+                append(OrbitDownloader.fmtSpeed(live?.speed ?: 0))
+                val eta = OrbitDownloader.fmtEta(live?.eta ?: -1)
+                if (eta.isNotBlank()) append(" · ").append(eta)
+                append(" · ").append(OrbitDownloader.fmtSize(live?.received?.get() ?: d.received))
+            }
+            OrbitDownloader.ST_PAUSED -> "Paused · ${OrbitDownloader.fmtSize(live?.received?.get() ?: d.received)}"
+            OrbitDownloader.ST_FAILED -> "Failed"
+            OrbitDownloader.ST_DONE -> {
+                val date = SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(d.ts))
+                "${OrbitDownloader.fmtSize(if (d.total > 0) d.total else d.received)} · $date"
+            }
+            else -> OrbitDownloader.fmtSize(d.total)
         }
     }
 
@@ -1883,6 +2154,7 @@ class MainActivity : Activity() {
 
     private fun closePage() {
         pageOpen = false
+        downloadsPageOpen = false
         vpnUiHooks.clear()
         pageOverlay.visibility = View.GONE
         pageOverlay.removeAllViews()

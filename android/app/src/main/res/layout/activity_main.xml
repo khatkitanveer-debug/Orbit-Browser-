@@ -36,17 +36,6 @@
                 android:tint="@color/chrome_text_dim"
                 android:importantForAccessibility="no" />
 
-            <!-- v1.4.1 — Orbit ring loader: blue loading line ki jagah. Page load
-                 ke saath arc advance + satellite dot orbit (Orbit logo motif). -->
-            <com.orbit.browser.OrbitRingLoader
-                android:id="@+id/ring_loader"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_gravity="start|center_vertical"
-                android:layout_marginStart="9dp"
-                android:visibility="gone"
-                android:importantForAccessibility="no" />
-
             <EditText
                 android:id="@+id/omnibox"
                 android:layout_width="match_parent"
@@ -231,17 +220,119 @@
     </LinearLayout>
 
     <!-- Content + Chrome pull-to-refresh -->
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/pull_refresh"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <FrameLayout
-            android:id="@+id/container"
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/pull_refresh"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+            android:layout_height="match_parent">
+
+            <FrameLayout
+                android:id="@+id/container"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+        <!-- v1.4.4 — Orbit ring loader SEARCH BAR KE NEECHE (floating overlay,
+             blue line ki jagah). Page load ke saath arc advance + satellite dot
+             orbit (Orbit logo motif). Omnibox ke andar ki jagah ab yahan. -->
+        <FrameLayout
+            android:id="@+id/ring_wrap"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/ring_wrap_bg"
+            android:elevation="14dp"
+            android:visibility="gone">
+
+            <com.orbit.browser.OrbitRingLoader
+                android:id="@+id/ring_loader"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <!-- v1.4.4 — Chrome-style DOWNLOAD BAR: download start hote hi bottom par
+         dikhta hai — file name + real-time speed/ETA (UC style) + progress line.
+         Tap = Downloads page. Pause/resume X-button se. -->
+    <FrameLayout
+        android:id="@+id/download_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/chrome_surface"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/dl_prog"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="top"
+            android:progressTint="@color/chrome_blue"
+            android:progressBackgroundTint="#3C4043"
+            android:max="100"
+            android:progress="0" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp">
+
+            <ImageView
+                android:id="@+id/dl_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:src="@drawable/ic_download"
+                android:tint="@color/chrome_blue"
+                android:importantForAccessibility="no" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="14dp"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/dl_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    android:textColor="@color/chrome_text"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="" />
+
+                <TextView
+                    android:id="@+id/dl_sub"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/chrome_text_dim"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/dl_act"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@drawable/btn_ripple"
+                android:src="@drawable/ic_pause"
+                android:contentDescription="Pause"
+                android:tint="@color/chrome_text" />
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- Chrome tab switcher: cards grid + FAB -->
     <FrameLayout

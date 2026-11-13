@@ -5,4 +5,10 @@
     <cache-path name="updates" path="updates/" />
     <!-- LENS scanner — camera capture ka temp jpg system camera app ko dene ke liye -->
     <cache-path name="lens" path="lens/" />
+    <!-- v1.4.4 — download engine: part/final files app filesDir me -->
+    <files-path name="dl_parts" path="downloads/" />
+    <!-- v1.4.4 — download fallback (public save fail par): app external dir -->
+    <external-files-path name="dl_app_ext" path="Download/" />
+    <!-- v1.4.4 — API 26-28 public Downloads folder (WRITE permission ke saath) -->
+    <external-path name="pub_downloads" path="Download/" />
 </paths>

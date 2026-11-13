@@ -53,6 +53,61 @@ object RelayEngine {
     private val main = Handler(Looper.getMainLooper())
     private var worker: Thread? = null
 
+    // v1.4.4 — SLOW SITE FIX: free relays kabhi-kabhi degrade ho jate hain (kisi
+    // website par slow response). Watchdog har 8 min me active relay ki health
+    // re-check karta hai; handshake fail ya >1200ms ho to auto-refresh (faster
+    // relay swap). Page-stall par MainActivity swapIfSlow() bhi bula sakta hai
+    // (3 min throttle — refresh storm na ho).
+    @Volatile private var appCtx: Context? = null
+    @Volatile private var lastSwap = 0L
+    @Volatile private var watchdogRun = false
+    private var watchdogTask: Runnable? = null
+
+    private fun startWatchdog() {
+        watchdogRun = true
+        watchdogTask?.let { main.removeCallbacks(it) }
+        val task = object : Runnable {
+            override fun run() {
+                if (!watchdogRun) return
+                val r = activeRelay ?: return
+                Thread {
+                    val t0 = System.currentTimeMillis()
+                    val ok = runCatching { connectHandshakeOk(r.host, r.port) }.getOrDefault(false)
+                    val ms = System.currentTimeMillis() - t0
+                    if (watchdogRun && (!ok || ms > 1200)) {
+                        lastSwap = System.currentTimeMillis()
+                        appCtx?.let { ctx ->
+                            statusText = "Relay slow — switching to a faster one…"
+                            notifyUi()
+                            refresh(ctx, true)
+                        }
+                    }
+                }.also { it.isDaemon = true }.start()
+                main.postDelayed(this, 8 * 60 * 1000L)
+            }
+        }
+        watchdogTask = task
+        main.postDelayed(task, 8 * 60 * 1000L)
+    }
+
+    private fun stopWatchdog() {
+        watchdogRun = false
+        watchdogTask?.let { main.removeCallbacks(it) }
+        watchdogTask = null
+    }
+
+    /** Page-stall hook — 9s me page 15% cross na kare to relay swap try karo
+     *  (throttled: 3 min me max ek baar). VPN OFF par koi asar nahi. */
+    fun swapIfSlow(ctx: Context) {
+        if (state != "on") return
+        val now = System.currentTimeMillis()
+        if (now - lastSwap < 3 * 60 * 1000L) return
+        lastSwap = now
+        statusText = "Site slow — trying a faster relay…"
+        notifyUi()
+        refresh(ctx, true)
+    }
+
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -74,6 +129,7 @@ object RelayEngine {
     }
 
     fun connect(ctx: Context) {
+        appCtx = ctx.applicationContext
         LocalStore.setSetting(ctx, "vpn", "on")
         if (!proxySupported()) {
             state = "off"
@@ -90,6 +146,7 @@ object RelayEngine {
 
     fun disconnect(ctx: Context) {
         LocalStore.setSetting(ctx, "vpn", "off")
+        stopWatchdog()
         worker?.interrupt()
         worker = null
         state = "off"
@@ -129,6 +186,7 @@ object RelayEngine {
         statusText = "Protected · ${relay.country} · ${relay.latencyMs}ms"
         notifyUi()
         applyProxy(relay)
+        startWatchdog()
     }
 
     // ------------------------------------------------------------ pipeline

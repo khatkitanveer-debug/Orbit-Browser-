@@ -139,6 +139,76 @@ object LocalStore {
         saveBookmarks(ctx, items)
     }
 
+    // ---------- v1.4.4 downloads registry ----------
+
+    /** Orbit downloader ka persistent record — downloads.json me. Live running
+     *  tasks ka authoritative state OrbitDownloader memory me hota hai; ye store
+     *  Downloads page ko restarts ke across populate karta hai. */
+    data class DownloadItem(
+        val id: Long,
+        val url: String,
+        val name: String,
+        val mime: String,
+        val total: Long,
+        val received: Long,
+        val status: String, // running | paused | done | failed
+        val uri: String,    // content:// (MediaStore) ya file path
+        val ts: Long,
+    )
+
+    fun listDownloads(ctx: Context): MutableList<DownloadItem> {
+        val f = file(ctx, "downloads.json")
+        val out = mutableListOf<DownloadItem>()
+        if (!f.exists()) return out
+        runCatching {
+            val arr = JSONArray(f.readText())
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    DownloadItem(
+                        o.getLong("id"), o.getString("url"), o.getString("name"),
+                        o.getString("mime"), o.getLong("total"), o.getLong("received"),
+                        o.getString("status"), o.optString("uri"), o.getLong("ts"),
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    fun upsertDownload(ctx: Context, item: DownloadItem) {
+        val items = listDownloads(ctx)
+        val ex = items.firstOrNull { it.id == item.id }
+        if (ex != null) items[items.indexOf(ex)] = item else items.add(0, item)
+        saveDownloads(ctx, items)
+    }
+
+    fun removeDownload(ctx: Context, id: Long) {
+        val items = listDownloads(ctx)
+        items.removeAll { it.id == id }
+        saveDownloads(ctx, items)
+    }
+
+    /** Downloads page ke header trash — done/failed entries saaf, running/paused untouched */
+    fun clearFinishedDownloads(ctx: Context) {
+        val items = listDownloads(ctx)
+        items.removeAll { it.status == "done" || it.status == "failed" }
+        saveDownloads(ctx, items)
+    }
+
+    fun saveDownloads(ctx: Context, items: List<DownloadItem>) {
+        val arr = JSONArray()
+        items.take(200).forEach { d ->
+            arr.put(
+                JSONObject()
+                    .put("id", d.id).put("url", d.url).put("name", d.name)
+                    .put("mime", d.mime).put("total", d.total).put("received", d.received)
+                    .put("status", d.status).put("uri", d.uri).put("ts", d.ts)
+            )
+        }
+        file(ctx, "downloads.json").writeText(arr.toString())
+    }
+
     // ---------- settings ----------
 
     // SETTINGS CACHE — shouldInterceptRequest HAR subresource request par
