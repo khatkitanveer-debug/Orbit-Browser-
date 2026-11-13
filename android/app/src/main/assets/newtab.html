@@ -545,7 +545,7 @@ function spiderApply() {
   document.body.classList.toggle('spider', spiderOn);
   if (spiderOn) { buildWeb(); spiderInfo(); }
   var q = document.getElementById('q');
-  if (q) q.placeholder = spiderOn ? 'Search privately' : 'Search Google or type a URL';
+  if (q) q.placeholder = spiderOn ? 'Search privately with DuckDuckGo' : 'Search Google or type a URL';
 }
 /* v1.4.8 — native se INSTANT status push (connect/rotate par 6s poll ka wait nahi) */
 window.spiderPush = function (j) {

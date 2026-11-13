@@ -1266,7 +1266,9 @@ class MainActivity : Activity() {
                             }
                         isUrl -> activeTab?.id?.let { navigate(it, t) }
                         else -> activeTab?.id?.let {
-                            navigate(it, GOOGLE_SEARCH + java.net.URLEncoder.encode(t, "UTF-8"))
+                            // v1.5.0 — Lens text search bhi searchEngineUrl se (spider
+                            // mode = DDG; pehle hardcoded GOOGLE_SEARCH tha)
+                            navigate(it, searchEngineUrl() + java.net.URLEncoder.encode(t, "UTF-8"))
                         }
                     }
                 }
@@ -2666,8 +2668,18 @@ class MainActivity : Activity() {
             })
             r.setOnClickListener {
                 LocalStore.setSetting(this, "searchEngine", key)
+                // v1.5.0 — spider mode me DDG lock hai; user ki choice VPN OFF par
+                // apply hogi (searchEngineUrl hard-guarantee spider mode me DDG dega)
+                if ((RelayEngine.state == "on" || RelayEngine.state == "connecting") && key != "ddg") {
+                    Toast.makeText(
+                        this,
+                        "Spider Mode uses DuckDuckGo — your choice will apply when the VPN is off",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } else {
+                    Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
+                }
                 hideCardOverlay()
-                Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
             }
             box.addView(r)
         }
@@ -2703,12 +2715,15 @@ class MainActivity : Activity() {
         if (on) {
             if (!spiderApplied) {
                 spiderApplied = true
-                val cur = LocalStore.getSetting(this, "searchEngine", "google")
-                if (cur != "ddg") {
-                    prevEngine = cur
-                    LocalStore.setSetting(this, "searchEngine", "ddg")
-                    refreshChrome()
-                }
+                // prevEngine sirf TRANSITION par save (repeat calls par user ki
+                // original choice overwrite na ho)
+                prevEngine = LocalStore.getSetting(this, "searchEngine", "google").takeIf { it != "ddg" }
+            }
+            // v1.5.0 — CONTINUOUS force (idempotent): har state-event par ddg likho
+            // taaki Settings picker + placeholder spider mode me hamesha DDG dikhaye
+            if (LocalStore.getSetting(this, "searchEngine", "google") != "ddg") {
+                LocalStore.setSetting(this, "searchEngine", "ddg")
+                refreshChrome()
             }
             if (forceUi) {
                 val t = activeTab ?: return
@@ -2990,12 +3005,24 @@ class MainActivity : Activity() {
     private fun imagesPref(): Boolean = LocalStore.getSetting(this, "imagesEnabled", "on") != "off"
     private fun autoplayPref(): Boolean = LocalStore.getSetting(this, "autoplay", "on") != "off"
 
-    /** Settings me chuna hua search engine (default Google) */
-    private fun searchEngineUrl(): String = when (LocalStore.getSetting(this, "searchEngine", "google")) {
-        "bing" -> "https://www.bing.com/search?q="
-        "ddg" -> "https://duckduckgo.com/?q="
-        "brave" -> "https://search.brave.com/search?q="
-        else -> GOOGLE_SEARCH
+    /**
+     * v1.5.0 HARD GUARANTEE — Spider Mode (VPN on/connecting) me search HAMESHA
+     * DuckDuckGo par jayegi, chahe setting kuch bhi ho. v1.4.8 ka state-sync
+     * transition-based tha (ek hi baar force) — user spider mode ke dauran engine
+     * picker kholta ya settings me jaata to sync dobara force nahi karta tha, aur
+     * user ko Google hi milta raha. Ab spider mode ka DDG setting-write se INDEPENDENT
+     * hai — search ke waqt live state check hota hai. VPN OFF = user ki setting.
+     */
+    private fun searchEngineUrl(): String {
+        if (RelayEngine.state == "on" || RelayEngine.state == "connecting") {
+            return "https://duckduckgo.com/?q="
+        }
+        return when (LocalStore.getSetting(this, "searchEngine", "google")) {
+            "bing" -> "https://www.bing.com/search?q="
+            "ddg" -> "https://duckduckgo.com/?q="
+            "brave" -> "https://search.brave.com/search?q="
+            else -> GOOGLE_SEARCH
+        }
     }
 
     private fun showFindBar() {
