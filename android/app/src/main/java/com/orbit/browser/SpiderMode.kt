@@ -50,15 +50,20 @@ object SpiderMode {
         Build.VERSION.SDK_INT < 33 ||
             ctx.checkSelfPermission("android.permission.POST_NOTIFICATIONS") == PackageManager.PERMISSION_GRANTED
 
-    /** RelayEngine.onUiChanged se — state ke hisaab se notification on/off/update. */
+    /** RelayEngine.onUiChanged se — state ke hisaab se notification on/off/update.
+     *  v1.4.8 FIX: "connecting" phase me bhi notification dikhti hai (pehle sirf
+     *  "on" par — connect hone tak 15-45s kuch nahi dikhta tha, user ne "VPN
+     *  notification nahi aa raha" report kiya). Ab VPN dabte hi turant notif. */
     fun sync(ctx: Context) {
         val app = ctx.applicationContext
-        if (RelayEngine.state != "on" || RelayEngine.activeRelay == null) {
+        val st = RelayEngine.state
+        if (st != "on" && st != "connecting") {
             cancel(app)
             return
         }
         show(app)
         val r = RelayEngine.activeRelay ?: return
+        if (st != "on") return   // connecting — country lookup baad me, relay active hone par
         val key = r.host + ":" + r.port
         if (lastLookupRelay != key) {
             lastLookupRelay = key
@@ -102,12 +107,15 @@ object SpiderMode {
             @Suppress("DEPRECATION") Notification.Builder(ctx)
         }
         val relay = RelayEngine.activeRelay
+        val connecting = RelayEngine.state != "on"
         val country = lastCountry.ifBlank {
-            relay?.country?.takeIf { it.isNotBlank() && it != "Relay" } ?: "connecting"
+            relay?.country?.takeIf { it.isNotBlank() && it != "Relay" } ?: "securing"
         }
+        val text = if (connecting) "Securing route — finding the fastest relay…"
+            else "Exit: $country • IP rotates every $ROTATE_MINUTES min"
         return b.setSmallIcon(R.drawable.ic_notif_orbit)
             .setContentTitle("Orbit VPN — Spider Mode")
-            .setContentText("Exit: $country • IP rotates every $ROTATE_MINUTES min")
+            .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)

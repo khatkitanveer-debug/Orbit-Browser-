@@ -297,6 +297,7 @@ class MainActivity : Activity() {
                 runCatching {
                     vpnUiHooks.forEach { it() }
                     SpiderMode.sync(this@MainActivity)   // v1.4.7 — spider notification (country + rotation)
+                    spiderApplyState(forceUi = false)    // v1.4.8 — DDG switch STATE-driven (autoRestore/restart cover)
                     if (pageOpen) refreshChrome()
                 }
             }
@@ -1794,6 +1795,24 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // v1.4.8 — Spider Mode notification permission result (pehle IGNORE ho
+        // raha tha — deny par notification kabhi nahi dikhti, dobara request bhi
+        // silently drop hoti). Ab grant par notif turant, deny par settings.
+        if (requestCode == 4201) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                SpiderMode.sync(this)
+                pushSpiderStatus()
+            } else {
+                if (shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS")) {
+                    Toast.makeText(this, "Spider Mode keeps working — only the notification stays hidden", Toast.LENGTH_LONG).show()
+                } else {
+                    openNotifSettings()
+                }
+            }
+            return
+        }
         if (requestCode != 4100) return
         val p = pendingDl
         pendingDl = null
@@ -2662,19 +2681,67 @@ class MainActivity : Activity() {
     /** v1.4.7 — VPN ON ke waqt user ka pehle wala engine (OFF par restore) */
     @Volatile private var prevEngine: String? = null
 
-    /** VPN ON — Tor-style screen (spider newtab) + DuckDuckGo engine auto-switch.
-     *  Pehla engine OFF par wapas aa jata hai (user ki choice respect). */
-    private fun spiderOn() {
-        prevEngine = LocalStore.getSetting(this, "searchEngine", "google")
-        LocalStore.setSetting(this, "searchEngine", "ddg")
-        reloadNewtabIfVisible()
+    /** v1.4.8 — transition guard: spider engine-switch ek hi baar apply ho
+     *  (state-change par), user ki manual engine choice baad me override ho. */
+    @Volatile private var spiderApplied = false
+
+    /**
+     * v1.4.8 SPIDER MODE STATE-SYNC — pehle engine switch sirf toggle-press par
+     * hota tha, isliye app restart / VPN auto-restore par DuckDuckGo KABHI switch
+     * nahi hota tha (user bug report). Ab STATE-driven hai: RelayEngine ki har
+     * UI-change par idempotent apply — connecting/on dono spider states hai.
+     *
+     * forceUi = true (sirf toggle-press se): current tab me spider newtab FORCE
+     * load hota hai — website par VPN dabao to bhi screen TURANT badalti hai
+     * ("instant nahi hota" bug fix). forceUi = false (state hook se): sirf
+     * engine + live status push, current page hijack nahi hoti.
+     */
+    private fun spiderApplyState(forceUi: Boolean) {
+        val on = RelayEngine.state == "on" || RelayEngine.state == "connecting"
+        if (on) {
+            if (!spiderApplied) {
+                spiderApplied = true
+                val cur = LocalStore.getSetting(this, "searchEngine", "google")
+                if (cur != "ddg") {
+                    prevEngine = cur
+                    LocalStore.setSetting(this, "searchEngine", "ddg")
+                    refreshChrome()
+                }
+            }
+            if (forceUi) {
+                val t = activeTab ?: return
+                loadInternal(t, NEWTAB)
+            } else {
+                pushSpiderStatus()
+            }
+        } else {
+            if (spiderApplied) {
+                spiderApplied = false
+                prevEngine?.let { p ->
+                    // user ne spider mode me engine manually badla ho to usi ko respect
+                    if (LocalStore.getSetting(this, "searchEngine", "google") == "ddg") {
+                        LocalStore.setSetting(this, "searchEngine", p)
+                        refreshChrome()
+                    }
+                    prevEngine = null
+                }
+                reloadNewtabIfVisible()
+            }
+        }
     }
 
-    /** VPN OFF — engine restore + normal newtab (shortcuts wapas). */
-    private fun spiderOff() {
-        LocalStore.setSetting(this, "searchEngine", prevEngine ?: "google")
-        prevEngine = null
-        reloadNewtabIfVisible()
+    /** v1.4.8 — spider newtab me LIVE status push (evaluateJavascript) — 6s poll
+     *  ka intezar nahi. Relay connect/rotate hone par country turant update. */
+    private fun pushSpiderStatus() {
+        val t = activeTab ?: return
+        if (t.url != NEWTAB) return
+        runCatching {
+            val j = org.json.JSONObject()
+                .put("state", RelayEngine.state)
+                .put("country", SpiderMode.lastCountry)
+                .put("rotateMin", SpiderMode.ROTATE_MINUTES)
+            t.webView?.evaluateJavascript("if(window.spiderPush)spiderPush($j);", null)
+        }
     }
 
     private fun reloadNewtabIfVisible() {
@@ -2688,6 +2755,17 @@ class MainActivity : Activity() {
             checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED
         ) {
             requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 4201)
+        }
+    }
+
+    /** v1.4.8 — notification permission permanently denied ho to system dialog
+     *  dobara nahi aata — sirf app ki notification settings page khulti hai. */
+    private fun openNotifSettings() {
+        runCatching {
+            val i = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+            startActivity(i)
+            Toast.makeText(this, "Enable notifications to see Spider Mode country", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -2738,12 +2816,13 @@ class MainActivity : Activity() {
         val vpnToggle = makeToggle(RelayEngine.isEnabled(this)) { on ->
             if (on) {
                 maybeGrantNotifPermission()   // v1.4.7 — Android 13+ runtime grant
-                RelayEngine.connect(this)
-                spiderOn()                    // Tor-style screen + DuckDuckGo
+                hideCardOverlay()             // v1.4.8 — sheet hatao, transformation DIKHE
+                RelayEngine.connect(this)     // background relay test (15-45s) — non-blocking
+                spiderApplyState(forceUi = true)  // v1.4.8 — INSTANT spider screen + DDG (connecting state bhi spider hi hai)
             } else {
                 RelayEngine.disconnect(this)
                 SpiderMode.cancel(this)
-                spiderOff()                   // engine restore + normal newtab
+                // v1.4.8 — engine restore + normal newtab spiderApplyState se (state off hook)
             }
         }
 
@@ -2831,6 +2910,25 @@ class MainActivity : Activity() {
         statusRow.addView(statusDot)
         statusRow.addView(statusText)
         card.addView(statusRow)
+
+        // v1.4.8 — notification permission missing ho to sheet me seedha fix row
+        // (denied ho chuka ho to system dialog dobara nahi aata — yahan se settings)
+        if (!SpiderMode.hasNotifPermission(this)) {
+            card.addView(TextView(this).apply {
+                text = "Notifications are off — tap to show Spider Mode country in the notification bar"
+                textSize = 12.5f
+                setTextColor(0xFFFBBC05.toInt())
+                setPadding(dp(4), dp(2), dp(4), dp(10))
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                setOnClickListener {
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        shouldShowRequestPermissionRationale("android.permission.POST_NOTIFICATIONS")
+                    ) maybeGrantNotifPermission()
+                    else openNotifSettings()
+                }
+            })
+        }
 
         card.addView(TextView(this).apply {
             text = "Routes your browser traffic through free community relays — " +

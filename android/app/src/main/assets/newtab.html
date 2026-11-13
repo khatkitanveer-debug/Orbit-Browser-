@@ -531,14 +531,15 @@ function buildWeb() {
 function spiderInfo() {
   var el = document.getElementById('spiderExit');
   if (!el) return;
-  var country = '', min = 5;
+  var country = '', min = 5, st = 'off';
   try {
     var j = JSON.parse(OrbitBridge.vpnInfo() || '{}');
-    country = j.country || ''; min = j.rotateMin || 5;
+    country = j.country || ''; min = j.rotateMin || 5; st = j.state || 'off';
   } catch (e) {}
+  if (st !== 'on') { el.textContent = 'Securing your route \u2014 new IP every ' + min + ' min'; return; }
   el.textContent = country
     ? ('Exit relay: ' + country + ' \u2014 new IP every ' + min + ' min')
-    : ('Connecting \u2014 new IP every ' + min + ' min');
+    : ('Protected \u2014 new IP every ' + min + ' min');
 }
 function spiderApply() {
   document.body.classList.toggle('spider', spiderOn);
@@ -546,15 +547,32 @@ function spiderApply() {
   var q = document.getElementById('q');
   if (q) q.placeholder = spiderOn ? 'Search privately' : 'Search Google or type a URL';
 }
+/* v1.4.8 — native se INSTANT status push (connect/rotate par 6s poll ka wait nahi) */
+window.spiderPush = function (j) {
+  try {
+    var on = !!(j && (j.state === 'on' || j.state === 'connecting'));
+    if (on !== spiderOn) { spiderOn = on; spiderApply(); return; }
+    if (spiderOn && j) {
+      var el = document.getElementById('spiderExit');
+      var min = j.rotateMin || 5;
+      if (el) {
+        if (j.state !== 'on') el.textContent = 'Securing your route \u2014 new IP every ' + min + ' min';
+        else el.textContent = j.country
+          ? ('Exit relay: ' + j.country + ' \u2014 new IP every ' + min + ' min')
+          : ('Protected \u2014 new IP every ' + min + ' min');
+      }
+    }
+  } catch (e) {}
+};
 (function () {
-  try { spiderOn = OrbitBridge.vpnState() === 'on'; } catch (e) {}
+  try { var s0 = OrbitBridge.vpnState(); spiderOn = (s0 === 'on' || s0 === 'connecting'); } catch (e) {}
   spiderApply();
   setInterval(function () {
     var on = false;
-    try { on = OrbitBridge.vpnState() === 'on'; } catch (e) {}
+    try { var s = OrbitBridge.vpnState(); on = (s === 'on' || s === 'connecting'); } catch (e) {}
     if (on !== spiderOn) { spiderOn = on; spiderApply(); }
     else if (on) spiderInfo();
-  }, 6000);
+  }, 3000);
 })();
 </script>
 </body>
