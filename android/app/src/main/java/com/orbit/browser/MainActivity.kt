@@ -2568,6 +2568,8 @@ class MainActivity : Activity() {
             val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView ?: vpnSub
             vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
             content.addView(vpnRow)
+            // v1.4.9 — silent update toggle (pehla Install tap bhi ise ON kar deta hai)
+            toggleRow(R.drawable.ic_down, "Auto-install updates", "Update downloads silently and the installer opens by itself", "autoInstall", "off")
             toggleRow(R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
             toggleRow(R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
             toggleRow(R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
@@ -3578,11 +3580,25 @@ class MainActivity : Activity() {
                     showMigrationDialog(info, apk)
                     return@runOnUiThread
                 }
+                // v1.4.9 — SILENT AUTO-INSTALL: user ne ek baar Install dabaya to
+                // (autoInstall=on) agli updates ka Orbit dialog NAHI aata — APK
+                // background me download hote hi system installer khud khul jata hai.
+                // (Google Play Protect ka scan screen Google ka hai — wo code se nahi
+                // hat sakta, par playProtectGuideOnce se ek baar OFF kar sakte hai.)
+                if (LocalStore.getSetting(this, "autoInstall", "off") == "on") {
+                    Toast.makeText(this, "Orbit ${info.versionName} downloaded — installing update…", Toast.LENGTH_SHORT).show()
+                    UpdateChecker.installWithStatus(this, apk)
+                    return@runOnUiThread
+                }
                 AlertDialog.Builder(this, R.style.OrbitDialog)
                     .setTitle("Orbit ${info.versionName} is ready")
-                    .setMessage("Tap Install — the old version will be replaced (your data stays safe).")
+                    .setMessage("Tap Install — the old version will be replaced (your data stays safe).\n\nFrom the next update on, Orbit installs silently by itself.")
                     .setPositiveButton("Install") { _, _ ->
+                        // v1.4.9 — pehla Install tap = agli updates silent (user request:
+                        // "1st time aaye wo thik hai, uske baad silent update")
+                        LocalStore.setSetting(this, "autoInstall", "on")
                         UpdateChecker.installWithStatus(this, apk)
+                        showPlayProtectGuideOnce()
                     }
                     .setNeutralButton("Open APK in browser") { _, _ ->
                         UpdateChecker.openApkInBrowser(this, info.apkUrl)
@@ -3590,6 +3606,60 @@ class MainActivity : Activity() {
                     .setNegativeButton("Later", null)
                     .show()
             }
+        }
+    }
+
+    /** v1.4.9 — ONE-TIME guide: Play Protect ka "App scan recommended" Google ka
+     *  system security screen hai — koi app ise remove nahi kar sakti. Ye screen
+     *  har NAYE APK par aati hai (naya APK = Google ke liye unknown file). Sirf
+     *  user khud Play Protect scan OFF karke hata sakta hai — ye guide wahi karta
+     *  hai: seedha Play Protect settings kholti hai (verified GMS deep link). */
+    private fun showPlayProtectGuideOnce() {
+        if (LocalStore.getSetting(this, "ppGuideShown", "no") == "yes") return
+        LocalStore.setSetting(this, "ppGuideShown", "yes")
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("One-time setup — stop Google's scan prompt")
+            .setMessage(
+                "The \"App scan recommended\" popup comes from Google Play Protect — " +
+                    "it appears for every new APK file and no app can remove it.\n\n" +
+                    "To never see it again:\n" +
+                    "1. Tap \"Open Play Protect settings\"\n" +
+                    "2. Tap the gear icon (top right)\n" +
+                    "3. Turn OFF \"Scan apps with Play Protect\"\n\n" +
+                    "After this, every update downloads and installs silently.",
+            )
+            .setPositiveButton("Open Play Protect settings") { _, _ -> openPlayProtectSettings() }
+            .setNegativeButton("Skip", null)
+            .show()
+    }
+
+    /** v1.4.9 — Play Protect screen ka direct deep link (GMS VerifyAppsSettingsActivity
+     *  — verified public method). Na chale to Play Store fallback + English steps. */
+    private fun openPlayProtectSettings() {
+        val opened = runCatching {
+            startActivity(
+                Intent().setClassName("com.google.android.gms", "com.google.android.gms.security.settings.VerifyAppsSettingsActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            true
+        }.getOrElse {
+            runCatching {
+                startActivity(Intent("com.google.android.gms.settings.PLAY_PROTECT_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            }.getOrDefault(false)
+        }
+        if (!opened) {
+            runCatching {
+                packageManager.getLaunchIntentForPackage("com.android.vending")?.let {
+                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(it)
+                }
+            }
+            Toast.makeText(
+                this,
+                "In Play Store: tap your profile icon > Play Protect > gear icon > turn off \"Scan apps with Play Protect\"",
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 
