@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -295,6 +296,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 runCatching {
                     vpnUiHooks.forEach { it() }
+                    SpiderMode.sync(this@MainActivity)   // v1.4.7 — spider notification (country + rotation)
                     if (pageOpen) refreshChrome()
                 }
             }
@@ -1084,6 +1086,19 @@ class MainActivity : Activity() {
             }
             return arr.toString()
         }
+
+        /** v1.4.7 SPIDER MODE — newtab VPN state khud poll karta hai (Tor-style screen) */
+        @JavascriptInterface
+        fun vpnState(): String = RelayEngine.state
+
+        /** v1.4.7 — exit country + rotation minutes (newtab spider status line) */
+        @JavascriptInterface
+        fun vpnInfo(): String = runCatching {
+            org.json.JSONObject()
+                .put("state", RelayEngine.state)
+                .put("country", SpiderMode.lastCountry)
+                .put("rotateMin", SpiderMode.ROTATE_MINUTES)
+        }.getOrDefault(org.json.JSONObject().put("state", "off")).toString()
     }
 
     // ---------------------------------------------------------------- lens scanner
@@ -2642,6 +2657,40 @@ class MainActivity : Activity() {
 
     /** v1.4.0 — ORBIT VPN sheet: ON/OFF switch, live status, free relay list,
      *  refresh. Tor-jaisa browser-scoped routing — websites ko relay ka IP dikhta hai. */
+    // ------------------------------------------------------------ spider mode
+
+    /** v1.4.7 — VPN ON ke waqt user ka pehle wala engine (OFF par restore) */
+    @Volatile private var prevEngine: String? = null
+
+    /** VPN ON — Tor-style screen (spider newtab) + DuckDuckGo engine auto-switch.
+     *  Pehla engine OFF par wapas aa jata hai (user ki choice respect). */
+    private fun spiderOn() {
+        prevEngine = LocalStore.getSetting(this, "searchEngine", "google")
+        LocalStore.setSetting(this, "searchEngine", "ddg")
+        reloadNewtabIfVisible()
+    }
+
+    /** VPN OFF — engine restore + normal newtab (shortcuts wapas). */
+    private fun spiderOff() {
+        LocalStore.setSetting(this, "searchEngine", prevEngine ?: "google")
+        prevEngine = null
+        reloadNewtabIfVisible()
+    }
+
+    private fun reloadNewtabIfVisible() {
+        val t = activeTab ?: return
+        if (t.url == NEWTAB) loadInternal(t, NEWTAB)
+    }
+
+    /** Android 13+ (SDK 33) par notification ke liye runtime permission. */
+    private fun maybeGrantNotifPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 4201)
+        }
+    }
+
     private fun showVpnSheet() {
         hideCardOverlay()
         val root = FrameLayout(this).apply {
@@ -2687,7 +2736,15 @@ class MainActivity : Activity() {
         }
         val relayList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val vpnToggle = makeToggle(RelayEngine.isEnabled(this)) { on ->
-            if (on) RelayEngine.connect(this) else RelayEngine.disconnect(this)
+            if (on) {
+                maybeGrantNotifPermission()   // v1.4.7 — Android 13+ runtime grant
+                RelayEngine.connect(this)
+                spiderOn()                    // Tor-style screen + DuckDuckGo
+            } else {
+                RelayEngine.disconnect(this)
+                SpiderMode.cancel(this)
+                spiderOff()                   // engine restore + normal newtab
+            }
         }
 
         fun renderRelays() {

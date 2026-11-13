@@ -96,6 +96,58 @@ object RelayEngine {
         watchdogTask = null
     }
 
+    // v1.4.7 — TOR-STYLE IP ROTATION: Spider Mode me identity har 5 min badalti
+    // hai. Verified relay pool (CONNECT-ok, up to 6) se agla healthy relay chuna
+    // jata hai — useRelay se apply. Pool < 2 ho to silently skip (rotate karne ko
+    // kuch nahi; watchdog/refresh pool grow karte hai). Handshake network I/O hai
+    // isliye background thread par.
+    private const val ROTATE_MS = 5 * 60 * 1000L
+    @Volatile private var rotateRun = false
+    private var rotateTask: Runnable? = null
+
+    private fun startRotation() {
+        rotateRun = true
+        rotateTask?.let { main.removeCallbacks(it) }
+        val task = object : Runnable {
+            override fun run() {
+                if (!rotateRun) return
+                rotateNow()
+                main.postDelayed(this, ROTATE_MS)
+            }
+        }
+        rotateTask = task
+        main.postDelayed(task, ROTATE_MS)
+    }
+
+    private fun stopRotation() {
+        rotateRun = false
+        rotateTask?.let { main.removeCallbacks(it) }
+        rotateTask = null
+    }
+
+    /** Abhi identity rotate karo — next verified relay (CONNECT re-verified). */
+    fun rotateNow() {
+        if (state != "on") return
+        Thread {
+            val pool = relays
+            if (pool.size < 2) return@Thread
+            val cur = activeRelay
+            var start = pool.indexOf(cur) + 1
+            if (start <= 0) start = 0
+            var pick: Relay? = null
+            for (i in 0 until pool.size) {
+                val cand = pool[(start + i) % pool.size]
+                if (cur != null && cand.host == cur.host && cand.port == cur.port) continue
+                if (connectHandshakeOk(cand.host, cand.port)) { pick = cand; break }
+            }
+            if (pick != null && state == "on") {
+                useRelay(pick)
+                statusText = "Protected · ${pick.country} · ${pick.latencyMs}ms · IP rotated"
+                notifyUi()
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
     /** Page-stall hook — 9s me page 15% cross na kare to relay swap try karo
      *  (throttled: 3 min me max ek baar). VPN OFF par koi asar nahi. */
     fun swapIfSlow(ctx: Context) {
@@ -147,6 +199,7 @@ object RelayEngine {
     fun disconnect(ctx: Context) {
         LocalStore.setSetting(ctx, "vpn", "off")
         stopWatchdog()
+        stopRotation()   // v1.4.7
         worker?.interrupt()
         worker = null
         state = "off"
@@ -187,6 +240,7 @@ object RelayEngine {
         notifyUi()
         applyProxy(relay)
         startWatchdog()
+        startRotation()   // v1.4.7 — Tor-style 5-min identity rotation
     }
 
     // ------------------------------------------------------------ pipeline

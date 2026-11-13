@@ -84,6 +84,39 @@
   .dlg-btns .act { background: #8ab4f8; color: #202124; font-weight: 600; }
   .tm-msg { font-size: 13px; color: #9aa0a6; margin: -6px 0 16px; line-height: 1.45;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ==================== v1.4.7 SPIDER MODE ====================
+     Tor-style VPN screen: bada spider-web background (slow sway), dark
+     vignette shadow, thread par utarta spider, bottom me status text.
+     body.spider par .tools + .shortcuts hide (sirf logo + search bar). */
+  #spiderWeb { position: fixed; inset: 0; z-index: 0; display: none; pointer-events: none; }
+  #spiderWeb svg.web { position: absolute; top: -12%; left: 50%; width: 170vmax; height: 170vmax;
+         transform: translateX(-50%); animation: webSway 28s ease-in-out infinite alternate;
+         filter: drop-shadow(0 0 30px rgba(138,180,248,.12)); }
+  @keyframes webSway { from { transform: translateX(-50%) rotate(-2.5deg) scale(1); }
+                       to   { transform: translateX(-50%) rotate(2.5deg) scale(1.03); } }
+  #spiderShade { position: fixed; inset: 0; z-index: 1; display: none; pointer-events: none;
+         background: radial-gradient(ellipse at 50% 28%, rgba(0,0,0,0) 34%, rgba(0,0,0,.62) 100%); }
+  #spiderThread { position: fixed; top: -2px; left: 50%; margin-left: -60px; z-index: 2;
+         display: none; pointer-events: none; }
+  #spiderThread .thread { width: 1px; height: 210px; margin: 0 auto;
+         background: linear-gradient(rgba(255,255,255,.4), rgba(255,255,255,.06)); }
+  #spiderThread svg { display: block; margin: 0 auto; transform-origin: 50% 0;
+         animation: spiderDescend 16s ease-in-out infinite alternate; }
+  @keyframes spiderDescend { 0% { transform: translateY(0) } 55% { transform: translateY(120px) }
+                             100% { transform: translateY(30px) } }
+  #spiderMsg { position: fixed; left: 0; right: 0; bottom: 30px; z-index: 4; display: none;
+         text-align: center; padding: 0 30px; }
+  #spiderMsg .t { font-size: 12px; letter-spacing: 4px; color: #8ab4f8; font-weight: 700; }
+  #spiderMsg .d { font-size: 13px; color: #9aa0a6; margin-top: 9px; line-height: 1.6; }
+  #spiderMsg .x { font-size: 12px; color: #6b7078; margin-top: 10px; }
+  body.spider { background: #0b0b0e; }
+  body.spider .wrap { position: relative; z-index: 3; }
+  body.spider .tools, body.spider .shortcuts { display: none !important; }
+  body.spider #spiderWeb, body.spider #spiderShade, body.spider #spiderThread,
+  body.spider #spiderMsg { display: block; }
+  body.spider .logo { filter: drop-shadow(0 4px 34px rgba(138,180,248,.20)); }
+  body.spider .bar { background: rgba(48,49,52,.72); }
 </style>
 </head>
 <body>
@@ -143,6 +176,29 @@
   <!-- v1.3.5 SHORTCUTS — sirf JioSaavn + YouTube fix, phir user tiles, "+"
        add-tile, aur most-visited sites AUTO tiles. Sab JS se render hota hai. -->
   <div class="shortcuts" id="grid"></div>
+</div>
+
+<!-- v1.4.7 SPIDER MODE overlay layers (web + shade + thread spider + status text) -->
+<div id="spiderWeb" aria-hidden="true"><svg class="web" viewBox="0 0 600 600"></svg></div>
+<div id="spiderShade" aria-hidden="true"></div>
+<div id="spiderThread" aria-hidden="true">
+  <div class="thread"></div>
+  <svg width="30" height="26" viewBox="0 0 30 26">
+    <g stroke="#4a4d55" stroke-width="1.6" stroke-linecap="round" fill="none">
+      <path d="M11 10 Q4 6 2 1"/><path d="M11 13 Q4 13 1 10"/>
+      <path d="M11 16 Q5 20 3 25"/><path d="M13 18 Q10 23 9 26"/>
+      <path d="M19 10 Q26 6 28 1"/><path d="M19 13 Q26 13 29 10"/>
+      <path d="M19 16 Q25 20 27 25"/><path d="M17 18 Q20 23 21 26"/>
+    </g>
+    <ellipse cx="15" cy="13" rx="5.2" ry="6.4" fill="#3a3d44"/>
+    <circle cx="15" cy="5.6" r="3.4" fill="#4a4d55"/>
+    <circle cx="13.6" cy="4.8" r=".9" fill="#8ab4f8"/><circle cx="16.4" cy="4.8" r=".9" fill="#8ab4f8"/>
+  </svg>
+</div>
+<div id="spiderMsg">
+  <div class="t">SPIDER MODE ACTIVE</div>
+  <div class="d">Your identity changes every 5 minutes across Orbit's relay network.<br>No one can track you &mdash; not your network, not the sites you visit.</div>
+  <div class="x" id="spiderExit">Connecting to the relay network&hellip;</div>
 </div>
 
 <!-- add-shortcut dialog -->
@@ -433,6 +489,72 @@ function nav(url, newTab){
   dlg.addEventListener("click", function (ev) { if (ev.target === dlg) closeDlg(); });
 
   render();
+})();
+
+// ==================== SPIDER MODE v1.4.7 ====================
+// Tor-style VPN screen: VPN ON = web animation + status text + shortcuts
+// hidden. State har 6s bridge se re-check hota hai (autoRestore/restart bhi
+// sahi chalta hai). Web ek baar JS se build hoti hai (concentric + spokes).
+var spiderOn = false;
+var spiderBuilt = false;
+function buildWeb() {
+  if (spiderBuilt) return;
+  var svg = document.querySelector('#spiderWeb svg');
+  if (!svg) return;
+  spiderBuilt = true;
+  var NS = 'http://www.w3.org/2000/svg', cx = 300, cy = 300;
+  var spokes = 14, rings = [60, 115, 170, 225, 280], s, r;
+  for (r = 0; r < rings.length; r++) {
+    var pts = [];
+    for (s = 0; s < spokes; s++) {
+      var a = (Math.PI * 2 * s) / spokes;
+      pts.push((cx + rings[r] * Math.cos(a)).toFixed(1) + ',' + (cy + rings[r] * Math.sin(a)).toFixed(1));
+    }
+    var poly = document.createElementNS(NS, 'polygon');
+    poly.setAttribute('points', pts.join(' '));
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', 'rgba(174,194,224,' + (0.11 - r * 0.013).toFixed(3) + ')');
+    poly.setAttribute('stroke-width', '1.2');
+    svg.appendChild(poly);
+  }
+  for (s = 0; s < spokes; s++) {
+    var a2 = (Math.PI * 2 * s) / spokes;
+    var line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', cx); line.setAttribute('y1', cy);
+    line.setAttribute('x2', (cx + 290 * Math.cos(a2)).toFixed(1));
+    line.setAttribute('y2', (cy + 290 * Math.sin(a2)).toFixed(1));
+    line.setAttribute('stroke', 'rgba(174,194,224,.075)');
+    line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+  }
+}
+function spiderInfo() {
+  var el = document.getElementById('spiderExit');
+  if (!el) return;
+  var country = '', min = 5;
+  try {
+    var j = JSON.parse(OrbitBridge.vpnInfo() || '{}');
+    country = j.country || ''; min = j.rotateMin || 5;
+  } catch (e) {}
+  el.textContent = country
+    ? ('Exit relay: ' + country + ' \u2014 new IP every ' + min + ' min')
+    : ('Connecting \u2014 new IP every ' + min + ' min');
+}
+function spiderApply() {
+  document.body.classList.toggle('spider', spiderOn);
+  if (spiderOn) { buildWeb(); spiderInfo(); }
+  var q = document.getElementById('q');
+  if (q) q.placeholder = spiderOn ? 'Search privately' : 'Search Google or type a URL';
+}
+(function () {
+  try { spiderOn = OrbitBridge.vpnState() === 'on'; } catch (e) {}
+  spiderApply();
+  setInterval(function () {
+    var on = false;
+    try { on = OrbitBridge.vpnState() === 'on'; } catch (e) {}
+    if (on !== spiderOn) { spiderOn = on; spiderApply(); }
+    else if (on) spiderInfo();
+  }, 6000);
 })();
 </script>
 </body>
