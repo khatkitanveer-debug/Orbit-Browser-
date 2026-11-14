@@ -3209,7 +3209,7 @@ class MainActivity : Activity() {
                 visibility = View.GONE
                 setOnClickListener {
                     searchEt.setText("")
-                    searchClear.visibility = View.GONE
+                    visibility = View.GONE
                 }
             }
             searchBox.addView(searchEt)
