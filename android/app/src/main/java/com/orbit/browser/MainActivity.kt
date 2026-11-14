@@ -1334,9 +1334,10 @@ class MainActivity : Activity() {
             synchronized(feedCache) {
                 feedCache[url]?.let { (t, body) -> if (now - t < 10 * 60 * 1000L) return body }
             }
+            val ua = if (url.contains("youtube.com")) DESKTOP_UA else realUA   // v1.9.0
             val body = runCatching {
                 feedHttp.newCall(
-                    Request.Builder().url(url).header("User-Agent", realUA).build(),
+                    Request.Builder().url(url).header("User-Agent", ua).build(),
                 ).execute().use { resp ->
                     if (!resp.isSuccessful) "" else resp.body?.string() ?: ""
                 }
@@ -1352,7 +1353,10 @@ class MainActivity : Activity() {
 
         /** v1.7.0 ASYNC fetch — JS ko BLOCK nahi karta (sync bridge call slow network
          *  par home screen freeze kar dega). Native thread me fetch, result wapas
-         *  window.feedData(id, body) callback me. Cache hit = instant callback. */
+         *  window.feedData(id, body) callback me. Cache hit = instant callback.
+         *  v1.9.0 — youtube.com par DESKTOP UA: mobile UA par YT /channel aur
+         *  /results pages 302 (m.youtube redirect, geo-language random) dete hai;
+         *  desktop UA = stable en-IN structure (live-verified parse). */
         @JavascriptInterface
         fun fetchFeedAsync(url: String, id: Int) {
             if (!url.startsWith("http")) { pushFeed(id, ""); return }
@@ -1361,9 +1365,10 @@ class MainActivity : Activity() {
             }
             if (cached != null) { pushFeed(id, cached); return }
             Thread {
+                val ua = if (url.contains("youtube.com")) DESKTOP_UA else realUA
                 val body = runCatching {
                     feedHttp.newCall(
-                        Request.Builder().url(url).header("User-Agent", realUA).build(),
+                        Request.Builder().url(url).header("User-Agent", ua).build(),
                     ).execute().use { resp ->
                         if (!resp.isSuccessful) "" else resp.body?.string() ?: ""
                     }

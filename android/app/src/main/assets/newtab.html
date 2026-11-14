@@ -121,14 +121,13 @@
   .mctl button.play svg { width: 20px; height: 20px; }
   .mctl svg { width: 17px; height: 17px; }
 
-  /* v1.8.0 — YOUTUBE horizontal strip: bade 16:9 cards LEFT→RIGHT continuous
-     slide (music strip jaisa), har home-open par ALAG shuffle (fresh screen).
-     Hover/touch par slide pause — tap karne ka time milta hai. */
-  .yth { overflow: hidden; margin: 0 2px; }
-  .ytrw { display: flex; gap: 10px; width: max-content;
-          animation: ytslide linear infinite; }
-  .yth:hover .ytrw, .yth.paused .ytrw { animation-play-state: paused; }
-  @keyframes ytslide { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  /* v1.9.0 — YOUTUBE strip: SCROLL-BASED (ungli se swipe karo = native momentum),
+     auto-slide rAF se (12 cards loop, seamless seam), touch par 4s pause.
+     Finger swipe UNLIMITED — jitna swipe karo naye cards DOM me append hote rahenge. */
+  .yth { overflow-x: auto; overflow-y: hidden; margin: 0 2px;
+         scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .yth::-webkit-scrollbar { display: none; }
+  .ytrw { display: flex; gap: 10px; width: max-content; }
   .ytv { width: calc((100vw - 70px) / 1.9); max-width: 210px; flex-shrink: 0;
          cursor: pointer; animation: ytin .45s ease; }
   @keyframes ytin { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -415,7 +414,7 @@
     </div>
 
     <div class="box" id="ytBox">
-      <h3>YouTube · For you <span class="badge" id="ytAlgo">tuned to you · fresh every open</span></h3>
+      <h3>YouTube · For you <span class="badge" id="ytAlgo">tuned to your searches · fresh every open</span></h3>
       <div class="yth" id="ytWrap"><div class="ytrw" id="ytGrid">
         <div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>
       </div></div>
@@ -904,15 +903,20 @@ try {
   });
 } catch (e) {}
 
-// ---------- MUSIC ENGINE (JioSaavn top + on-device algorithm) ----------
-var MQ = { list: [], idx: -1, playing: false, audio: null, built: false };
+// ---------- MUSIC ENGINE (JioSaavn + on-device algorithm) ----------
+// v1.9.0 CRASH FIX — user report: play button par app crash + "Song unavailable"
+// toast loop. (1) playIdx ka UNLIMITED recursion tha (sab songs URL fail ho to
+// playIdx(idx+1) khud ko hi call karta raha — RangeError/toast spam) — ab skip-cap.
+// (2) auto-advance (gaana khatam) ab SILENT skip — toast spam nahi.
+// (3) 320kbps upgrade — high-quality stream, fail hone par wapas 96kbps.
+var MQ = { list: [], idx: -1, playing: false, audio: null, built: false, skips: 0 };
 function musicHist() {
   try { return JSON.parse(localStorage.getItem('orbit_music') || '[]'); } catch (e) { return []; }
 }
 function saveMusicPlayed(s) {
   try {
     var h = musicHist().filter(function (x) { return x.t !== s.t; });
-    h.unshift({ t: s.t, a: s.a || '', ts: Date.now() });
+    h.unshift({ t: s.t, a: s.a || '', al: s.al || '', ts: Date.now() });
     localStorage.setItem('orbit_music', JSON.stringify(h.slice(0, 20)));
   } catch (e) {}
 }
@@ -924,12 +928,15 @@ function saavnSearchA(q, cb) {
 function buildMusic() {
   if (MQ.built) return;
   MQ.built = true;
-  // ALGORITHM — user jo gaane chalata hai, unke artists pehle query (on-device)
+  // ALGORITHM v1.9.0 — RELATED SONGS: user jo gaane chalata hai unke artist
+  // + ALBUM dono se related queries (album = wahi vibe ke gaane), phir defaults.
   var qs = ['top hindi songs', 'trending songs', 'top punjabi songs', 'bollywood hits'];
   var h = musicHist();
-  for (var i = 0; i < Math.min(2, h.length); i++) {
-    if (h[i].a) qs.unshift(h[i].a + ' songs');
+  for (var i = 0; i < Math.min(3, h.length); i++) {
+    if (h[i].al) qs.unshift(h[i].al + ' songs');   // album songs = sabse related
+    if (h[i].a) qs.unshift(h[i].a + ' songs');     // artist ke gaane
   }
+  qs = qs.slice(0, 6);   // fetch bounded — 6 queries x 30 results
   var seen = {}, all = [], qi = 0;
   function step() {
     if (qi >= qs.length || all.length >= 48) return finish();
@@ -945,9 +952,11 @@ function buildMusic() {
         all.push({
           t: title,
           a: ((s.subtitle || '').split(' - ')[0] || '').replace(/&quot;/g, '"'),
+          al: (s.more_info.album || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
           img: (s.image || '').replace('150x150', '500x500'),
           dur: s.more_info.duration || '',
           plays: parseInt(s.play_count || '0', 10),
+          b320: s.more_info['320kbps'] === 'true',
           enc: s.more_info.encrypted_media_url,
         });
       }
@@ -958,12 +967,17 @@ function buildMusic() {
   function finish() {
     try {
       if (!all.length) { musicError(); return; }
-      // ranking: favorite artists first, phir popularity (famous songs upar)
-      var fav = {};
-      h.forEach(function (x) { if (x.a) fav[(x.a || '').toLowerCase()] = 1; });
+      // ranking v1.9.0: favorite artist → same-album (related vibe) → popularity
+      var fav = {}, favAl = {};
+      h.forEach(function (x) {
+        if (x.a) fav[(x.a || '').toLowerCase()] = 1;
+        if (x.al) favAl[(x.al || '').toLowerCase()] = 1;
+      });
       all.sort(function (x, y) {
         var fx = fav[(x.a || '').toLowerCase()] ? 1 : 0, fy = fav[(y.a || '').toLowerCase()] ? 1 : 0;
         if (fx !== fy) return fy - fx;
+        var lx = favAl[(x.al || '').toLowerCase()] ? 1 : 0, ly = favAl[(y.al || '').toLowerCase()] ? 1 : 0;
+        if (lx !== ly) return ly - lx;
         return y.plays - x.plays;
       });
       MQ.list = all.slice(0, 10);
@@ -1019,27 +1033,60 @@ function renderMusic() {
 function ensureAudio() {
   if (!MQ.audio) {
     MQ.audio = new Audio();
-    MQ.audio.addEventListener('ended', function () { playIdx(MQ.idx + 1); });
+    // auto-next SILENT — ek bhi toast nahi (crash-toast-spam fix)
+    MQ.audio.addEventListener('ended', function () { playIdx(MQ.idx + 1, true); });
   }
   return MQ.audio;
 }
-function playIdx(i) {
-  if (!MQ.list.length) return;
-  MQ.idx = ((i % MQ.list.length) + MQ.list.length) % MQ.list.length;
-  var s = MQ.list[MQ.idx];
-  var u = songUrl(s);
-  if (!u) {
-    try { OrbitBridge.toast('Song unavailable — skipping'); } catch (e) {}
-    return playIdx(MQ.idx + 1);
+/** v1.9.0 crash-proof play: skip-cap (sab fail = ek friendly toast, loop GAYA),
+ *  poora body try/catch, 320kbps try + error par 96kbps fallback. */
+function playIdx(i, silent) {
+  try {
+    if (!MQ.list.length) return;
+    // SKIP-CAP — poori list try ho gayi to ruk jao (recursion ka the end)
+    if (MQ.skips >= MQ.list.length) {
+      MQ.skips = 0;
+      MQ.playing = false;
+      if (!silent) {
+        try { OrbitBridge.toast('Songs are unavailable right now — please try again later'); } catch (e0) {}
+      }
+      updMusicUi();
+      return;
+    }
+    MQ.idx = ((i % MQ.list.length) + MQ.list.length) % MQ.list.length;
+    var s = MQ.list[MQ.idx];
+    var u = s ? songUrl(s) : '';
+    if (!s || !u) {
+      MQ.skips++;
+      // toast sirf CHAIN ke pehle skip par (11 toasts nahi — UX)
+      if (!silent && MQ.skips === 1) { try { OrbitBridge.toast('Song unavailable — skipping'); } catch (e1) {} }
+      return playIdx(MQ.idx + 1, silent);
+    }
+    var a = ensureAudio();
+    // 320kbps HIGH-QUALITY try — load fail par seedha 96kbps (one-shot swap)
+    var url96 = u;
+    var src = (s.b320 && u.indexOf('_96.mp4') > -1) ? u.replace('_96.mp4', '_320.mp4') : u;
+    a.onerror = function () {
+      try {
+        if (a.src && a.src.indexOf('_320.mp4') > -1) {
+          a.onerror = null;
+          a.src = url96;
+          var p2 = a.play(); if (p2 && p2.catch) p2.catch(function () {});
+        }
+      } catch (e2) {}
+    };
+    a.src = src;
+    var p = a.play();
+    if (p && p.catch) p.catch(function () {});   // autoplay policy — silent
+    MQ.skips = 0;   // kaamyaab play — counter reset
+    MQ.playing = true;
+    saveMusicPlayed(s);
+    updMusicUi();
+  } catch (e) {
+    // LAST RESORT — koi bhi JS error ho, app/page kabhi na mare
+    MQ.playing = false;
+    try { updMusicUi(); } catch (e3) {}
   }
-  var a = ensureAudio();
-  // BUFFERING-KILL: agla gaana pehle se cached audio element me load — instant switch
-  a.src = u;
-  var p = a.play();
-  if (p && p.catch) p.catch(function () {});
-  MQ.playing = true;
-  saveMusicPlayed(s);
-  updMusicUi();
 }
 function updMusicUi() {
   var np = document.getElementById('nowPlaying');
@@ -1052,20 +1099,34 @@ function updMusicUi() {
 }
 try {
   document.getElementById('mPlay').addEventListener('click', function () {
-    if (!MQ.audio || MQ.idx < 0) return playIdx(0);
-    if (MQ.playing) { MQ.audio.pause(); MQ.playing = false; }
-    else { MQ.audio.play(); MQ.playing = true; }
-    updMusicUi();
+    try {
+      if (!MQ.audio || MQ.idx < 0) { playIdx(0); return; }
+      if (MQ.playing) { MQ.audio.pause(); MQ.playing = false; }
+      else { var p = MQ.audio.play(); if (p && p.catch) p.catch(function () {}); MQ.playing = true; }
+      updMusicUi();
+    } catch (e) {}
   });
   document.getElementById('mNext').addEventListener('click', function () { playIdx(MQ.idx + 1); });
   document.getElementById('mPrev').addEventListener('click', function () { playIdx(MQ.idx - 1); });
 } catch (e) {}
 setTimeout(buildMusic, 250);   // newtab render pehle — feed phir (UI never blocks)
 
-// ---------- v1.8.0 YOUTUBE ENGINE (left→right slide + har-open fresh algorithm) ----------
-// 13 TITLE-VERIFIED channels (channel page title se confirm kiye — invented nahi).
-// Bada pool = har open par alag 24 cards select hote hai (fresh screen).
-var YT = { items: [], built: false };
+// ---------- v1.9.0 YOUTUBE ENGINE (search-algorithm + finger-swipe + infinite) ----------
+// USER REPORTS v1.8.0: (1) auto-slide ke daurant ungli se swipe nahi hota tha
+// (CSS marquee tha — scroll nahi), (2) sirf 4 thumbnails dikhte the, (3) user ki
+// SEARCHES algorithm me missing thi. ROOT CAUSE: YouTube ne feeds/videos.xml RSS
+// 404 karna shuru kar diya (Dec 2025 se global — Reddit/newsboat reports sab
+// channels down) → 13 channel feeds me se 0 aate the, sirf watch-again bachta
+// tha. FIX: RSS GAYA — ab channel PAGE + SEARCH PAGE HTML parse (desktop UA
+// native fetch se, dono live-verified: lockupViewModel/videoRenderer regex).
+// (A) ALGORITHM — user app me jo search karta hai wahi videos pehle (search
+//     history se queries extract → YouTube search page parse → pool head).
+// (B) FINGER SWIPE — strip native scroll hai (momentum + ungli full control).
+// (C) UNLIMITED — jitna swipe karo utne naye cards DOM me append hote rahenge.
+// (D) AUTO-SLIDE — 12-card window seamless loop, touch par 4s pause.
+var YT = { pool: [], built: false, batches: 0, raf: 0, anchor: 0, lastT: 0, resumeT: 0 };
+var YT_BATCH = 12;        // auto-loop window (user: "10-12 slide ho uske baad repeat")
+var YT_MAX_BATCHES = 22;  // DOM cap 264 cards — images lazy (memory safe)
 var YT_CHANNELS = [
   'UCq-Fj5jknLsUf-MWSy4_brA',   // T-Series (music)
   'UCpEhnqL0y41EpW2TvWAHD7Q',   // SET India (entertainment)
@@ -1113,86 +1174,233 @@ function ytShuffle(a) {
   }
   return a;
 }
+/** JSON-string escapes → readable title (\uXXXX, \/, &amp; sab) */
+function ytUnesc(s) {
+  try {
+    return (s || '')
+      .replace(/\\u([0-9a-fA-F]{4})/g, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+      .replace(/\\"/g, '"').replace(/\\\//g, '/').replace(/\\n/g, ' ')
+      .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  } catch (e) { return s || ''; }
+}
+/** "14h ago" / "1 day ago" / "3 weeks ago" → minutes (-1 = age nahi mila) */
+function ytAgeMin(seg) {
+  try {
+    var m = (seg || '').match(/"content":"\s*((?:[^"\\]|\\.)*? ago)/);
+    if (!m) return -1;
+    var t = ytUnesc(m[1]), n = parseInt(t, 10) || 1;
+    if (/second|min/i.test(t)) return n < 60 ? 1 : Math.min(n, 60);
+    if (/^(\d+)h\b/.test(t) || /hour/i.test(t)) return n * 60;
+    if (/^(\d+)d\b/.test(t) || /day/i.test(t)) return n * 1440;
+    if (/^(\d+)w\b/.test(t) || /week/i.test(t)) return n * 10080;
+    return n * 43200;   // month+
+  } catch (e) { return -1; }
+}
+/** channel /videos page (desktop HTML) — lockupViewModel blocks → video list */
+function ytChannelParse(html, max) {
+  var out = [], seen = {};
+  try {
+    var re = /"lockupViewModel":\{"contentImage":[\s\S]{0,1200}?i\.ytimg\.com\/vi\/([\w-]{11})\/[\s\S]{0,3000}?"lockupMetadataViewModel":\{"title":\{"content":"((?:[^"\\]|\\.)*)"/g;
+    var m;
+    while ((m = re.exec(html)) !== null && out.length < max) {
+      if (seen[m[1]]) continue;
+      seen[m[1]] = 1;
+      var tail = html.slice(m.index + m[0].length, m.index + m[0].length + 700);
+      out.push({ id: m[1], t: ytUnesc(m[2]), age: ytAgeMin(tail) });
+    }
+  } catch (e) {}
+  return out;
+}
+/** search results page (desktop HTML) — videoRenderer blocks → video list */
+function ytSearchParse(html, max) {
+  var out = [], seen = {};
+  try {
+    var re = /"videoRenderer":\{"videoId":"([\w-]{11})"[\s\S]{0,700}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"/g;
+    var m;
+    while ((m = re.exec(html)) !== null && out.length < max) {
+      if (seen[m[1]]) continue;
+      seen[m[1]] = 1;
+      out.push({ id: m[1], t: ytUnesc(m[2]) });
+    }
+  } catch (e) {}
+  return out;
+}
+/** ALGORITHM CORE — user app me jo bhi SEARCH kiya (google/ddg/bing/brave/
+ *  youtube) wo queries nikalo — inhi ke videos pool ke sabse aage aate hai */
+function ytSearchQueries() {
+  var out = [], seen = {};
+  try {
+    var h = JSON.parse(OrbitBridge.historyJson() || '[]');
+    for (var i = h.length - 1; i >= 0 && out.length < 4; i--) {
+      var u = h[i].url || '';
+      var m = u.match(/(?:google\.[a-z.]+\/search[^#]*?[?&]q=|duckduckgo\.com\/\?q=|bing\.com\/search[^#]*?[?&]q=|search\.brave\.com\/search[^#]*?[?&]q=|youtube\.com\/results[^#]*?search_query=)([^&#]+)/);
+      if (!m) continue;
+      var q = '';
+      try { q = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim(); } catch (e2) { q = m[1].replace(/\+/g, ' '); }
+      if (q.length < 3 || q.length > 60) continue;
+      if (!/[a-z\u0900-\u097F\u0A80-\u0AFF]/i.test(q)) continue;   // words only
+      if (/^[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(q) && q.indexOf(' ') < 0) continue;  // URL-like skip
+      var k = q.toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = 1;
+      out.push(q);
+    }
+  } catch (e) {}
+  return out;
+}
 function buildYt() {
   if (YT.built) return;
   YT.built = true;
   var hist = ytWatchAgain();
-  var kws = ytKeywords(hist);
-  var seen = {}, feeds = [], doneN = 0;
+  // HAR OPEN PAR ALAG — open counter se query + pool rotation (fresh screen)
+  var openN = 0;
+  try {
+    openN = parseInt(localStorage.getItem('orbit_ytopen') || '0', 10) || 0;
+    localStorage.setItem('orbit_ytopen', String(openN + 1));
+  } catch (e0) {}
+  var qs = ytSearchQueries();
+  if (qs.length > 1) { var off = openN % qs.length; qs = qs.slice(off).concat(qs.slice(0, off)); }
+  qs = qs.slice(0, 2);
+  var searchF = [], chanF = [], done = 0;
+  var total = qs.length + YT_CHANNELS.length;
   function merge() {
-    if (++doneN < YT_CHANNELS.length) return;
-    // round-robin interleave (har channel ka mix dikhe) + dedupe
-    var pool = [];
-    for (var r = 0; r < 6; r++) {
-      for (var fc = 0; fc < feeds.length; fc++) {
-        var v = feeds[fc][r];
-        if (v && !seen[v.id]) { seen[v.id] = 1; pool.push(v); }
-      }
-    }
-    // shuffle pehle (variety), PHIR interest-boost sort (stable — same score
-    // me shuffled order hi rehta hai; keyword match = upar)
-    ytShuffle(pool);
+    if (++done < total) return;
+    var seen = {}, algo = [], disc = [];
+    function pushA(v) { if (v && v.id && v.t && !seen[v.id]) { seen[v.id] = 1; algo.push(v); } }
+    function pushD(v) { if (v && v.id && v.t && !seen[v.id]) { seen[v.id] = 1; disc.push(v); } }
+    // (1) SEARCHED videos sabse aage — user ne app me kya search kiya us hisab se
+    searchF.forEach(function (fs) { fs.forEach(pushA); });
+    // (2) watch-again (history videoIds)
+    hist.forEach(pushA);
+    // (3) 13 channels ka round-robin discovery pool
+    for (var r = 0; r < 30; r++)
+      for (var fc = 0; fc < chanF.length; fc++)
+        if (chanF[fc] && chanF[fc][r]) pushD(chanF[fc][r]);
+    // interest-boost: history keywords match = discovery me bhi upar jhankta hai
+    var kws = ytKeywords(hist);
     if (kws.length) {
-      pool.sort(function (a, b) {
+      disc.sort(function (a, b) {
         var sa = 0, sb = 0, ta = (a.t || '').toLowerCase(), tb = (b.t || '').toLowerCase();
         kws.forEach(function (k) { if (ta.indexOf(k) >= 0) sa++; if (tb.indexOf(k) >= 0) sb++; });
         return sb - sa;
       });
     }
-    YT.items = hist.concat(pool).slice(0, 24);
-    renderYtStrip();
+    ytShuffle(disc);   // discovery har open ALAG order
+    var arot = (openN * 3) % Math.max(1, algo.length);
+    var algoR = algo.slice(arot).concat(algo.slice(0, arot));
+    YT.pool = algoR.concat(disc);
+    ytStartStrip();
   }
-  // SAB CHANNELS PARALLEL fetch — 13 sequential round-trips = slow tha
-  for (var ci = 0; ci < YT_CHANNELS.length; ci++) {
-    (function (idx) {
-      feedGet('https://www.youtube.com/feeds/videos.xml?channel_id=' + YT_CHANNELS[idx], function (body) {
-        var f = [];
-        try {
-          var x = new DOMParser().parseFromString(body, 'text/xml');
-          var es = x.getElementsByTagName('entry');
-          for (var k = 0; k < es.length && k < 6; k++) {
-            var vEl = es[k].getElementsByTagNameNS('*', 'videoId')[0];
-            var vid = vEl ? vEl.textContent : xmlTag(es[k], 'videoId');
-            var tt = xmlTag(es[k], 'title');
-            if (vid && tt) f.push({ id: vid, t: tt });
-          }
-        } catch (e2) {}
-        feeds[idx] = f;
+  for (var qi = 0; qi < qs.length; qi++) {
+    (function (q) {
+      feedGet('https://www.youtube.com/results?search_query=' + encodeURIComponent(q) + '&hl=en&gl=IN', function (body) {
+        searchF.push(body ? ytSearchParse(body, 16) : []);
         merge();
       });
-    })(ci);
+    })(qs[qi]);
+  }
+  for (var ci = 0; ci < YT_CHANNELS.length; ci++) {
+    (function (cid) {
+      feedGet('https://www.youtube.com/channel/' + cid + '/videos', function (body) {
+        chanF.push(body ? ytChannelParse(body, 30) : []);
+        merge();
+      });
+    })(YT_CHANNELS[ci]);
   }
 }
-function renderYtStrip() {
+// ---------- SCROLL STRIP ENGINE (v1.9.0) ----------
+function ytCardHtml(v) {
+  return '<div class="ytv" data-id="' + v.id + '">' +
+    '<div class="tw"><img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg"></div>' +
+    '<div class="tt">' + esc(v.t) + '</div></div>';
+}
+function ytStartStrip() {
   var g = document.getElementById('ytGrid');
-  if (!g) return;
-  if (!YT.items.length) {
+  var w = document.getElementById('ytWrap');
+  if (!g || !w) return;
+  if (!YT.pool.length) {
     g.innerHTML = '<div class="berr">YouTube feed is busy — open the home screen again in a moment.</div>';
-    document.getElementById('ytWrap').style.overflow = 'auto';
     return;
   }
-  // SEAMLESS loop: same list 2 baar — translateX(-50%) par exact loop point
+  g.innerHTML = '';
+  YT.batches = 0;
+  ytAppendBatch();
+  ytAppendBatch();      // pehle 2 pairs — scrollWidth bharne ke liye
+  w.scrollLeft = 0;
+  ytAutoStart();
+}
+/** UNLIMITED SWIPE — har batch pool ke agle 12 items (cycle), 2 copies me
+ *  append hote hai (copy-1 + copy-2 = 12-card loop ka seamless seam) */
+function ytAppendBatch() {
+  var g = document.getElementById('ytGrid');
+  if (!g || !YT.pool.length || YT.batches >= YT_MAX_BATCHES) return;
+  var start = (YT.batches * YT_BATCH) % YT.pool.length;
   var html = '';
-  for (var p = 0; p < 2; p++) {
-    for (var i = 0; i < YT.items.length; i++) {
-      (function (v) {
-        html += '<div class="ytv" data-id="' + v.id + '">' +
-          '<div class="tw"><img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg"></div>' +
-          '<div class="tt">' + esc(v.t) + '</div></div>';
-      })(YT.items[i]);
+  for (var pass = 0; pass < 2; pass++) {
+    for (var i = 0; i < YT_BATCH; i++) html += ytCardHtml(YT.pool[(start + i) % YT.pool.length]);
+  }
+  g.insertAdjacentHTML('beforeend', html);
+  YT.batches++;
+}
+function ytCardW() {
+  var c = document.querySelector('#ytGrid .ytv');
+  return c ? (c.getBoundingClientRect().width + 10) : 215;
+}
+function ytBatchW() { return ytCardW() * YT_BATCH; }
+/** AUTO-SLIDE rAF — 12-card window loop. Har batch DOM me 2 copies me hai:
+ *  copy-1 end = copy-2 start ke pixels IDENTICAL, isliye scrollLeft jump
+ *  invisible — "10-12 slide ho uske baad repeat" exact yahi hai. */
+function ytTick(ts) {
+  YT.raf = 0;
+  var w = document.getElementById('ytWrap');
+  if (!w || !YT.pool.length) return;
+  if (YT.lastT) {
+    var bw = ytBatchW();
+    if (bw > 0) {
+      var x = w.scrollLeft + 0.3 * (ts - YT.lastT);   // ~0.3 px/ms — dheema slide
+      if (x >= YT.anchor + bw) x -= bw;               // SEAM jump — same pixels
+      w.scrollLeft = x;
+      if (x > w.scrollWidth - w.clientWidth * 2) ytAppendBatch();   // end-refill
     }
   }
-  g.innerHTML = html;
-  var w = document.getElementById('ytWrap');
-  w.className = 'yth';
-  // slide speed content ke sath scale ho (har card ~3s) — 24 cards = ~72s loop
-  g.style.animationDuration = (YT.items.length * 3) + 's';
-  // touch par pause — tap precision + user scroll feel
-  w.addEventListener('touchstart', function () { w.classList.add('paused'); }, { passive: true });
-  w.addEventListener('touchend', function () {
-    setTimeout(function () { w.classList.remove('paused'); }, 4000);
-  }, { passive: true });
+  YT.lastT = ts;
+  YT.raf = requestAnimationFrame(ytTick);
 }
+function ytAutoStart() {
+  var w = document.getElementById('ytWrap');
+  if (!w || YT.raf || !YT.pool.length) return;
+  var bw = ytBatchW();
+  if (bw <= 0) return;
+  var s = w.scrollLeft;
+  var pair = Math.floor(s / (2 * bw)) * 2 * bw;   // current pair ka start
+  if (s >= pair + bw) w.scrollLeft = s - bw;      // copy-2 me tha → copy-1 (same pixels, invisible)
+  YT.anchor = pair;
+  YT.lastT = 0;
+  YT.raf = requestAnimationFrame(ytTick);
+}
+function ytAutoStop() {
+  if (YT.raf) { cancelAnimationFrame(YT.raf); YT.raf = 0; }
+  YT.lastT = 0;
+}
+// UNGI CONTROL — touchstart par auto rukta hai (swipe freedom), touchend ke 4s
+// baad auto resume (anchor re-computed = jahan user chhoda wahi se aage).
+(function () {
+  var w = document.getElementById('ytWrap');
+  if (!w) return;
+  w.addEventListener('touchstart', function () {
+    ytAutoStop();
+    if (YT.resumeT) { clearTimeout(YT.resumeT); YT.resumeT = 0; }
+  }, { passive: true });
+  w.addEventListener('touchend', function () {
+    if (YT.resumeT) clearTimeout(YT.resumeT);
+    YT.resumeT = setTimeout(function () { YT.resumeT = 0; ytAutoStart(); }, 4000);
+  }, { passive: true });
+  // USER SWIPE INFINITE — content end ke kareeb aate hi agla batch append
+  w.addEventListener('scroll', function () {
+    if (YT.raf) return;   // auto-slide khud refill karta hai
+    if (w.scrollLeft > w.scrollWidth - w.clientWidth * 2) ytAppendBatch();
+  }, { passive: true });
+})();
 try {
   document.getElementById('ytGrid').addEventListener('click', function (ev) {
     var v = ev.target.closest('.ytv');
@@ -1315,7 +1523,8 @@ function buildNews() {
   }
   step();
 }
-// v1.8.0 — VIDEO NEWS: Gujarati news channels ki latest videos (fresh ≤ 3 din)
+// v1.9.0 — VIDEO NEWS: Gujarati news channels ki latest videos (fresh ≤ 3 din).
+// RSS 404 ho gaya tha — ab channel PAGE HTML parse (ytChannelParse) + age filter.
 function buildVideoNews() {
   if (!isGujarat()) return;
   var sec = document.getElementById('videoNews');
@@ -1323,37 +1532,32 @@ function buildVideoNews() {
   if (!sec || !row) return;
   sec.style.display = 'block';
   var all = [], doneN = 0;
-  var cutoff = Date.now() - 72 * 3600 * 1000;
+  var cutoffMin = 72 * 60;   // 3 din — hours me
   function merge() {
     if (++doneN < VN_CHANNELS.length) return;
-    all = all.filter(function (v) { return v.ep && v.ep > cutoff; });
-    all.sort(function (a, b) { return b.ep - a.ep; });
+    all = all.filter(function (v) { return v.age < 0 || v.age <= cutoffMin; });   // fresh-only
+    all.sort(function (a, b) { return (a.age < 0 ? 1e9 : a.age) - (b.age < 0 ? 1e9 : b.age); });
     all = all.slice(0, 10);
     if (!all.length) { sec.style.display = 'none'; return; }
     var html = '';
     for (var i = 0; i < all.length; i++) {
       (function (v) {
+        var ts = v.age >= 0 ? (Date.now() - v.age * 60000) : Date.now();
         html += '<div class="vnv" data-id="' + v.id + '">' +
           '<div class="tw"><img loading="lazy" alt="" src="https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg"></div>' +
           '<div class="tt">' + esc(v.t) + '</div>' +
-          '<div class="ts">' + esc(v.src) + ' · ' + relTime(v.ts) + '</div></div>';
+          '<div class="ts">' + esc(v.src) + ' · ' + relTime(ts) + '</div></div>';
       })(all[i]);
     }
     row.innerHTML = html;
   }
   for (var ci = 0; ci < VN_CHANNELS.length; ci++) {
     (function (ch, idx) {
-      feedGet('https://www.youtube.com/feeds/videos.xml?channel_id=' + ch.id, function (body) {
+      feedGet('https://www.youtube.com/channel/' + ch.id + '/videos', function (body) {
         try {
-          var x = new DOMParser().parseFromString(body, 'text/xml');
-          var es = x.getElementsByTagName('entry');
-          for (var k = 0; k < es.length && k < 5; k++) {
-            var e = es[k];
-            var vEl = e.getElementsByTagNameNS('*', 'videoId')[0];
-            var vid = vEl ? vEl.textContent : '';
-            var pd = xmlTag(e, 'published') || xmlTag(e, 'pubDate');
-            var ep = 0; try { ep = new Date(pd).getTime() || 0; } catch (e2) {}
-            if (vid && ep > cutoff) all.push({ id: vid, t: xmlTag(e, 'title'), ep: ep, ts: pd, src: ch.n });
+          var vids = body ? ytChannelParse(body, 12) : [];
+          for (var k = 0; k < vids.length; k++) {
+            all.push({ id: vids[k].id, t: vids[k].t, age: vids[k].age, src: ch.n });
           }
         } catch (e3) {}
         merge();

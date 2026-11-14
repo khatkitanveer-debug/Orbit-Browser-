@@ -219,16 +219,21 @@ class PlaybackService : Service() {
     /* ------------------------------ notification ----------------------------- */
 
     private fun startInForeground() {
-        val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIF_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-            )
-        } else {
-            startForeground(NOTIF_ID, notification)
+        // v1.9.0 HARDENING — startForeground OEM ROMs par edge-case throw kar sakta
+        // hai (Android 14 FGS policies / Moto quirks). Song play par CRASH na ho —
+        // fail hone par playback in-page hi chalti rehti hai (notification nahi).
+        runCatching {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIF_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+                )
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
         }
     }
 
@@ -288,8 +293,12 @@ class PlaybackService : Service() {
     }
 
     private fun notifyCompat(notification: Notification) {
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID, notification)
+        // v1.9.0 HARDENING — notify kabhi crash na kare (POST_NOTIFICATIONS edge
+        // cases / OEM quirks). Notification fail = sirf chhup jati hai.
+        runCatching {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, notification)
+        }
     }
 
     private fun originOf(raw: String): String? = runCatching {
