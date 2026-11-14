@@ -173,6 +173,19 @@ class MainActivity : Activity() {
     private lateinit var pageOverlay: FrameLayout
     private var pageOpen = false
 
+    // v1.9.4 — Chrome-jaisa DEPARTMENT NAVIGATION: Settings main page par sirf
+    // section rows dikhti hain, har row apna sub-page kholta hai jisme us
+    // department ke options hote hain. Back arrow / back-key parent page par
+    // wapas aata hai (parent REBUILD hota hai — summaries fresh), sabse top par
+    // page close. Stack root = openPage() wala page.
+    private class PageEntry(
+        val title: String,
+        val build: (LinearLayout) -> Unit,
+        val actionIcon: Int = 0,
+        val onAction: () -> Unit = {},
+    )
+    private val pageNavStack = mutableListOf<PageEntry>()
+
     // v1.4.0 — VPN UI refresh hooks (sheet/menu/settings switches)
     private val vpnUiHooks = mutableListOf<() -> Unit>()
 
@@ -581,8 +594,9 @@ class MainActivity : Activity() {
             return
         }
         // v1.4.0 — history/bookmarks/settings page khula hai to pehle wo band karo
+        // v1.9.4 — department sub-page ho to back-key parent page par wapas
         if (pageOpen) {
-            closePage()
+            popPage()
             return
         }
         if (tabSwitcher.visibility == View.VISIBLE) {
@@ -2579,7 +2593,39 @@ class MainActivity : Activity() {
         onAction: () -> Unit = {},
         build: (LinearLayout) -> Unit,
     ) {
+        // v1.9.4 — har openPage fresh root hai (history/bookmarks/settings sab yahi
+        // use karte hain) — stack reset par purani nav-chain gayi.
+        pageNavStack.clear()
+        pageNavStack.add(PageEntry(title, build, actionIcon, onAction))
+        renderPageTop()
+    }
+
+    /** v1.9.4 — department SUB-PAGE (Settings main page se ek level andar).
+     *  Chrome jaisa: tap "Privacy and security" → us department ka apna page. */
+    private fun openSubPage(title: String, build: (LinearLayout) -> Unit) {
+        if (!pageOpen || pageNavStack.isEmpty()) return
+        pageNavStack.add(PageEntry(title, build))
+        renderPageTop()
+    }
+
+    /** v1.9.4 — back navigation: stack me parent page ho to wapas (parent rebuild =
+     *  summaries fresh), warna page close. Back arrow + Android back-key dono. */
+    private fun popPage() {
+        if (pageNavStack.size > 1) {
+            pageNavStack.removeAt(pageNavStack.size - 1)
+            renderPageTop()
+        } else {
+            closePage()
+        }
+    }
+
+    /** v1.9.4 — stack ke TOP page ka render (bar + scrollable content). */
+    private fun renderPageTop() {
+        val e = pageNavStack.lastOrNull() ?: run { closePage(); return }
         pageOverlay.removeAllViews()
+        // re-render par purane vpnUiHooks ke views mar chuke hote hain — fresh
+        // build apna hook khud add karta hai (warna duplicate/stale closures)
+        vpnUiHooks.clear()
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -2593,10 +2639,10 @@ class MainActivity : Activity() {
             setColorFilter(0xFFE8EAED.toInt())
             background = getDrawable(R.drawable.btn_ripple)
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
-            setOnClickListener { closePage() }
+            setOnClickListener { popPage() }
         }
         val tv = TextView(this).apply {
-            text = title
+            text = e.title
             textSize = 19f
             setTypeface(null, Typeface.BOLD)
             setTextColor(0xFFE8EAED.toInt())
@@ -2606,13 +2652,13 @@ class MainActivity : Activity() {
         }
         bar.addView(back)
         bar.addView(tv)
-        if (actionIcon != 0) {
+        if (e.actionIcon != 0) {
             val act = ImageButton(this).apply {
-                setImageResource(actionIcon)
+                setImageResource(e.actionIcon)
                 setColorFilter(0xFFE8EAED.toInt())
                 background = getDrawable(R.drawable.btn_ripple)
                 layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
-                setOnClickListener { onAction() }
+                setOnClickListener { e.onAction() }
             }
             bar.addView(act)
         }
@@ -2622,7 +2668,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(4), dp(14), dp(24))
         }
-        build(content)
+        e.build(content)
         val scroll = ScrollView(this).apply {
             addView(content)
             isVerticalScrollBarEnabled = false
@@ -2640,6 +2686,7 @@ class MainActivity : Activity() {
     private fun closePage() {
         pageOpen = false
         downloadsPageOpen = false
+        pageNavStack.clear()
         vpnUiHooks.clear()
         pageOverlay.visibility = View.GONE
         pageOverlay.removeAllViews()
@@ -2701,14 +2748,18 @@ class MainActivity : Activity() {
         return r
     }
 
-    private fun pageHeader(label: String, into: LinearLayout) {
-        into.addView(TextView(this).apply {
+    /** v1.9.4 — header TextView return karta hai (Settings live-search isko
+     *  group-hide ke liye tag karta hai). */
+    private fun pageHeader(label: String, into: LinearLayout): TextView {
+        val tv = TextView(this).apply {
             text = label
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setTextColor(0xFF8AB4F8.toInt())
             setPadding(dp(14), dp(18), dp(8), dp(6))
-        })
+        }
+        into.addView(tv)
+        return tv
     }
 
     private fun pageDivider(into: LinearLayout) {
@@ -2982,150 +3033,292 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------- settings page (Chrome-style)
 
-    /** v1.4.0 — Chrome jaisa SETTINGS page: Basics / Advanced / Sync & sign-in /
-     *  Orbit AI / About sections, har on-off cheez par real switch. */
+    /** v1.4.0 — Chrome jaisa SETTINGS page.
+     *  v1.9.4 — CHROME DEPARTMENT LAYOUT (user request: "chrome ke jaise section
+     *  wise option ke andar options department wise"): main page par "Search
+     *  settings" live search bar + sirf section rows (Basics / Advanced / About),
+     *  har row apna SUB-PAGE kholta hai jisme us department ke options hote hain
+     *  — bilkul Chrome Android jaisa. Back arrow / back-key parent page par
+     *  wapas (popPage). (v1.6.0 removals preserved: auto-install, memory saver,
+     *  load images, Orbit AI — wapas NAHI aaye.) */
     private fun showSettings() {
         openPage("Settings") { content ->
-            fun toggleRow(iconRes: Int, title: String, sub: String, key: String, def: String, liveApply: (Boolean) -> Unit = {}) {
-                val initial = LocalStore.getSetting(this, key, def) != "off"
-                val tgl = makeToggle(initial) { on ->
+            // ---- live-search index (Chrome "Search settings" filter) ----
+            val searchRows = mutableListOf<Triple<View, TextView, String>>()
+            val headers = mutableListOf<TextView>()
+
+            fun onOff(key: String, def: String) =
+                if (LocalStore.getSetting(this, key, def) != "off") "On" else "Off"
+
+            fun header(label: String): TextView {
+                val h = pageHeader(label, content)
+                headers.add(h)
+                return h
+            }
+
+            /** toggle row — department sub-page ke andar ki on/off option */
+            fun tgl(c: LinearLayout, icon: Int, title: String, sub: String, key: String, def: String, liveApply: (Boolean) -> Unit = {}) {
+                val t = makeToggle(LocalStore.getSetting(this, key, def) != "off") { on ->
                     LocalStore.setSetting(this, key, if (on) "on" else "off")
                     liveApply(on)
                 }
-                content.addView(pageRow(iconRes, title, sub, right = tgl))
+                c.addView(pageRow(icon, title, sub, right = t))
             }
 
-            pageHeader("Basics", content)
-            // Search engine picker
+            /** dept row — right chevron, tap par department sub-page khulta hai */
+            fun deptRow(icon: Int, title: String, sub: String, h: TextView, keys: String, build: (LinearLayout) -> Unit) {
+                val chev = ImageView(this).apply {
+                    setImageResource(R.drawable.ic_down)
+                    rotation = 90f
+                    setColorFilter(0xFF9AA0A6.toInt())
+                    layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+                }
+                val r = pageRow(icon, title, sub, right = chev) { openSubPage(title, build) }
+                content.addView(r)
+                searchRows.add(Triple(r, h, "$title $sub $keys"))
+            }
+
+            /** direct action row — seedha kaam (system page / action), sub-page nahi */
+            fun actRow(icon: Int, title: String, sub: String, h: TextView, keys: String, action: () -> Unit) {
+                val r = pageRow(icon, title, sub) { action() }
+                content.addView(r)
+                searchRows.add(Triple(r, h, "$title $sub $keys"))
+            }
+
+            // ================= DEPARTMENT SUB-PAGES (options andar) =================
+
+            fun engineDept(c: LinearLayout) {
+                c.addView(TextView(this).apply {
+                    text = "Search engine used in the address bar"
+                    textSize = 13f
+                    setTextColor(0xFF9AA0A6.toInt())
+                    setPadding(dp(14), dp(10), dp(8), dp(4))
+                })
+                val engines = listOf(
+                    "google" to "Google",
+                    "bing" to "Bing",
+                    "ddg" to "DuckDuckGo",
+                    "brave" to "Brave",
+                )
+                val current = LocalStore.getSetting(this, "searchEngine", "google")
+                val checks = mutableListOf<Pair<String, ImageView>>()
+                engines.forEach { (key, name) ->
+                    val chk = ImageView(this).apply {
+                        setImageResource(R.drawable.ic_star)
+                        setColorFilter(if (key == current) 0xFF8AB4F8.toInt() else 0x00000000)
+                        layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+                    }
+                    checks.add(key to chk)
+                    c.addView(pageRow(R.drawable.ic_find, name, if (key == current) "Selected" else "") {
+                        LocalStore.setSetting(this, "searchEngine", key)
+                        // v1.5.0 — spider mode me DDG lock hai; user ki choice VPN OFF
+                        // par apply hogi (searchEngineUrl hard-guarantee DDG dega)
+                        if ((RelayEngine.state == "on" || RelayEngine.state == "connecting") && key != "ddg") {
+                            Toast.makeText(
+                                this,
+                                "Spider Mode uses DuckDuckGo — your choice will apply when the VPN is off",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
+                        }
+                        checks.forEach { (k, v) ->
+                            v.setColorFilter(if (k == key) 0xFF8AB4F8.toInt() else 0x00000000)
+                        }
+                    })
+                }
+            }
+
+            fun privacyDept(c: LinearLayout) {
+                tgl(c, R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
+                tgl(c, R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
+                c.addView(pageRow(R.drawable.ic_trash, "Clear browsing data", "History, cookies, cache") { showClearDataCard() })
+                c.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
+            }
+
+            fun siteDept(c: LinearLayout) {
+                tgl(c, R.drawable.ic_settings, "JavaScript", "Run scripts on sites (recommended: on)", "jsEnabled", "on") { on ->
+                    // live reload non-internal active tab — warna purana page purani setting par hi rahega
+                    val t = activeTab
+                    if (t != null && !t.isInternal) t.webView?.let { wv ->
+                        wv.settings.javaScriptEnabled = on
+                        wv.reload()
+                    }
+                }
+                tgl(c, R.drawable.ic_lock, "Accept cookies", "Sites remember your sign-ins", "cookiesEnabled", "on") { on ->
+                    runCatching {
+                        CookieManager.getInstance().setAcceptCookie(on)
+                        tabs.forEach { t ->
+                            t.webView?.let { CookieManager.getInstance().setAcceptThirdPartyCookies(it, on) }
+                        }
+                    }
+                }
+                tgl(c, R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
+                tgl(c, R.drawable.ic_settings, "Media autoplay", "Play videos without tapping", "autoplay", "on") { on ->
+                    tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
+                }
+                tgl(c, R.drawable.ic_desktop, "Desktop site default", "New tabs open as desktop", "desktopDefault", "off")
+            }
+
+            fun tabsDept(c: LinearLayout) {
+                tgl(c, R.drawable.ic_update, "Sleeping tabs", "Freeze inactive tabs to save battery", "sleepTabs", "on")
+            }
+
+            fun syncDept(c: LinearLayout) {
+                c.addView(pageRow(R.drawable.ic_google, "Sign in with Google", "Use your phone's Google account") { showGoogleSignIn() })
+                c.addView(pageRow(R.drawable.ic_sync, "Orbit Sync", "Bookmarks + history backup") { showSync() })
+            }
+
+            // ================= MAIN PAGE (Chrome: search bar + sections) =================
+
+            // ---- v1.9.4 "Search settings" live filter bar (Chrome style) ----
+            val searchBox = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), 0, dp(4), 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(48),
+                ).apply { topMargin = dp(4) }
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(0xFF1E1F22.toInt())
+                }
+            }
+            searchBox.addView(ImageView(this).apply {
+                setImageResource(R.drawable.ic_find)
+                setColorFilter(0xFF9AA0A6.toInt())
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            })
+            val searchEt = EditText(this).apply {
+                hint = "Search settings"
+                setHintTextColor(0xFF9AA0A6.toInt())
+                setTextColor(0xFFE8EAED.toInt())
+                textSize = 15f
+                inputType = InputType.TYPE_CLASS_TEXT
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+                isSingleLine = true
+                background = null
+                setPadding(dp(12), 0, 0, 0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val searchClear = ImageButton(this).apply {
+                setImageResource(R.drawable.ic_close)
+                setColorFilter(0xFF9AA0A6.toInt())
+                background = getDrawable(R.drawable.btn_ripple)
+                layoutParams = LinearLayout.LayoutParams(dp(38), dp(38))
+                visibility = View.GONE
+                setOnClickListener {
+                    searchEt.setText("")
+                    searchClear.visibility = View.GONE
+                }
+            }
+            searchBox.addView(searchEt)
+            searchBox.addView(searchClear)
+            content.addView(searchBox)
+
+            searchEt.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    val q = (s?.toString() ?: "").trim().lowercase()
+                    searchClear.visibility = if (q.isEmpty()) View.GONE else View.VISIBLE
+                    // rows filter + jis group me koi match ho wahi header dikhe
+                    val lit = mutableSetOf<TextView>()
+                    searchRows.forEach { (row, h, keys) ->
+                        val hit = q.isEmpty() || keys.lowercase().contains(q)
+                        row.visibility = if (hit) View.VISIBLE else View.GONE
+                        if (hit) lit.add(h)
+                    }
+                    headers.forEach { h ->
+                        h.visibility = if (q.isEmpty() || lit.contains(h)) View.VISIBLE else View.GONE
+                    }
+                }
+            })
+
+            // ================= Basics =================
+            val hB = header("Basics")
+
+            // Search engine — summary = chosen engine
             val engineName = when (LocalStore.getSetting(this, "searchEngine", "google")) {
                 "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
             }
-            content.addView(pageRow(R.drawable.ic_find, "Search engine", engineName) { showSearchEngineCard() })
-            // VPN row — live status (hook se update hota hai)
-            val vpnSub = TextView(this).apply {
-                text = RelayEngine.statusText
-                textSize = 12f
-                setTextColor(0xFF9AA0A6.toInt())
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            val vpnRow = pageRow(R.drawable.ic_vpn, "VPN", RelayEngine.statusText, right = null) { showVpnSheet() }
-            // pageRow apna subtitle khud banata hai — hook ke liye usko pakdo
+            deptRow(R.drawable.ic_find, "Search engine", engineName, hB,
+                "google duckduckgo bing brave ddg address bar search") { c -> engineDept(c) }
+
+            // Privacy and security — VPN/shields/fingerprint/data-wipe ka department
+            deptRow(R.drawable.ic_lock, "Privacy and security",
+                "Shields ${onOff("shields", "on")} · Anti-fingerprint ${onOff("antiFp", "on")}",
+                hB, "shields ads trackers fingerprint privacy security clear browsing data fire button wipe") { c -> privacyDept(c) }
+
+            // VPN — flagship feature, Basics par hi live status (hook se update)
+            val vpnRow = pageRow(R.drawable.ic_vpn, "VPN", RelayEngine.statusText) { showVpnSheet() }
             val vpnCol = vpnRow.getChildAt(1) as? LinearLayout
-            val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView ?: vpnSub
-            vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
+            val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView
+            if (vpnSubInRow != null) vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
             content.addView(vpnRow)
-            // v1.6.0 — "Auto-install updates" toggle REMOVE (user request: hamesha ON
-            // rahe — runAutoUpdate ab hamesha silent install karta hai, setting nahi)
-            toggleRow(R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
-            toggleRow(R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
-            toggleRow(R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
-            toggleRow(R.drawable.ic_lock, "Accept cookies", "Sites remember your sign-ins", "cookiesEnabled", "on") { on ->
-                runCatching {
-                    CookieManager.getInstance().setAcceptCookie(on)
-                    tabs.forEach { t ->
-                        t.webView?.let { CookieManager.getInstance().setAcceptThirdPartyCookies(it, on) }
+            searchRows.add(Triple(vpnRow as View, hB, "vpn spider mode proxy ip hide tunnel connect country"))
+
+            // Default browser — Chrome jaisa: system role dialog
+            val isDefault = runCatching {
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val rm = getSystemService(android.content.Context.ROLE_SERVICE) as? android.app.role.RoleManager
+                    rm?.isRoleHeld(android.app.role.RoleManager.ROLE_BROWSER) ?: false
+                } else false
+            }.getOrDefault(false)
+            actRow(R.drawable.ic_home, "Default browser",
+                if (isDefault) "Orbit is your default browser" else "Set Orbit as your default",
+                hB, "default browser apps open links set") {
+                val ok = runCatching {
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        val rm = getSystemService(android.content.Context.ROLE_SERVICE) as? android.app.role.RoleManager
+                        if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
+                            startActivity(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER))
+                        } else {
+                            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                        }
+                    } else {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
                     }
-                }
-            }
-            toggleRow(R.drawable.ic_settings, "JavaScript", "Run scripts on sites (recommended: on)", "jsEnabled", "on") { on ->
-                // live reload non-internal active tab — warna purana page purani setting par hi rahega
-                val t = activeTab
-                if (t != null && !t.isInternal) t.webView?.let { wv ->
-                    wv.settings.javaScriptEnabled = on
-                    wv.reload()
-                }
-            }
-            content.addView(pageRow(R.drawable.ic_trash, "Clear browsing data", "History, cookies, cache") { showClearDataCard() })
-            content.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
-
-            pageHeader("Advanced", content)
-            toggleRow(R.drawable.ic_desktop, "Desktop site default", "New tabs open as desktop", "desktopDefault", "off")
-            toggleRow(R.drawable.ic_settings, "Media autoplay", "Play videos without tapping", "autoplay", "on") { on ->
-                tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
-            }
-            toggleRow(R.drawable.ic_update, "Sleeping tabs", "Freeze inactive tabs to save battery", "sleepTabs", "on")
-            // v1.6.0 — "Memory saver" toggle REMOVE (user request) — eviction hamesha
-            // active (evictExcessTabs ab setting nahi check karta)
-
-            pageHeader("Sign in & sync", content)
-            content.addView(pageRow(R.drawable.ic_google, "Sign in with Google", "Use your phone's Google account") { showGoogleSignIn() })
-            content.addView(pageRow(R.drawable.ic_sync, "Orbit Sync", "Bookmarks + history backup") { showSync() })
-
-            // v1.6.0 — "Orbit AI" section REMOVE (user request: option nahi chahiye)
-
-            pageHeader("About", content)
-            content.addView(pageRow(R.drawable.ic_update, "Check for updates", "Orbit v${BuildConfig.VERSION_NAME}") { runAutoUpdate(manual = true) })
-            content.addView(pageRow(R.drawable.ic_about, "About Orbit", "Fast. Private. Yours.") { showAbout() })
-        }
-    }
-
-    /** v1.4.0 — search engine picker card */
-    private fun showSearchEngineCard() {
-        val pad = dp(22)
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, dp(20), pad, dp(14))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(24).toFloat()
-                setColor(0xFF1E1F22.toInt())
-            }
-        }
-        box.addView(TextView(this).apply {
-            text = "Search engine"
-            textSize = 19f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(0xFFE8EAED.toInt())
-            setPadding(0, 0, 0, dp(10))
-        })
-        val engines = listOf(
-            "google" to "Google",
-            "bing" to "Bing",
-            "ddg" to "DuckDuckGo",
-            "brave" to "Brave",
-        )
-        val current = LocalStore.getSetting(this, "searchEngine", "google")
-        engines.forEach { (key, name) ->
-            val r = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(48),
-                )
-                background = getDrawable(R.drawable.btn_ripple)
-                isClickable = true
-                isFocusable = true
-            }
-            r.addView(TextView(this).apply {
-                text = name
-                textSize = 15.5f
-                setTextColor(0xFFE8EAED.toInt())
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            r.addView(ImageView(this).apply {
-                setImageResource(if (key == current) R.drawable.ic_star else R.drawable.ic_down)
-                setColorFilter(if (key == current) 0xFF8AB4F8.toInt() else 0x00000000)
-                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
-            })
-            r.setOnClickListener {
-                LocalStore.setSetting(this, "searchEngine", key)
-                // v1.5.0 — spider mode me DDG lock hai; user ki choice VPN OFF par
-                // apply hogi (searchEngineUrl hard-guarantee spider mode me DDG dega)
-                if ((RelayEngine.state == "on" || RelayEngine.state == "connecting") && key != "ddg") {
+                }.isSuccess
+                if (!ok) {
                     Toast.makeText(
                         this,
-                        "Spider Mode uses DuckDuckGo — your choice will apply when the VPN is off",
+                        "Open phone Settings then Apps then Default apps to set Orbit",
                         Toast.LENGTH_LONG,
                     ).show()
-                } else {
-                    Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
                 }
-                hideCardOverlay()
             }
-            box.addView(r)
+
+            // Sign in & sync — Google account + Orbit Sync department
+            deptRow(R.drawable.ic_sync, "Sign in & sync", "Google account · Orbit Sync", hB,
+                "sign in google account sync bookmarks history backup") { c -> syncDept(c) }
+
+            // ================= Advanced =================
+            val hA = header("Advanced")
+
+            // Site settings — Chrome jaisa: JS / cookies / pop-ups / media / desktop
+            deptRow(R.drawable.ic_settings, "Site settings",
+                "JavaScript ${onOff("jsEnabled", "on")} · Cookies ${onOff("cookiesEnabled", "on")}",
+                hA, "javascript cookies popups redirects media autoplay desktop site settings user agent") { c -> siteDept(c) }
+
+            // Tabs — sleeping tabs battery saver
+            deptRow(R.drawable.ic_tabs, "Tabs",
+                "Sleeping tabs ${onOff("sleepTabs", "on")}",
+                hA, "tabs sleeping battery freeze inactive memory") { c -> tabsDept(c) }
+
+            // Notifications — direct system notification settings
+            actRow(R.drawable.ic_notif_orbit, "Notifications", "Open system notification settings", hA,
+                "notifications permission alerts spider country banner") { openNotifSettings() }
+
+            // ================= About =================
+            val hAbout = header("About")
+            // v1.6.0 — "Auto-install updates" toggle REMOVE (hamesha ON rahe) —
+            // "Check for updates" manual run hi bacha hai
+            actRow(R.drawable.ic_update, "Check for updates", "Orbit v${BuildConfig.VERSION_NAME}", hAbout,
+                "update version upgrade ota") { runAutoUpdate(manual = true) }
+            actRow(R.drawable.ic_about, "About Orbit", "Fast. Private. Yours.", hAbout,
+                "about orbit fast private yours") { showAbout() }
         }
-        showCardOverlay(box)
     }
 
     // ------------------------------------------------- VPN sheet (premium bottom card)
