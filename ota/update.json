@@ -1,7 +1,7 @@
 {
-  "versionCode": 42,
-  "versionName": "1.9.6",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.6/orbit-browser-1.9.6.apk",
-  "notes": "v1.9.6 — ORIGINAL ORBIT LOGO RESTORED: The launcher icon is back to the original Orbit identity — the white O ring with satellite dot on the dark background. The Chrome-style icon from v1.9.5 has been fully reverted. Everything else stays the same: Chrome-style section-wise settings, unlimited songs, slow For-You slide. versionCode 42",
+  "versionCode": 43,
+  "versionName": "1.9.7",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.7/orbit-browser-1.9.7.apk",
+  "notes": "v1.9.7 — FASTER HOME + SMARTER YOUTUBE: (1) Google is now the default search engine (stuck DuckDuckGo from Spider Mode sessions is auto-repaired; Spider Mode still uses DuckDuckGo by design). (2) YouTube fullscreen videos now rotate to landscape properly — back button exits fullscreen. (3) YouTube ads are skipped automatically — tapping a video plays it directly instead of a black screen (toggle in Settings > Privacy and security > YouTube ad skip). (4) Home screen no longer reloads every time — your music and YouTube feeds appear instantly and music keeps playing in the background. versionCode 43",
   "minVersionCode": 1
 }
