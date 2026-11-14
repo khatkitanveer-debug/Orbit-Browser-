@@ -71,8 +71,8 @@ android {
         applicationId = "com.orbit.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 38
-        versionName = "1.9.2"
+        versionCode = 39
+        versionName = "1.9.3"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 

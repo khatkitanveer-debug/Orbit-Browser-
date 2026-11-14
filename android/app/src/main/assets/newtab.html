@@ -968,7 +968,14 @@ try {
 // (2) stream load fail (320→96) ke baad bhi fail → SILENT skip-next (pehle
 //     stuck: Now playing dikhta par awaaz nahi). skip-cap bounded.
 // (3) skip-cap par honest UI — fake "Now playing" nahi, idx reset.
-var MQ = { list: [], idx: -1, playing: false, audio: null, built: false, skips: 0 };
+// v1.9.3 UNLIMITED QUEUE — user report: "10 songs ke baad wahi repeat hote hai,
+// unlimited songs one by one aane chahiye" (car scenario). FIX: (1) poora pool
+// (48 tak) queue me; (2) queue end ke 3 pehle musicMore() — tail artist/album
+// related queries → pagination fallback (p=2,3.. live-verified 0 overlap);
+// (3) MQ.seen global dedupe — koi gaana dobara nahi; (4) rows UI cap 15,
+// duplicate listeners guard; (5) skip-cap 20 bound.
+var MQ = { list: [], idx: -1, playing: false, audio: null, built: false, skips: 0,
+  seen: {}, qUsed: {}, fetching: false, page: 1 };
 function musicHist() {
   try { return JSON.parse(localStorage.getItem('orbit_music') || '[]'); } catch (e) { return []; }
 }
@@ -1062,9 +1069,33 @@ function songUrl(s) {
   } catch (e) {}
   try { return desDecryptJs(s.enc) || ''; } catch (e2) { return ''; }
 }
-function saavnSearchA(q, cb) {
+function saavnSearchA(q, cb, page) {
   fetchJsonA('https://www.jiosaavn.com/api.php?__call=search.getResults&q=' +
-    encodeURIComponent(q) + '&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=30', cb);
+    encodeURIComponent(q) + '&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=30' +
+    (page && page > 1 ? '&p=' + page : ''), cb);
+}
+// v1.9.3 — shared collector (buildMusic + musicMore dono use karte hai):
+// JioSaavn result → queue item (title/artist/album/enc), seen dedupe global.
+function saavnCollect(j, all, seen) {
+  var res = (j && j.results) || [];
+  for (var k = 0; k < res.length; k++) {
+    var s = res[k];
+    if (!s || !s.more_info || !s.more_info.encrypted_media_url) continue;
+    var title = (s.title || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+    var key = (title || '').toLowerCase();
+    if (!title || seen[key]) continue;
+    seen[key] = 1;
+    all.push({
+      t: title,
+      a: ((s.subtitle || '').split(' - ')[0] || '').replace(/&quot;/g, '"'),
+      al: (s.more_info.album || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
+      img: (s.image || '').replace('150x150', '500x500'),
+      dur: s.more_info.duration || '',
+      plays: parseInt(s.play_count || '0', 10),
+      b320: s.more_info['320kbps'] === 'true',
+      enc: s.more_info.encrypted_media_url,
+    });
+  }
 }
 function buildMusic() {
   if (MQ.built) return;
@@ -1082,25 +1113,7 @@ function buildMusic() {
   function step() {
     if (qi >= qs.length || all.length >= 48) return finish();
     saavnSearchA(qs[qi], function (j) {
-      var res = (j && j.results) || [];
-      for (var k = 0; k < res.length; k++) {
-        var s = res[k];
-        if (!s || !s.more_info || !s.more_info.encrypted_media_url) continue;
-        var title = (s.title || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-        var key = (title || '').toLowerCase();
-        if (!title || seen[key]) continue;
-        seen[key] = 1;
-        all.push({
-          t: title,
-          a: ((s.subtitle || '').split(' - ')[0] || '').replace(/&quot;/g, '"'),
-          al: (s.more_info.album || '').replace(/&quot;/g, '"').replace(/&amp;/g, '&'),
-          img: (s.image || '').replace('150x150', '500x500'),
-          dur: s.more_info.duration || '',
-          plays: parseInt(s.play_count || '0', 10),
-          b320: s.more_info['320kbps'] === 'true',
-          enc: s.more_info.encrypted_media_url,
-        });
-      }
+      saavnCollect(j, all, seen);
       qi++;
       step();
     });
@@ -1121,9 +1134,53 @@ function buildMusic() {
         if (lx !== ly) return ly - lx;
         return y.plays - x.plays;
       });
-      MQ.list = all.slice(0, 10);
+      // v1.9.3 — poora pool queue me (48 tak), sirf 10 nahi. Rows UI me cap 15
+      // (renderMusic), PLAYBACK chain isliye unlimited ban sakta hai.
+      MQ.list = all;
+      MQ.seen = seen;   // global dedupe — isi me dobara wahi gaana kabhi nahi
       renderMusic();
     } catch (e) { musicError(); }
+  }
+  step();
+}
+/** v1.9.3 UNLIMITED QUEUE — car-style continuous play: queue ke end (last 3) par
+ *  pahunch te hi NAYA related batch fetch → append. Query source: queue tail ke
+ *  artist/album (wahi vibe), phir pagination fallback (p=2,3... = guaranteed
+ *  fresh page, live-verified 0 overlap). Global seen dedupe = repeat nahi.
+ *  fetch async hai — current gaana chalte-chalte agla queue me aa jaata hai. */
+function musicMore() {
+  if (MQ.fetching || !MQ.list.length) return;
+  MQ.fetching = true;
+  var tail = MQ.list.slice(Math.max(0, MQ.list.length - 3));
+  var qs = [];
+  for (var i = tail.length - 1; i >= 0; i--) {
+    var q1 = tail[i].al ? tail[i].al + ' songs' : '', q2 = tail[i].a ? tail[i].a + ' songs' : '';
+    if (q1 && !MQ.qUsed[q1] && qs.indexOf(q1) === -1) qs.push(q1);
+    if (q2 && !MQ.qUsed[q2] && qs.indexOf(q2) === -1) qs.push(q2);
+  }
+  if (!qs.length) { MQ.page++; qs = ['top hindi songs']; }   // pagination = naya page
+  var qi = 0, all = [];
+  function commit() { for (var i = 0; i < all.length; i++) MQ.list.push(all[i]); }
+  function done() {
+    MQ.fetching = false;
+    if (all.length) { try { renderMusic(); } catch (e) {} }   // rows live grow (cap 15)
+  }
+  function step() {
+    if (qi >= qs.length) {
+      MQ.page++;   // queries khatam → next page (fresh results guarantee)
+      saavnSearchA('top hindi songs', function (j) {
+        saavnCollect(j, all, MQ.seen);
+        commit(); done();
+      }, MQ.page);
+      return;
+    }
+    var q = qs[qi]; qi++;
+    MQ.qUsed[q] = 1;
+    saavnSearchA(q, function (j) {
+      saavnCollect(j, all, MQ.seen);
+      if (all.length >= 12 || qi >= qs.length) { commit(); done(); return; }
+      step();
+    });
   }
   step();
 }
@@ -1146,16 +1203,19 @@ function renderMusic() {
       }
     }
     row.innerHTML = html;
-    row.addEventListener('click', function (ev) {
-      var i = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-i');
-      if (i !== null && i !== undefined) playIdx(parseInt(i, 10));
-    });
+    if (!row._bound) {   // v1.9.3 — re-render par duplicate listeners nahi
+      row._bound = 1;
+      row.addEventListener('click', function (ev) {
+        var i = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-i');
+        if (i !== null && i !== undefined) playIdx(parseInt(i, 10));
+      });
+    }
   }
-  // list rows
+  // list rows — UI cap 15 (queue unlimited hai, par home screen lamba nahi)
   var el = document.getElementById('songList');
   if (!el) return;
   var html = '';
-  for (var i = 0; i < MQ.list.length; i++) {
+  for (var i = 0; i < MQ.list.length && i < 15; i++) {
     (function (idx) {
       var s = MQ.list[idx];
       html += '<div class="mrow" data-i="' + idx + '">' +
@@ -1166,10 +1226,13 @@ function renderMusic() {
     })(i);
   }
   el.innerHTML = html;
-  el.addEventListener('click', function (ev) {
-    var r = ev.target.closest('.mrow');
-    if (r) playIdx(parseInt(r.getAttribute('data-i'), 10));
-  });
+  if (!el._bound) {   // v1.9.3 — duplicate listeners nahi (musicMore re-render)
+    el._bound = 1;
+    el.addEventListener('click', function (ev) {
+      var r = ev.target.closest('.mrow');
+      if (r) playIdx(parseInt(r.getAttribute('data-i'), 10));
+    });
+  }
 }
 function ensureAudio() {
   if (!MQ.audio) {
@@ -1184,8 +1247,9 @@ function ensureAudio() {
 function playIdx(i, silent) {
   try {
     if (!MQ.list.length) return;
-    // SKIP-CAP — poori list try ho gayi to ruk jao (recursion ka the end)
-    if (MQ.skips >= MQ.list.length) {
+    // SKIP-CAP — poori list try ho gayi to ruk jao (recursion ka the end);
+    // v1.9.3: unlimited queue me cap 20 (bade queue me 20 tries kaafi)
+    if (MQ.skips >= Math.min(MQ.list.length, 20)) {
       MQ.skips = 0;
       MQ.playing = false;
       MQ.idx = -1;   // v1.9.2 — honest UI: fake 'Now playing' nahi dikhega
@@ -1233,6 +1297,9 @@ function playIdx(i, silent) {
     MQ.playing = true;
     saveMusicPlayed(s);
     updMusicUi();
+    // v1.9.3 UNLIMITED — end ke 3 gaane pehle hi agla batch fetch (car play:
+    // ek ke baad ek naye gaane, repeat kabhi nahi)
+    if (MQ.idx >= MQ.list.length - 3) { try { musicMore(); } catch (e4) {} }
   } catch (e) {
     // LAST RESORT — koi bhi JS error ho, app/page kabhi na mare
     MQ.playing = false;
@@ -1277,6 +1344,8 @@ setTimeout(buildMusic, 250);   // newtab render pehle — feed phir (UI never bl
 // (D) AUTO-SLIDE — 12-card window seamless loop, touch par 4s pause.
 var YT = { pool: [], built: false, batches: 0, raf: 0, anchor: 0, lastT: 0, resumeT: 0 };
 var YT_BATCH = 12;        // auto-loop window (user: "10-12 slide ho uske baad repeat")
+var YT_SPEED = 0.12;      // v1.9.3 px/ms — user: "slide speed bahut zyada hai, dhira karo"
+                          // (pehle 0.3 = ~1.4 card/sec, ab ~0.55 card/sec — calm glide)
 var YT_MAX_BATCHES = 22;  // DOM cap 264 cards — images lazy (memory safe)
 var YT_CHANNELS = [
   'UCq-Fj5jknLsUf-MWSy4_brA',   // T-Series (music)
@@ -1508,7 +1577,7 @@ function ytTick(ts) {
   if (YT.lastT) {
     var bw = ytBatchW();
     if (bw > 0) {
-      var x = w.scrollLeft + 0.3 * (ts - YT.lastT);   // ~0.3 px/ms — dheema slide
+      var x = w.scrollLeft + YT_SPEED * (ts - YT.lastT);   // 0.12 px/ms — v1.9.3 slow glide
       if (x >= YT.anchor + bw) x -= bw;               // SEAM jump — same pixels
       w.scrollLeft = x;
       if (x > w.scrollWidth - w.clientWidth * 2) ytAppendBatch();   // end-refill
