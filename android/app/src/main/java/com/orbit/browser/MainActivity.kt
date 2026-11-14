@@ -1439,16 +1439,43 @@ class MainActivity : Activity() {
 
         /** JioSaavn encrypted_media_url → playable https URL. DES/ECB key = JioSaavn
          *  web player ka public constant (saare open-source saavn tools yahi use
-         *  karte hai). http → https upgrade (mixed-content safe). */
+         *  karte hai). http → https upgrade (mixed-content safe).
+         *  v1.9.2 FIX — "Songs are unavailable" har song par: kuch Android providers
+         *  par ECB-mode Cipher.init me IvParameterSpec pass karne se
+         *  InvalidAlgorithmParameterException aati thi (runCatching = "" SAB songs =
+         *  skip-cap toast). (1) IV GAYA — ECB me IV hota hi nahi; (2) PKCS5 fail →
+         *  NoPadding + manual unpad fallback; (3) fail par Log.w — logcat me exact
+         *  reason; (4) JS side me bhi pure-DES fallback (newtab.html desDecryptJs) —
+         *  bridge crypto kabhi bhi total-fail ho to bhi music chalega. */
         @JavascriptInterface
         fun decryptMedia(enc: String): String = runCatching {
+            if (enc.isBlank()) return@runCatching ""
+            val data = android.util.Base64.decode(enc, android.util.Base64.DEFAULT)
+            val plain = runCatching { desEcbDecrypt(data, true) }.getOrElse { desEcbDecrypt(data, false) }
+            val s = String(plain, Charsets.UTF_8)
+            if (!s.startsWith("http")) {
+                android.util.Log.w("OrbitMusic", "decryptMedia: bad plaintext (${s.length} bytes)")
+                ""
+            } else s.replace("http://", "https://")
+        }.getOrElse {
+            android.util.Log.w("OrbitMusic", "decryptMedia failed: ${it.message}")
+            ""
+        }
+
+        /** DES-ECB single-shot decrypt. pkcs5=true → provider unpad kare; false →
+         *  NoPadding + manual PKCS5 strip (provider quirk ke against 2nd chance). */
+        private fun desEcbDecrypt(data: ByteArray, pkcs5: Boolean): ByteArray {
             val spec = javax.crypto.spec.DESKeySpec("38346591".toByteArray())
             val key = javax.crypto.SecretKeyFactory.getInstance("DES").generateSecret(spec)
-            val c = javax.crypto.Cipher.getInstance("DES/ECB/PKCS5Padding")
-            c.init(javax.crypto.Cipher.DECRYPT_MODE, key, javax.crypto.spec.IvParameterSpec(ByteArray(8)))
-            val data = android.util.Base64.decode(enc, android.util.Base64.DEFAULT)
-            String(c.doFinal(data)).replace("http://", "https://")
-        }.getOrDefault("")
+            val c = javax.crypto.Cipher.getInstance(if (pkcs5) "DES/ECB/PKCS5Padding" else "DES/ECB/NoPadding")
+            c.init(javax.crypto.Cipher.DECRYPT_MODE, key)
+            var out = c.doFinal(data)
+            if (!pkcs5 && out.isNotEmpty()) {
+                val pad = out[out.size - 1].toInt()
+                if (pad in 1..8 && out.size > pad) out = out.copyOfRange(0, out.size - pad)
+            }
+            return out
+        }
 
         /** Search bar mic — Google voice recognizer; result par seedha search. */
         @JavascriptInterface
