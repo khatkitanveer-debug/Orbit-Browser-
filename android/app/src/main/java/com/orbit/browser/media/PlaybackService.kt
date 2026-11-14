@@ -44,7 +44,10 @@ import com.orbit.browser.R
  */
 class PlaybackService : Service() {
 
-    private lateinit var session: MediaSessionCompat
+    // v1.9.1 — nullable: MediaSessionCompat init kabhi OEM par throw kare to
+    // service crash na ho (session gaya to sirf lockscreen controls nahi milenge,
+    // playback in-page normal chalegi — crash impossible).
+    private var session: MediaSessionCompat? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val main = Handler(Looper.getMainLooper())
 
@@ -63,26 +66,31 @@ class PlaybackService : Service() {
         super.onCreate()
         PlaybackCoordinator.attachService(this)
 
-        session = MediaSessionCompat(this, "OrbitPlayback").apply {
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() {
-                    PlaybackCoordinator.dispatchPlayPause(true)
-                    setPlaying(true)
-                }
+        // v1.9.1 HARDENING — poora MediaSession init runCatching me. Kisi bhi ROM
+        // par throw ho to session null rehta hai, service phir bhi startForeground
+        // karke zinda rehti hai (playback in-page chalti rahegi).
+        session = runCatching {
+            MediaSessionCompat(this, "OrbitPlayback").apply {
+                setCallback(object : MediaSessionCompat.Callback() {
+                    override fun onPlay() {
+                        PlaybackCoordinator.dispatchPlayPause(true)
+                        setPlaying(true)
+                    }
 
-                override fun onPause() {
-                    PlaybackCoordinator.dispatchPlayPause(false)
-                    setPlaying(false)
-                    scheduleResumeCheck()
-                }
+                    override fun onPause() {
+                        PlaybackCoordinator.dispatchPlayPause(false)
+                        setPlaying(false)
+                        scheduleResumeCheck()
+                    }
 
-                override fun onStop() {
-                    PlaybackCoordinator.dispatchPlayPause(false)
-                    stopSelf()
-                }
-            })
-            isActive = true
-        }
+                    override fun onStop() {
+                        PlaybackCoordinator.dispatchPlayPause(false)
+                        stopSelf()
+                    }
+                })
+                isActive = true
+            }
+        }.getOrNull()
         createChannel()
     }
 
@@ -109,7 +117,15 @@ class PlaybackService : Service() {
         intent?.getStringExtra(EXTRA_TITLE)?.let { if (it.isNotBlank()) title = it }
         intent?.getStringExtra(EXTRA_URL)?.let { if (it.isNotBlank()) url = it }
 
-        startInForeground()
+        // v1.9.1 CRITICAL — startForeground FAIL hua to stopSelf() ZAROORI hai.
+        // Warna system ka 5-second deadline "Context.startForegroundService() did
+        // not then call Service.startForeground()" RemoteServiceException deta hai
+        // = app crash. stopSelf() = system ko pata service khatam, koi crash nahi,
+        // playback in-page me chalti rahegi (notification sirf missing).
+        if (!startInForeground()) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         ensureWake()
         setPlaying(true)
         return START_NOT_STICKY
@@ -147,8 +163,11 @@ class PlaybackService : Service() {
         main.removeCallbacks(resumeChecker)
         abandonFocusAndWake()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        runCatching { session.isActive = false }
-        session.release()
+        runCatching {
+            session?.isActive = false
+            session?.release()
+        }
+        session = null
         PlaybackCoordinator.attachService(null)
         super.onDestroy()
     }
@@ -189,14 +208,19 @@ class PlaybackService : Service() {
                 .setState(PlaybackStateCompat.STATE_PAUSED, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 0f)
                 .build()
         }
-        session.setPlaybackState(state)
-        session.setMetadata(
-            MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title.ifBlank { "Orbit Browser" })
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Orbit Browser")
-                .build()
-        )
-        notifyCompat(buildNotification())
+        // v1.9.1 — session/notification sab runCatching me: koi bhi OEM quirk ho
+        // to playback khud kabhi crash na kare.
+        runCatching {
+            val s = session ?: return@runCatching
+            s.setPlaybackState(state)
+            s.setMetadata(
+                MediaMetadataCompat.Builder()
+                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title.ifBlank { "Orbit Browser" })
+                    .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Orbit Browser")
+                    .build()
+            )
+            notifyCompat(buildNotification())
+        }
     }
 
     /** Wake lock lazy-create + acquire (resume par bhi refresh hota hai). */
@@ -218,24 +242,23 @@ class PlaybackService : Service() {
 
     /* ------------------------------ notification ----------------------------- */
 
-    private fun startInForeground() {
-        // v1.9.0 HARDENING — startForeground OEM ROMs par edge-case throw kar sakta
-        // hai (Android 14 FGS policies / Moto quirks). Song play par CRASH na ho —
-        // fail hone par playback in-page hi chalti rehti hai (notification nahi).
-        runCatching {
-            val notification = buildNotification()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceCompat.startForeground(
-                    this,
-                    NOTIF_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-                )
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
+    /** v1.9.0+v1.9.1 — startForeground OEM ROMs par edge-case throw kar sakta hai
+     *  (Android 14 FGS policies / Moto quirks). Boolean return: fail = caller
+     *  stopSelf() kare (5s FGS deadline ka RemoteServiceException crash impossible). */
+    private fun startInForeground(): Boolean = runCatching {
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceCompat.startForeground(
+                this,
+                NOTIF_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+            )
+        } else {
+            startForeground(NOTIF_ID, notification)
         }
-    }
+        true
+    }.getOrDefault(false)
 
     private fun buildNotification(): Notification {
         val launch = packageManager
@@ -256,7 +279,7 @@ class PlaybackService : Service() {
         val toggleLabel = if (playing) "Pause" else "Play"
 
         val style = androidx.media.app.NotificationCompat.MediaStyle()
-            .setMediaSession(session.sessionToken)
+            .setMediaSession(session?.sessionToken)
             .setShowActionsInCompactView(0, 1)
 
         return NotificationCompat.Builder(this, CHANNEL_ID)

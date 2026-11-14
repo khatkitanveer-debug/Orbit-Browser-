@@ -435,6 +435,34 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------- survival mode
 
+    // v1.9.1 — OTA check pehle SIRF cold-start (onCreate) par tha: app memory me
+    // din-bhar reh gayi to naya update kabhi nahi milta, aur purane version ke
+    // bugs (jaise play-crash) user ko dikhte rahenge. Ab onResume par bhi check —
+    // 6h throttle (battery/network friendly), silent background me.
+    override fun onResume() {
+        super.onResume()
+        runCatching {
+            val last = LocalStore.getSetting(this, "lastOtaCheck", "0").toLongOrNull() ?: 0L
+            if (System.currentTimeMillis() - last > 6 * 60 * 60 * 1000L) {
+                LocalStore.setSetting(this, "lastOtaCheck", System.currentTimeMillis().toString())
+                runAutoUpdate(manual = false)
+            }
+        }
+    }
+
+    /** v1.9.1 — cache me downloaded VALID apk jiska versionCode > current hai?
+     *  (update banner + emergency-screen install button dono isko use karte hai).
+     *  null = koi pending update nahi. */
+    private fun pendingUpdateApk(): File? = runCatching {
+        val dir = File(cacheDir, "updates")
+        dir.listFiles()?.firstOrNull { f ->
+            val okName = f.name.startsWith("orbit-") && f.name.endsWith(".apk")
+            val info = runCatching { packageManager.getPackageArchiveInfo(f.absolutePath, 0) }.getOrNull()
+            okName && info != null && info.packageName == packageName &&
+                info.longVersionCode > BuildConfig.VERSION_CODE.toLong()
+        }
+    }.getOrNull()
+
     /** 100% PROGRAMMATIC crash-report screen — koi XML resource, koi WebView,
      *  koi lateinit field touch nahi hota, isliye YE SCREEN KABHI CRASH NAHI
      *  KAREGI. Dukh bhara "keeps stopping" band — ab app khud batayegi ki wajah
@@ -503,6 +531,22 @@ class MainActivity : Activity() {
             root.addView(trace, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f,
             ).apply { topMargin = dp(10); bottomMargin = dp(4) })
+
+            // v1.9.1 — naya version pehle se download ho chuka hai? To crash
+            // screen par hi "Install update" sabse UPAR dikhao — user ek tap me
+            // fixed version par ja sakta hai (yahi wo moment hai jab update
+            // sabse zyada zaroori hota hai).
+            pendingUpdateApk()?.let { apk ->
+                val vName = runCatching {
+                    packageManager.getPackageArchiveInfo(apk.absolutePath, 0)?.versionName ?: ""
+                }.getOrDefault("")
+                btn(
+                    "Install update v" + vName + " now — fixes this crash",
+                    0xFFFBBC05.toInt(), 0xFF101418.toInt(),
+                ) {
+                    runCatching { UpdateChecker.installWithStatus(this@MainActivity, apk) }
+                }
+            }
 
             btn("Copy report", 0xFF8AB4F8.toInt(), 0xFF101418.toInt()) {
                 runCatching {
@@ -1427,6 +1471,42 @@ class MainActivity : Activity() {
         /** Local news — user ka city (ip-api, 24h cache). Blank = abhi resolve nahi. */
         @JavascriptInterface
         fun cityFeed(): String = LocalStore.getSetting(this@MainActivity, "userCity", "")
+
+        // ---------------- v1.9.1 — update banner (home screen) ----------------
+
+        /** Naya version download ho chuka hai to JSON {name, apk} warna "".
+         *  Home page isse banner dikhata hai — system installer ka prompt user
+         *  miss kar jaye (cancel / Play Protect block) to bhi update INSTALL
+         *  hone tak har home-open par dikhta rahega. */
+        @JavascriptInterface
+        fun updatePending(): String = runCatching {
+            val apkFile = pendingUpdateApk()
+            if (apkFile == null) {
+                ""
+            } else {
+                val info = packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+                org.json.JSONObject()
+                    .put("name", info?.versionName ?: "")
+                    .put("apk", apkFile.absolutePath)
+                    .toString()
+            }
+        }.getOrDefault("")
+
+        /** Banner tap — downloaded APK par system installer kholo. Path guard:
+         *  sirf apne cache/updates folder ki .apk (hostile-page abuse impossible). */
+        @JavascriptInterface
+        fun installUpdate(path: String) {
+            runOnUiThread {
+                runCatching {
+                    val dir = File(cacheDir, "updates").canonicalPath
+                    val p = File(path).canonicalPath
+                    if (p.startsWith(dir) && p.endsWith(".apk")) {
+                        val f = File(p)
+                        if (f.exists()) UpdateChecker.installWithStatus(this@MainActivity, f)
+                    }
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------------- lens scanner
