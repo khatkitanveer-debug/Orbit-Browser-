@@ -1,7 +1,7 @@
 {
-  "versionCode": 39,
-  "versionName": "1.9.3",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.3/orbit-browser-1.9.3.apk",
-  "notes": "v1.9.3 — UNLIMITED SONGS + SLOW YT SLIDE: (1) Songs ab khatam nahi honge — 55 se start, jaise-jaise chalenge utne naye related gaane apne aap queue me aayenge (aapke sune gaano ke artist/album se related). Ek bhi gaana repeat nahi hoga. Car me bhi poori trip ek ke baad ek naye gaane. (2) YouTube For-You slide ki speed 60% slow kar di — ab calm glide. versionCode 39",
+  "versionCode": 40,
+  "versionName": "1.9.4",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.4/orbit-browser-1.9.4.apk",
+  "notes": "v1.9.4 — CHROME-STYLE SETTINGS: Settings page is now fully section-wise like Chrome. Main page shows a 'Search settings' bar with live filtering plus grouped departments (Basics: Search engine, Privacy and security, VPN, Default browser, Sign in & sync; Advanced: Site settings, Tabs, Notifications; About). Tap any department to open its own sub-page with back navigation — all detailed options live inside, exactly like Chrome. All existing toggle behaviors preserved. versionCode 40",
   "minVersionCode": 1
 }
