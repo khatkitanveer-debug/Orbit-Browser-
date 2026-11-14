@@ -1,7 +1,7 @@
 {
-  "versionCode": 37,
-  "versionName": "1.9.1",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.1/orbit-browser-1.9.1.apk",
-  "notes": "v1.9.1 \u2014 UPDATE DELIVERY FIX: (1) Agar koi update download ho chuka hai par install nahi hua to ab home screen par banner dikhega \u2014 tap Install karke update hamesha poori tarah install hoga. (2) App chalti rahe to bhi har 6 ghante me naya update check hota hai. (3) Crash screen par bhi seedha 'Install update' button. (4) Songs play karne par notification wali service aur bhi strong \u2014 purane version ka play-crash ab kisi bhi phone par possible nahi. versionCode 37",
+  "versionCode": 38,
+  "versionName": "1.9.2",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.2/orbit-browser-1.9.2.apk",
+  "notes": "v1.9.2 — SONGS UNAVAILABLE FIX: (1) Songs ab 2 tarah se play honge — agar device ka decrypt fail ho to app ke andar hi JS decrypt fallback chalta hai, isliye 'Songs are unavailable' toast ab kisi bhi phone par nahi aayega. (2) Gaane ke beech stream fail ho to agla gaana khud chal jata hai (pehle yahan atak jata tha). (3) Decrypt fail hone ka reason ab log me save hota hai. versionCode 38",
   "minVersionCode": 1
 }
