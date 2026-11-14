@@ -4,7 +4,7 @@
     <color name="orbit_surface">#0A0A0B</color>
     <color name="orbit_white">#FFFFFF</color>
     <color name="orbit_hint">#9E9E9E</color>
-    <color name="orbit_icon_bg">#FFFFFF</color>
+    <color name="orbit_icon_bg">#0A0A0B</color>
 
     <!-- Chrome dark palette (v1.1.0 Chrome overhaul) -->
     <color name="chrome_bg">#202124</color>

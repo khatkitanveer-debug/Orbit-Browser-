@@ -71,8 +71,8 @@ android {
         applicationId = "com.orbit.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41 // v1.9.5 — Chrome-inspired launcher icon
-        versionName = "1.9.5"
+        versionCode = 42 // v1.9.6 — Orbit original logo restore
+        versionName = "1.9.6"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 
