@@ -1,6 +1,7 @@
 package com.orbit.browser.render
 
 import android.content.Context
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.WebView
 
@@ -22,6 +23,21 @@ import android.webkit.WebView
  * hain — process zinda + CPU awake; ab renderer bhi hidden nahi hoga.)
  */
 class BackgroundWebView(context: Context) : WebView(context) {
+
+    /**
+     * v1.9.4 — UC "Swipe Forward&Backward" edge gesture hook.
+     * MainActivity isse apna edge-swipe detector wire karta hai (screen ke
+     * kinare se swipe = back/forward + arrow hint). true = event consume,
+     * false/null = WebView ko normal touch flow (scroll) chalne do.
+     */
+    @Volatile
+    var orbitEdgeGesture: ((MotionEvent) -> Boolean)? = null
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        val hook = orbitEdgeGesture
+        if (hook != null && hook(event)) return true
+        return super.onTouchEvent(event)
+    }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
         // Real visibility GONE/INVISIBLE aaye to bhi VISIBLE report karo —

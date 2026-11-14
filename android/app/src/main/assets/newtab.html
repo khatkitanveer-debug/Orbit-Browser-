@@ -176,13 +176,13 @@
   .scbox { margin-top: 0; max-width: 600px; width: 100%; flex-shrink: 0;
            border: 1px solid rgba(255,255,255,.09); border-radius: 22px;
            background: rgba(255,255,255,.03); padding: 12px 4px 6px; }
-  /* shortcuts — EK BOX me, horizontal SLIDE, snap scroll, + last me */
-  .shortcuts { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 14px;
-               width: 100%; max-width: 600px; scroll-snap-type: x mandatory;
-               -webkit-overflow-scrolling: touch; scrollbar-width: none;
-               padding: 2px 10px 8px; }
+  /* ---- shortcuts — v1.9.4 UC 2x5 SPEED DIAL GRID: 5 col x 2 rows, squircle
+     tiles (screenshot parity). Pehle horizontal slide tha — ab UC grid. */
+  .shortcuts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px 2px;
+               width: 100%; max-width: 600px; scrollbar-width: none;
+               padding: 4px 8px 8px; justify-items: center; }
   .shortcuts::-webkit-scrollbar { display: none; }
-  .shortcuts .sc { scroll-snap-align: start; flex-shrink: 0; }
+  .shortcuts .sc { flex-shrink: 0; }
   .sc { display: flex; flex-direction: column; align-items: center; width: 72px;
         background: transparent; border: 0; cursor: pointer; padding: 0; font-family: inherit;
         position: relative; }
@@ -197,6 +197,39 @@
   .sc .l { margin-top: 8px; font-size: 12.5px; color: #e8eaed; max-width: 72px;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sc.add .c { border: 1.5px dashed #5f6368; background: transparent; }
+
+  /* ---- v1.9.4 — "More" sheet: extra tiles (user + visited) ka full list ---- */
+  .ovl.more { z-index: 60; }
+  .more-sheet { width: 100%; max-width: 400px; background: #26282c; border-radius: 18px;
+                padding: 16px 14px 12px; box-shadow: 0 10px 34px rgba(0,0,0,.55);
+                max-height: 62vh; overflow-y: auto; }
+  .more-sheet h3 { font-size: 15px; color: #e8eaed; margin-bottom: 12px; font-weight: 600; }
+  .more-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 2px; justify-items: center; }
+  .more-sheet .close { width: 100%; margin-top: 14px; height: 42px; border-radius: 21px;
+                       border: 0; background: #3c4043; color: #e8eaed; font-size: 14px;
+                       font-family: inherit; cursor: pointer; }
+
+  /* ---- v1.9.4 — Customized Banner strip (search bar ke niche) ---- */
+  #orbitBanner { display: none; width: 100%; max-width: 560px; margin: 12px auto 0;
+                 padding: 9px 16px; border-radius: 12px; background: rgba(138,180,248,.10);
+                 border: 1px solid rgba(138,180,248,.25); color: #8ab4f8; font-size: 13.5px;
+                 text-align: center; font-weight: 500; }
+  #orbitBanner.on { display: block; }
+
+  /* ---- v1.9.4 — THEMES: AMOLED Black + custom wallpaper (themePush JS se) ---- */
+  body.amoled { background: #000000; }
+  body.amoled .bar { background: #0e0e10; }
+  body.amoled .bar:focus-within { background: #17181a; }
+  body.amoled .scbox { background: rgba(255,255,255,.02); }
+  body.amoled .sc .c { background: #101113; border-color: rgba(255,255,255,.06); }
+  body.amoled .card { background: #0e0e10; }
+  body.wallpaper { background-color: #1a1a1d; background-size: cover; background-position: center;
+                   background-repeat: no-repeat; }
+  body.wallpaper::before { content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.52);
+                           pointer-events: none; z-index: 0; }
+  body.wallpaper .wrap { position: relative; z-index: 1; }
+  body.wallpaper .bar, body.wallpaper .sc .c { background: rgba(32,33,36,.88);
+                                               backdrop-filter: blur(8px); }
 
   /* v1.4.0 — long-press remove: floating × badge on the tile (Brave/Chrome style) */
   .sc .rm-x { position: absolute; top: -7px; right: -1px; width: 24px; height: 24px;
@@ -406,6 +439,9 @@
     </button>
   </div>
 
+  <!-- v1.9.4 — Customized Banner strip (Customized Banner setting se) -->
+  <div id="orbitBanner"></div>
+
   <!-- v1.7.0 — SARE CARDS EK BADE BOX ke andar; "+" tile render me hamesha LAST -->
   <div class="scbox">
     <div class="shortcuts" id="grid"></div>
@@ -613,23 +649,38 @@ function renderEngList() {
   renderEngBtn();
 })();
 
-// ==================== SHORTCUTS ENGINE v1.3.5 ====================
-// Fix (user request): default tiles sirf JioSaavn + YouTube. "+" tile se
-// user apna shortcut add kar sakta hai (localStorage me save). Zyada-visit
-// wali sites AUTO tiles ban jaati hain (local history se, 100% on-device).
-// Purana Discover links-section hataya — wo "page end me links" lagta tha.
+// ==================== SHORTCUTS ENGINE v1.9.4 (UC 2x5 SPEED DIAL) ====================
+// UC Browser jaisa 2-row x 5-col grid: 8 brand tiles + More + Add sites.
+// User-added shortcuts + most-visited sites "More" sheet me rehte hai (grid
+// kabhi overload nahi hota). Long-press remove pehle jaisa (More sheet me bhi).
 (function () {
   var LS_SC = "orbit_sc", LS_HI = "orbit_hidden";
   var MAX_USER = 12, MAX_AUTO = 4;
+  var GRID_SLOTS = 8;   // 2x5 grid me 8 brand/default slots + More + Add = 10
 
-  var JIOSAAVN_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="13" fill="#2BB24C"/><path d="M8 18c2.2-1.2 2.3-5.6 4.4-7.1M13.5 19.5c2.3-1.5 2.2-7 4.7-8.7" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+  function mono(letter, bg, fg) {
+    return '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="9" fill="' + bg + '"/><text x="14" y="19" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="14" font-weight="700" fill="' + fg + '">' + letter + '</text></svg>';
+  }
   var YT_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="5.5" width="26" height="17" rx="4.5" fill="#FF0000"/><path d="M11.6 9.8l6.8 4.2-6.8 4.2z" fill="#fff"/></svg>';
+  var X_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="9" fill="#000"/><path d="M7 7l14 14M21 7L7 21" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>';
+  var IG_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="9" fill="url(#igg)"/><defs><linearGradient id="igg" x1="0" y1="28" x2="28" y2="0"><stop offset="0" stop-color="#F58529"/><stop offset=".5" stop-color="#DD2A7B"/><stop offset="1" stop-color="#8134AF"/></linearGradient></defs><rect x="7.5" y="7.5" width="13" height="13" rx="4.5" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="14" cy="14" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="18.3" cy="9.8" r="1.1" fill="#fff"/></svg>';
+  var WA_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="9" fill="#25D366"/><path d="M9.5 8.5c3-3 8.5-1.5 8.5 3 0 3.4-3 5-5.5 4.5l-3.5 2 1-3c-2-2.5-2-5 .5-6.5z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>';
   var PLUS_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="#9aa0a6" stroke-width="2" stroke-linecap="round" fill="none"/></svg>';
   var MUSIC_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="13" fill="#1e3a5f"/><path d="M11.4 19.3V9.6l7.2-1.7v8.2" stroke="#8ab4f8" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.7" cy="19.4" r="1.9" fill="#8ab4f8"/><circle cx="16.9" cy="16.2" r="1.9" fill="#8ab4f8"/></svg>';
+  var MORE_SVG = '<svg viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="2" width="10" height="10" rx="3" fill="#8ab4f8"/><rect x="16" y="2" width="10" height="10" rx="3" fill="#81c995"/><rect x="2" y="16" width="10" height="10" rx="3" fill="#fdd663"/><rect x="16" y="16" width="10" height="10" rx="3" fill="#f28b82"/></svg>';
 
+  // v1.9.4 — UC-grid brand defaults (2 rows ke pehle 4-4 tiles). UC ke apne
+  // partner tiles (HotChat/Playmigo/FreeStory/Lucky Spin) real services nahi —
+  // wahan REAL popular sites: letter-monogram squircle icons.
   var DEFAULTS = [
-    { n: "JioSaavn", u: "https://www.jiosaavn.com/", svg: JIOSAAVN_SVG },
-    { n: "YouTube",  u: "https://www.youtube.com/",  svg: YT_SVG }
+    { n: "Google",    u: "https://www.google.com/",  svg: mono("G", "#ffffff", "#1a73e8") },
+    { n: "YouTube",   u: "https://www.youtube.com/", svg: YT_SVG },
+    { n: "X",         u: "https://x.com/",           svg: X_SVG },
+    { n: "Instagram", u: "https://www.instagram.com/", svg: IG_SVG },
+    { n: "WhatsApp",  u: "https://web.whatsapp.com/",  svg: WA_SVG },
+    { n: "Facebook",  u: "https://www.facebook.com/",  svg: mono("f", "#1877F2", "#ffffff") },
+    { n: "Amazon",    u: "https://www.amazon.in/",     svg: mono("a", "#FF9900", "#131921") },
+    { n: "Flipkart",  u: "https://www.flipkart.com/",  svg: mono("F", "#2874F0", "#ffe11b") }
   ];
   // in hosts ke auto-tiles/chips nahi banenge (already default/known)
 
@@ -726,6 +777,9 @@ function renderEngList() {
 
     if (mode === "plus") {
       btn.addEventListener("click", openDlg);
+    } else if (mode === "more") {
+      // v1.9.4 — More tile: extras sheet khulta hai (koi remove-badge nahi)
+      btn.addEventListener("click", function () { showMoreSheet(lastExtras); });
     } else {
       // v1.4.0 — long-press (480ms) = tile par red × badge (remove/hide).
       // × tap = remove; dobara tap ya 4s baad badge khud gayab.
@@ -790,15 +844,86 @@ function renderEngList() {
     return visitedSites(MAX_AUTO);
   }
 
-  // ---------- render ----------
+  // ---------- render (v1.9.4 UC 2x5: 8 slots + More + Add, extra tiles More me) ----------
+  var lastExtras = [];  // render me barta hua — More tile isi ko dikhata hai
+
+  function tileForSheet(o, mode, host) {
+    // More-sheet ke andar ka tile (same look, sheet-scoped remove logic)
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "sc";
+    if (mode === "plus") btn.classList.add("add");
+    var c = document.createElement("span"); c.className = "c";
+    var l = document.createElement("span"); l.className = "l"; l.textContent = o.n;
+    if (o.svg) { c.innerHTML = o.svg; }
+    else {
+      var img = document.createElement("img");
+      img.className = "fav"; img.alt = "";
+      img.addEventListener("load", function () { img.style.display = "block"; });
+      img.addEventListener("error", function () {
+        img.style.display = "none";
+        if (!c.querySelector(".lt")) {
+          var t = document.createElement("span"); t.className = "lt";
+          t.textContent = (o.n || "?").charAt(0).toUpperCase();
+          c.appendChild(t);
+        }
+      });
+      img.style.display = "none";
+      img.src = "https://www.google.com/s2/favicons?sz=64&domain=" + encodeURIComponent(hostOf(o.u) || o.u);
+      c.appendChild(img);
+    }
+    btn.appendChild(c); btn.appendChild(l);
+    btn.addEventListener("click", function () { host.classList.remove("on"); nav(o.u, false); });
+    return btn;
+  }
+
+  function showMoreSheet(extras) {
+    var old = document.getElementById("moreOvl");
+    if (old) old.remove();
+    var ovl = document.createElement("div");
+    ovl.className = "ovl more"; ovl.id = "moreOvl";
+    ovl.addEventListener("click", function (ev) { if (ev.target === ovl) ovl.remove(); });
+    var sheet = document.createElement("div"); sheet.className = "more-sheet";
+    var h = document.createElement("h3"); h.textContent = "All shortcuts";
+    sheet.appendChild(h);
+    var g = document.createElement("div"); g.className = "more-grid";
+    if (!extras.length) {
+      var e = document.createElement("div");
+      e.style.cssText = "grid-column:1/-1;color:#9aa0a6;font-size:12.5px;text-align:center;padding:14px 6px";
+      e.textContent = "Add sites with the + tile — they will appear here.";
+      g.appendChild(e);
+    }
+    extras.forEach(function (x) { g.appendChild(tileForSheet(x.o, x.mode, ovl)); });
+    sheet.appendChild(g);
+    var close = document.createElement("button");
+    close.type = "button"; close.className = "close"; close.textContent = "Cancel";
+    close.addEventListener("click", function () { ovl.remove(); });
+    sheet.appendChild(close);
+    ovl.appendChild(sheet);
+    document.body.appendChild(ovl);
+  }
+
   function render() {
     grid.innerHTML = "";
-    for (var i = 0; i < DEFAULTS.length; i++) addTile(DEFAULTS[i], "default");
+    var slots = [];
+    for (var i = 0; i < DEFAULTS.length && slots.length < GRID_SLOTS; i++)
+      slots.push({ o: DEFAULTS[i], mode: "default" });
     var us = userSc();
-    for (var j = 0; j < us.length; j++) addTile({ n: us[j].n, u: us[j].u }, "user");
+    var extras = [];
+    for (var j = 0; j < us.length; j++) {
+      var uo = { n: us[j].n, u: us[j].u };
+      if (slots.length < GRID_SLOTS) slots.push({ o: uo, mode: "user" });
+      else extras.push({ o: uo, mode: "user" });
+    }
     var au = autoList();
-    for (var k = 0; k < au.length; k++) addTile(au[k], "auto");
-    // v1.6.0 — "+" tile hamesha SABSE LAST (user request: bich me nahi)
+    for (var k = 0; k < au.length; k++) {
+      if (slots.length < GRID_SLOTS) slots.push({ o: au[k], mode: "auto" });
+      else extras.push({ o: au[k], mode: "auto" });
+    }
+    slots.forEach(function (s) { addTile(s.o, s.mode); });
+    // v1.9.4 — More tile: extras sheet (UC ka 2x2 mini-grid icon)
+    lastExtras = extras;
+    addTile({ n: "More", u: null, svg: MORE_SVG }, "more");
+    // v1.6.0 — "+" (Add sites) tile hamesha LAST
     addTile({ n: "Add", u: null, svg: PLUS_SVG }, "plus");
   }
 
@@ -1922,6 +2047,46 @@ window.spiderPush = function (j) {
     if (incognitoOn) incognitoStatus();
     else if (on) spiderInfo();
   }, 3000);
+})();
+
+// ==================== v1.9.4 UC THEME + BANNER BRIDGE ====================
+// Native Settings (Themes / Customized Banner) inko evaluateJavascript se
+// call karta hai. Boot par bhi saved values apply hoti hai (bridge se read).
+function themePush(mode, wallpaperData) {
+  try {
+    document.body.classList.remove('amoled', 'wallpaper');
+    if (mode === 'amoled') {
+      document.body.classList.add('amoled');
+    } else if (mode === 'wallpaper') {
+      document.body.classList.add('wallpaper');
+      var wp = wallpaperData || '';
+      try {
+        if (!wp) wp = (OrbitBridge.getSetting('wallpaper', '') || '');
+      } catch (e2) {}
+      if (wp) document.body.style.backgroundImage = 'url("' + wp + '")';
+    }
+  } catch (e) {}
+}
+function bannerPush(text, on) {
+  try {
+    var b = document.getElementById('orbitBanner');
+    if (!b) return;
+    if (on) {
+      b.textContent = text || 'Welcome to Orbit Browser';
+      b.classList.add('on');
+    } else {
+      b.classList.remove('on');
+    }
+  } catch (e) {}
+}
+(function () {
+  // boot — saved theme + banner (bridge settings se; shared-home reload par
+  // bhi state waise ka waisa milta hai)
+  try { themePush(OrbitBridge.getSetting('appTheme', 'dark')); } catch (e) {}
+  try {
+    var bShow = OrbitBridge.getSetting('bannerOn', 'off') === 'on';
+    if (bShow) bannerPush(OrbitBridge.getSetting('bannerText', 'Welcome to Orbit Browser'), true);
+  } catch (e2) {}
 })();
 </script>
 </body>

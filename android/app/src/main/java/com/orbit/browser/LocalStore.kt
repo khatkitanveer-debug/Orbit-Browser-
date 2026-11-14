@@ -232,4 +232,24 @@ object LocalStore {
         obj.put(key, value)
         f.writeText(obj.toString())
     }
+
+    /** v1.9.4 — Reset to Default (UC parity): saare app settings factory reset.
+     *  History/bookmarks/downloads data files TOUCH NAHI hote — sirf settings. */
+    fun clearAllSettings(ctx: Context) {
+        settingsCache.clear()
+        runCatching { file(ctx, "settings.json").delete() }
+    }
+
+    /** v1.9.4 — ek specific setting ka clear (toggle default par wapas). */
+    fun removeSetting(ctx: Context, key: String) {
+        settingsCache.remove(key)
+        val f = file(ctx, "settings.json")
+        runCatching {
+            if (f.exists()) {
+                val obj = runCatching { JSONObject(f.readText()) }.getOrDefault(JSONObject())
+                obj.remove(key)
+                f.writeText(obj.toString())
+            }
+        }
+    }
 }

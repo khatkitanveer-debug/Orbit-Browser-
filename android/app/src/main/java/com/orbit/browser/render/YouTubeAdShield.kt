@@ -156,24 +156,77 @@ object YouTubeAdShield {
                 { childList: true, subtree: true });
             } catch (e) { setInterval(sweep, 500); }
 
-            // ——— 5. v1.7.0 HARD KILL — video ad chal raha ho to skip button ka wait
-            // NAHI: player ka currentTime seedha ad ke END par pahuncha do (playback
-            // position jump — koi stream modification nahi, sirf seek). Overlay
-            // close button bhi auto-click. 200ms loop = ad dikhte hi gayab.
-            var hardKill = function () {
+            // ——— 5. v1.9.4 BLACK-SCREEN KILL — video ad aate hi TURANT khatam ———
+            // Pehle sirf currentTime seek tha — kuch players par seekable na hone
+            // se seek fail hota tha aur AD KA BLACK FRAME 15-30s tak dikh jata tha
+            // (user report: "ad dikhti nahi, black screen jab tak ad chale").
+            // Ab 4-layer kill + sound-restore + 120ms fast loop:
+            //   a) seekable.end (buffered jo hai uske END par — duration se SAFE)
+            //   b) player API seekTo (YouTube ka apna exposed API)
+            //   c) skip button ko PointerEvent + MouseEvent dono se fire
+            //      (kuch builds sirf synthetic pointer events ko maante hai)
+            //   d) ad khatam hote hi ORIGINAL video unmute + normal rate + play
+            //      (mute-state leak fix — "video mute ho gaya" bug)
+            var adWasKilled = false;
+            var fireEvents = function (el) {
               try {
-                var p = document.querySelector('.html5-video-player.ad-showing video');
-                if (p && p.duration && isFinite(p.duration)) {
-                  try { p.muted = true; p.playbackRate = 16; } catch (e2) {}
-                  try { p.currentTime = p.duration - 0.05; } catch (e3) {}
-                }
-                var sk = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-container button');
-                for (var i = 0; i < sk.length; i++) sk[i].click();
-                var oc = document.querySelector('.ytp-ad-overlay-close-button');
-                if (oc) oc.click();
+                var opts = { bubbles: true, cancelable: true, view: window };
+                try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (e1) {}
+                try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (e2) {}
+                try { el.dispatchEvent(new MouseEvent('mousedown', opts)); } catch (e3) {}
+                try { el.dispatchEvent(new MouseEvent('mouseup', opts)); } catch (e4) {}
+                try { el.dispatchEvent(new MouseEvent('click', opts)); } catch (e5) {}
               } catch (e) {}
             };
-            setInterval(hardKill, 200);
+            var hardKill = function () {
+              try {
+                var pl = document.querySelector('.html5-video-player.ad-showing');
+                if (pl) {
+                  adWasKilled = true;
+                  var p = pl.querySelector('video');
+                  if (p) {
+                    try { p.muted = true; } catch (e2) {}
+                    try { p.playbackRate = 16; } catch (e2) {}
+                    var end = 0;
+                    try {
+                      if (p.seekable && p.seekable.length) {
+                        end = p.seekable.end(p.seekable.length - 1);
+                      }
+                    } catch (e4) {}
+                    if (!end || !isFinite(end)) {
+                      try { if (p.duration && isFinite(p.duration)) end = p.duration; } catch (e5) {}
+                    }
+                    if (end && isFinite(end) && end > 0) {
+                      try { p.currentTime = Math.max(0, end - 0.05); } catch (e3) {}
+                    }
+                    try { if (p.paused) { p.play(); } } catch (e6) {}
+                  }
+                  try {
+                    var mp = document.getElementById('movie_player');
+                    if (mp && typeof mp.seekTo === 'function') {
+                      mp.seekTo(typeof mp.getDuration === 'function' ? mp.getDuration() : 100000, true);
+                    }
+                  } catch (e7) {}
+                }
+                var sk = document.querySelectorAll(
+                  '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, ' +
+                  '.ytp-ad-skip-button-container button, .ytp-ad-skip-button-slot button');
+                for (var i = 0; i < sk.length; i++) fireEvents(sk[i]);
+                var oc = document.querySelector('.ytp-ad-overlay-close-button');
+                if (oc) fireEvents(oc);
+                // ad khatam → original video ki sound/rate RESTORE (mute-leak fix)
+                if (adWasKilled) {
+                  var orig = document.querySelector('.html5-video-player:not(.ad-showing) video');
+                  if (orig) {
+                    adWasKilled = false;
+                    try { orig.muted = false; } catch (e8) {}
+                    try { orig.playbackRate = 1; } catch (e9) {}
+                    try { if (orig.paused) orig.play(); } catch (e10) {}
+                  }
+                }
+              } catch (e) {}
+            };
+            setInterval(hardKill, 120);
           } catch (e) {}
         })();
     """.trimIndent()

@@ -49,6 +49,14 @@ object OrbitDownloader {
     private const val SEGMENTS = 4
     private const val BUFFER = 64 * 1024
 
+    // v1.9.4 — Download Settings wiring (UC parity):
+    //   maxConcurrent = "Max Downloads" (1-6) — extra tasks QUEUE hote hai
+    //   autoReconnect = interrupted task khud resume (6s baad)
+    //   relPath       = "Default Path" (Downloads/Pictures/Music/Movies/Documents)
+    @Volatile var maxConcurrent: Int = 3
+    @Volatile var autoReconnect: Boolean = true
+    @Volatile var relPath: String = Environment.DIRECTORY_DOWNLOADS
+
     /** Download ka live state — UI seedha isko padhta hai. */
     class Task internal constructor(
         val id: Long,
@@ -65,6 +73,7 @@ object OrbitDownloader {
         @Volatile var uri: String = ""  // final location (content:// ya file path)
         @Volatile var pauseReq = false
         @Volatile var cancelReq = false
+        @Volatile var queued = false   // v1.9.4 — Max Downloads queue se aaya
         internal var multiSeg = false
         internal val segs = mutableListOf<Seg>()
         internal lateinit var dir: File
@@ -119,6 +128,20 @@ object OrbitDownloader {
         val t = Task(nextId(), url, uniqueName(name), mime.ifBlank { "application/octet-stream" }, System.currentTimeMillis())
         t.dir = File(ctx.filesDir, "downloads/${t.id}").also { it.mkdirs() }
         tasks[t.id] = t
+        // v1.9.4 — Max Downloads: running tasks >= max ho to NAYA task QUEUE
+        // (PAUSED + queued flag). Ek task khatam hote hi resumeNextQueued().
+        val running = tasks.values.count { it.status == ST_RUNNING }
+        if (running >= maxConcurrent) {
+            t.status = ST_PAUSED
+            t.pauseReq = true
+            t.queued = true
+            persist(ctx, t)
+            notifyUi()
+            main.post {
+                Toast.makeText(ctx, "Queued — max $maxConcurrent downloads running", Toast.LENGTH_SHORT).show()
+            }
+            return t
+        }
         persist(ctx, t)
         notifyUi()
         Thread { runCatching { probe(ctx, t) } }
@@ -335,7 +358,8 @@ object OrbitDownloader {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, t.name)
                     put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    // v1.9.4 — Default Path setting (Download Settings se)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relPath)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -348,7 +372,7 @@ object OrbitDownloader {
                 }
                 location = uri.toString()
             } else {
-                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val dir = Environment.getExternalStoragePublicDirectory(relPath)
                 var out = File(dir, t.name)
                 if (out.exists()) {
                     val dot = t.name.lastIndexOf('.')
@@ -376,6 +400,16 @@ object OrbitDownloader {
             Toast.makeText(ctx, "Download complete: ${t.name}", Toast.LENGTH_SHORT).show()
             notifyUi()
         }
+        // v1.9.4 — ek slot khuli: queue ka agla task auto-start
+        resumeNextQueued(ctx)
+    }
+
+    /** v1.9.4 — Max Downloads queue: pehla PAUSED+queued task resume. */
+    private fun resumeNextQueued(ctx: Context) {
+        val next = tasks.values
+            .filter { it.status == ST_PAUSED && it.queued }
+            .minByOrNull { it.ts } ?: return
+        main.postDelayed({ runCatching { resume(ctx, next) } }, 400)
     }
 
     private fun fail(ctx: Context, t: Task, msg: String) {
@@ -385,6 +419,19 @@ object OrbitDownloader {
         main.post {
             Toast.makeText(ctx, "Download failed: ${t.name}", Toast.LENGTH_SHORT).show()
             notifyUi()
+        }
+        // v1.9.4 — Auto Reconnect (Download Settings): partial download thoda
+        // ruk kar khud resume try karo (network wapas aane par bhi pakad leta hai)
+        if (autoReconnect && t.received.get() > 0) {
+            main.postDelayed({
+                runCatching {
+                    val cur = tasks[t.id] ?: return@runCatching
+                    if (cur.status == ST_FAILED) {
+                        cur.status = ST_PAUSED
+                        resume(ctx, cur)
+                    }
+                }
+            }, 6000)
         }
     }
 
@@ -403,7 +450,10 @@ object OrbitDownloader {
 
     fun resume(ctx: Context, t: Task) {
         if (t.status != ST_PAUSED) return
+        val running = tasks.values.count { it.status == ST_RUNNING }
+        if (running >= maxConcurrent && t.queued) return  // queue slot khali nahi
         t.pauseReq = false
+        t.queued = false
         t.status = ST_RUNNING
         startWorkers(ctx, t)
         startTicker()

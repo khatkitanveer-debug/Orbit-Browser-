@@ -3,6 +3,7 @@ package com.orbit.browser
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -30,10 +31,16 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.PixelCopy
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.animation.AnimationUtils
 import android.view.animation.TranslateAnimation
 import okhttp3.OkHttpClient
@@ -45,6 +52,7 @@ import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -76,6 +84,8 @@ import com.orbit.browser.render.BackgroundWebView
 import com.orbit.browser.render.MediaWatchBootstrap
 import com.orbit.browser.render.ViewportBootstrap
 import com.orbit.browser.render.YouTubeAdShield
+import org.json.JSONArray
+import org.json.JSONObject as JObj
 import com.orbit.browser.sync.OrbitSync
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -113,6 +123,17 @@ class MainActivity : Activity() {
         var evicted: Boolean = false   // Opera RAM limiter — WebView destroy hua, select par recreate
         var lastActive: Long = System.currentTimeMillis()
     }
+
+    // v1.9.4 UC-BOOST — prewarmed WebView pool: naya tab ZERO lag (UC parity).
+    // Renderer process pehle se garam; adopt hote hi sirf clients+bridge bind.
+    private val webViewPool = ArrayDeque<WebView>()
+
+    // v1.9.4 — SHARED PERSISTENT HOME WebView (home-reload fix ka core).
+    // Har home visit par newtab.html RELOAD NAHI hota — music queue, YT For-You
+    // position, feed scroll state sab zinda rehte hai (UC/Chrome NTP parity).
+    // Incognito tab apna FRESH eclipse newtab use karta hai (isolation).
+    private var homeWebView: WebView? = null
+    private val homeTab = Tab(910_001L, NEWTAB, "Home")
 
     private val tabs = mutableListOf<Tab>()
     private var activeTab: Tab? = null
@@ -178,6 +199,19 @@ class MainActivity : Activity() {
 
     // EDGE MODULE — sleeping tabs ka timer
     private val sleeper = Handler(Looper.getMainLooper())
+
+    // v1.9.4 UC TOOLS — fullscreen video (YouTube landscape fix) state
+    private var fullscreenView: View? = null
+    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+
+    // v1.9.4 — brightness dim overlay (in-app, system brightness se independent)
+    private var brightnessOverlay: View? = null
+    // v1.9.4 — typing assistant quick-input bar (www. .com .in / arrows)
+    private var typingBar: LinearLayout? = null
+    // v1.9.4 — swipe gesture arrow overlay (edge-swipe back/forward feedback)
+    private var gestureHint: TextView? = null
+    // v1.9.4 — clipboard capture listener (app focus me copy → history)
+    private var clipHookInstalled = false
 
     // v1.7.0 — home feed fetcher (CORS-free): newtab ka saara feed network
     // (JioSaavn API / Google News RSS / YouTube RSS) NATIVE OkHttp se jata hai —
@@ -419,7 +453,9 @@ class MainActivity : Activity() {
         findViewById<ImageButton>(R.id.find_close).setOnClickListener { hideFindBar() }
 
         // pehla tab — clean new tab screen
-        newTab()
+        // v1.9.4 — Reopen Tabs on Startup (UC parity): pref ON ho to pichhli
+        // session ke tabs restore hote hai (naya tab ki jagah). OFF default.
+        if (!restoreTabsIfEnabled()) newTab()
         // EDGE MODULE — sleeping tabs: har 30s check, 5 min inactive WebViews freeze
         sleeper.postDelayed(sleepCheck, 30_000)
         // HOT-PATCH channel (Blinkit-style): chote-mote changes bina APK install
@@ -431,6 +467,39 @@ class MainActivity : Activity() {
         runAutoUpdate(manual = false)
         // v1.4.0 — VPN pref ON tha to background me wapas connect (silent)
         RelayEngine.autoRestore(this)
+
+        // ------------------------------------------------------------------
+        // v1.9.4 UC-BOOST + UC TOOLS init block
+        // ------------------------------------------------------------------
+        // FULL-PAGE capture enable — screenshot tool ka long-shot iske bina
+        // adhoora content hi pakadta hai (Chromium tile-only draw). Ek baar
+        // app start par set — WebView me har page ka poora raster milta hai.
+        runCatching { WebView.enableSlowWholeDocumentDraw() }
+        // POOL PREWARM — pehla extra renderer background me garam karo (2s delay:
+        // home pehle render ho jaye, tab switch instant ho jaye)
+        container.postDelayed({ prewarmWebView() }, 2000)
+        // BRIGHTNESS overlay — in-app dim (UC night browsing parity)
+        applyBrightnessPref()
+        // CLIPBOARD capture — app focus me copy hua content history me jata hai
+        installClipboardHook()
+        // TYPING ASSISTANT bar — omnibox focus par www./.com/.in quick input
+        setupTypingBar()
+        // UC-STYLE edge swipe back/forward arrow overlay (hint view ban jata hai)
+        setupGestureHint()
+        // JUST IN news alert timer (notification settings me se control hota hai)
+        scheduleJustInCheck()
+        // v1.9.4 — saved theme apply (AMOLED / wallpaper)
+        val savedTheme = LocalStore.getSetting(this, "appTheme", "dark")
+        if (savedTheme != "dark") runCatching { applyTheme(savedTheme) }
+        // v1.9.4 — Quick Access persistent notification (Push Notification pref)
+        runCatching { updateQuickAccessNotification() }
+        // v1.9.4 — Download Settings ko engine me wire (startup par)
+        OrbitDownloader.maxConcurrent =
+            LocalStore.getSetting(this, "maxDownloads", "3").toIntOrNull()?.coerceIn(1, 6) ?: 3
+        OrbitDownloader.autoReconnect = LocalStore.getSetting(this, "autoReconnect", "on") != "off"
+        OrbitDownloader.relPath = LocalStore.getSetting(this, "downloadPath", Environment.DIRECTORY_DOWNLOADS)
+        // v1.9.4 — Status bar pref (browsing me hide) startup par apply
+        runCatching { if (!showStatusBarPref()) enterImmersive() }
     }
 
     // ---------------------------------------------------------- survival mode
@@ -441,6 +510,8 @@ class MainActivity : Activity() {
     // 6h throttle (battery/network friendly), silent background me.
     override fun onResume() {
         super.onResume()
+        // v1.9.4 — Show Status Bar pref re-apply (fullscreen toggle ke baad bhi)
+        runCatching { if (!showStatusBarPref()) exitImmersive() }
         runCatching {
             val last = LocalStore.getSetting(this, "lastOtaCheck", "0").toLongOrNull() ?: 0L
             if (System.currentTimeMillis() - last > 6 * 60 * 60 * 1000L) {
@@ -448,6 +519,12 @@ class MainActivity : Activity() {
                 runAutoUpdate(manual = false)
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // v1.9.4 — Reopen Tabs on Startup: session tabs save (pref ON ho to)
+        runCatching { saveTabsForRestore() }
     }
 
     /** v1.9.1 — cache me downloaded VALID apk jiska versionCode > current hai?
@@ -594,6 +671,17 @@ class MainActivity : Activity() {
             return
         }
         menuPopup?.let { if (it.isShowing) { it.dismiss(); return } }
+        // v1.9.4 — fullscreen video me back = fullscreen exit (landscape wapas normal)
+        if (fullscreenView != null) {
+            activeTab?.webView?.post { runCatching { exitImmersive() } }
+            fullscreenView?.let { v -> (v.parent as? ViewGroup)?.removeView(v) }
+            fullscreenView = null
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            val cb = fullscreenCallback
+            fullscreenCallback = null
+            cb?.onCustomViewHidden()
+            return
+        }
         val wv = activeTab?.webView
         if (wv != null && wv.canGoBack()) {
             wv.goBack()
@@ -613,6 +701,8 @@ class MainActivity : Activity() {
         runCatching { suggestPopup?.dismiss() }
         runCatching { PlaybackCoordinator.stopAll() }
         runCatching { dropWarmTab() }   // v1.7.0 — warm prerender WebView bhi saaf
+        runCatching { drainWebViewPool() }  // v1.9.4 — pooled renderer saaf
+        runCatching { destroyHomeWebView() } // v1.9.4 — shared home WebView bhi saaf
         runCatching {
             for (tab in tabs) {
                 tab.webView?.apply {
@@ -631,6 +721,19 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         // emergency screen mode me init adhoora hai — external link ignore karo
         if (!this::container.isInitialized) return
+        // v1.9.4 — Quick Access notification actions (QR Scan / Downloads)
+        when (intent?.getStringExtra("quick")) {
+            "qr" -> {
+                intent.removeExtra("quick")
+                startLensScan()
+                return
+            }
+            "downloads" -> {
+                intent.removeExtra("quick")
+                showDownloadsPage()
+                return
+            }
+        }
         // Default browser ban gaya to external links yahan aate hain
         val data = intent?.data?.toString() ?: return
         if (data.startsWith("http")) newTabWithUrl(data)
@@ -684,12 +787,16 @@ class MainActivity : Activity() {
         val idx = tabs.indexOf(tab)
         if (idx < 0) return
         tabs.remove(tab)
-        // MODULE 3 — agar yahi tab media play kar raha tha to service band
-        PlaybackCoordinator.webViewDestroyed(tab.webView)
-        tab.webView?.apply {
-            stopLoading()
-            (parent as? ViewGroup)?.removeView(this)
-            destroy()
+        // v1.9.4 — SHARED HOME WebView guard: agar is tab ka view shared home hai
+        // to DESTROY na karo (music queue/feeds zinda rehte hai) — sirf unbind.
+        if (tab.webView !== homeWebView) {
+            // MODULE 3 — agar yahi tab media play kar raha tha to service band
+            PlaybackCoordinator.webViewDestroyed(tab.webView)
+            tab.webView?.apply {
+                stopLoading()
+                (parent as? ViewGroup)?.removeView(this)
+                destroy()
+            }
         }
         // NULL karna ZARURI hai — warna AI-stream/JS callbacks destroy hua WebView
         // use karke crash kar sakte hain
@@ -707,6 +814,11 @@ class MainActivity : Activity() {
             it.lastActive = System.currentTimeMillis()
             captureThumb(it)
         }
+        // v1.9.4 — HOME TAB: apna WebView banana hi nahi hai, SHARED home
+        // attach hota hai (zero reload, zero lag — state preserved)
+        if (tab.webView == null && tab.isInternal && tab.url == NEWTAB && !tab.isIncognito) {
+            tab.webView = ensureHomeWebView()
+        }
         if (tab.webView == null) {
             tab.webView = buildWebView(tab)
             // OPERA MODULE — evicted tab wapas aaya to URL dobara load (WebView fresh hai)
@@ -715,11 +827,27 @@ class MainActivity : Activity() {
                 if (!tab.isInternal && tab.url != NEWTAB) tab.webView?.loadUrl(tab.url)
             }
         }
-        // MODULE 3 v1.3.3 FIX — media chala raha WebView ko container se DETACH
-        // MAT karo! WebView detach = Chromium "page hidden" = audio/video pause.
-        // (Pehle removeAllViews() owner ko bhi nikaal deta tha — tab switch par
-        // YouTube ruk jata tha.) Ab owner attached rehta hai, active WebView
-        // uske UPAR add hota hai; wapas switch par owner phir top par aa jata hai.
+        attachTabView(tab)
+        activeTab = tab
+        tab.lastActive = System.currentTimeMillis()
+        // OPERA MODULE — RAM limit: sabse zyada purane inactive WebViews freeze/destroy
+        evictExcessTabs()
+        refreshChrome()
+        if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
+        // v1.9.4 — NEWTAB load sirf INCognito home par (uska apna fresh eclipse
+        // newtab hai). Non-incognito home SHARED webview use karta hai — RELOAD
+        // BILKUL NAHI (yahi home-reload fix hai: music/YT/feeds state preserved).
+        if (tab.isInternal && tab.url == NEWTAB && tab.isIncognito) {
+            loadInternal(tab, NEWTAB)
+        }
+    }
+
+    /**
+     * v1.9.4 — tab ka WebView container me attach (selectTab + navigate dono se).
+     * Pehle ye logic selectTab ke andar tha — navigate(home) par bhi chahiye hota hai.
+     * Media owner WebView ko DETACH NAHI karte (audio pause ho jayega — MODULE 3).
+     */
+    private fun attachTabView(tab: Tab) {
         val keepOwner = tabs.firstOrNull { it !== tab && PlaybackCoordinator.isMediaOwner(it.webView) }
             ?.webView?.takeIf { it.parent === container }
         for (i in container.childCount - 1 downTo 0) {
@@ -746,15 +874,6 @@ class MainActivity : Activity() {
                 it.onResume()
                 tab.sleeping = false
             }
-        }
-        activeTab = tab
-        tab.lastActive = System.currentTimeMillis()
-        // OPERA MODULE — RAM limit: sabse zyada purane inactive WebViews freeze/destroy
-        evictExcessTabs()
-        refreshChrome()
-        if (tabSwitcher.visibility == View.VISIBLE) renderSwitcherCards()
-        if (tab.isInternal && tab.url == NEWTAB) {
-            loadInternal(tab, NEWTAB)
         }
     }
 
@@ -852,11 +971,53 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun buildWebView(tab: Tab): WebView {
+        // v1.9.4 UC-BOOST — POOL ADOPT: prewarmed WebView turant ready hai
+        // (renderer process garam) — naya tab ZERO lag, UC parity.
+        val pooled = synchronized(webViewPool) { webViewPool.removeFirstOrNull() }
+        if (pooled != null) {
+            configureWebView(pooled, tab)
+            return pooled
+        }
         // MODULE 3 v1.3.3 — BackgroundWebView: Chromium ko screen-lock/app-
         // background par bhi VISIBLE batata hai. Plain WebView window visibility
         // GONE leke media pipeline suspend kar deta tha (asli pause-yahan-hota-hai
         // wala fix — dekho render/BackgroundWebView.kt).
         val wv = BackgroundWebView(this)
+        configureWebView(wv, tab)
+        return wv
+    }
+
+    /** v1.9.4 — pool refill: 1 extra garam renderer background me taiyar.
+     *  buildWebView ne adopt kiya to next tab ke liye dobara garam karte hai. */
+    private fun prewarmWebView() {
+        synchronized(webViewPool) {
+            if (webViewPool.isNotEmpty()) return
+            runCatching {
+                val wv = BackgroundWebView(this)
+                val poolTab = Tab(nextTabId++, "about:blank", "Pool")
+                poolTab.isInternal = false
+                configureWebView(wv, poolTab)
+                wv.loadUrl("about:blank")
+                webViewPool.addLast(wv)
+            }
+        }
+    }
+
+    /** v1.9.4 — pool ka stale WebView saaf (renderer crash / app exit par). */
+    private fun drainWebViewPool() {
+        synchronized(webViewPool) {
+            while (webViewPool.isNotEmpty()) {
+                val wv = webViewPool.removeFirst()
+                runCatching {
+                    (wv.parent as? ViewGroup)?.removeView(wv)
+                    wv.destroy()
+                }
+            }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun configureWebView(wv: WebView, tab: Tab) {
         wv.setBackgroundColor(0xFF202124.toInt())
         // v1.4.0 — Settings toggles ab LIVE apply hote hain (JavaScript/popups/cookies/images).
         // Internal pages (newtab) JS-ON force hote hain loadInternal() me.
@@ -865,11 +1026,17 @@ class MainActivity : Activity() {
         // GOOGLE SERVICES FIX: real WebView UA (engine version sach me match karta
         // hai) + third-party cookies + multiple windows — bina inke Google login,
         // search aur YouTube ke flows block/broken rehte the.
+        // v1.9.4 — Website Preferences (UA): Android / Desktop / iPhone / iPad
         wv.settings.userAgentString = when {
             tab.desktopSite -> DESKTOP_UA
             // SURVIVAL safe mode — bilkul vanilla UA, kuch bhi custom nahi
             safeMode -> runCatching { WebSettings.getDefaultUserAgent(this) }.getOrDefault(realUA)
-            else -> realUA
+            else -> when (uaMode()) {
+                "desktop" -> DESKTOP_UA
+                "iphone" -> IPHONE_UA
+                "ipad" -> IPAD_UA
+                else -> realUA
+            }
         }
         CookieManager.getInstance().setAcceptCookie(cookiesEnabledPref())
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, cookiesEnabledPref())
@@ -885,33 +1052,53 @@ class MainActivity : Activity() {
         // system font-scale ka respect ab Chrome jaisa. mediaPlaybackRequiresUserGesture
         // false — M3 ke lock-screen play/pause control JS ke liye zaroori.
         wv.settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
-        wv.settings.textZoom = (resources.configuration.fontScale * 100f).toInt().coerceIn(50, 250)
+        // v1.9.4 — Font & Layout setting (50-200% slider) override
+        wv.settings.textZoom = textZoomPref()
         wv.settings.mediaPlaybackRequiresUserGesture = !autoplayPref()
-        // MODULE 3 FIX (screen-lock playback) — Chromium apne MEDIA PIPELINE me
-        // video pause kar deta hai jab screen off / app background hoti hai. Ye
-        // page-JS visibility-lock se NAHI rukta (pipeline-level pause hai).
-        // Renderer ko IMPORTANT + whenVisible=false dene se WebView background
-        // me bhi media chalne deta hai — Chrome/JioSphere parity.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
-        }
+        // v1.9.4 UC-BOOST — RENDERER: background tab bhi render (smooth switch)
+        OrbitEngine.applyRendererPolicy(wv)
         wv.settings.databaseEnabled = true
-        wv.settings.loadsImagesAutomatically = imagesPref()
-        wv.settings.allowFileAccess = false
+        // v1.9.4 — Image Quality + Speed Mode (none/low/medium/high + speedMode)
+        val imagesAllowed = OrbitEngine.imagesAllowed(this, tab.isIncognito)
+        wv.settings.loadsImagesAutomatically = imagesAllowed
+        // v1.9.4 UC-BOOST — CACHE: LOAD_DEFAULT (HTTP cache + BFCache full use;
+        // UC ka "offline jaisa" instant repeat-load feel isi se aata hai)
+        wv.settings.cacheMode = OrbitEngine.cacheMode(tab.isIncognito)
+        // v1.9.4 — Save Page (MHTML) ko file:// se wapas kholne ke liye app-scoped
+        // file access on (sirf hamara apna archive path, UC Save Page parity)
+        wv.settings.allowFileAccess = true
+        // v1.9.4 — Forms & passwords pref (Always ask / Never save)
+        if (formsPasswordsPref() == "never") {
+            @Suppress("DEPRECATION")
+            wv.settings.saveFormData = false
+        }
         // MODULE 3 (background playback) — har WebView ka apna media sink.
-        // Document-start bootstrap: viewport (M1) + media-watch (M3) + fingerprint
-        // shield (agar on) SAB EK combined script me — addDocumentStartJavaScript
-        // har call par pichhle scripts REPLACE karta hai, isliye ek hi call.
+        // Document-start bootstrap: viewport (M1) + media-watch (M3) + ad shield
+        // + network hints + fingerprint shield SAB EK combined script me —
+        // addDocumentStartJavaScript har call par pichhle scripts REPLACE karta hai.
         wv.addJavascriptInterface(PlaybackSink(wv), "OrbitMediaSink")
         wv.addJavascriptInterface(Bridge(tab), "OrbitBridge")
         val bootstrapJs = buildString {
             append(ViewportBootstrap.SCRIPT)
             append("\n;")
             append(MediaWatchBootstrap.SCRIPT)
-            // v1.7.0 — HAMESHA ON (user demand: "koi bhi halat me YouTube ads
-            // nahi"). Shield YouTube-par-only hai, baaki sites par zero cost.
-            append("\n;")
-            append(YouTubeAdShield.SCRIPT)
+            // v1.9.4 — YouTube Ad Shield ab AD Setting se OFF bhi ho sakta hai
+            // (default ON — user demand: "koi bhi halat me YouTube ads nahi").
+            if (ytShieldEnabled()) {
+                append("\n;")
+                append(YouTubeAdShield.SCRIPT)
+            }
+            // v1.9.4 UC-BOOST — Cloud Boost: preconnect + touch-prefetch network
+            // hints (DNS/TLS handshake pehle, HTML approach-phase me warm)
+            if (!tab.isIncognito && OrbitEngine.boostActiveNow(this@MainActivity)) {
+                append("\n;")
+                append(OrbitEngine.NETWORK_HINTS_SCRIPT)
+            }
+            // v1.9.4 — Change Link Color If Clicked (visited-links purple)
+            if (visitedLinksPref()) {
+                append("\n;")
+                append(VISITED_LINKS_JS)
+            }
             if (antiFpEnabled()) {
                 // FIREFOX MODULE — anti-fingerprinting: canvas noise + hardware spoof
                 append("\n;")
@@ -923,15 +1110,11 @@ class MainActivity : Activity() {
         }
         // MODULE 4 (true incognito) — incognito tab ka WebView EPHEMERAL: koi HTTP
         // cache, koi DOM storage, koi third-party cookies. Normal tab pehle jaisa.
-        // v1.6.0 — images hamesha on (setting removed) + form data bhi save nahi hota.
         if (tab.isIncognito) {
-            wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE
             wv.settings.domStorageEnabled = false
             @Suppress("DEPRECATION")
             wv.settings.saveFormData = false
             CookieManager.getInstance().setAcceptThirdPartyCookies(wv, false)
-        } else {
-            wv.settings.loadsImagesAutomatically = true
         }
         wv.webViewClient = OrbitWebViewClient(tab)
         wv.webChromeClient = object : WebChromeClient() {
@@ -978,6 +1161,40 @@ class MainActivity : Activity() {
                 }.getOrDefault(false)
                 return ok
             }
+
+            // v1.9.4 — HTML5 FULLSCREEN (YOUTUBE LANDSCAPE FIX — user report:
+            // "YouTube me video landscape me nahi ho rahe hain"). YT fullscreen
+            // button → HTML5 fullscreen event → ye handler: poora screen video
+            // ka + LANDSCAPE LOCK + immersive. Exit par wapas portrait/normal.
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null || fullscreenView != null) {
+                    callback?.onCustomViewHidden()
+                    return
+                }
+                fullscreenView = view
+                fullscreenCallback = callback
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                hideKeyboard()
+                omnibox.clearFocus()
+                (findViewById<ViewGroup>(android.R.id.content)).addView(
+                    view,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                enterImmersive()
+            }
+
+            override fun onHideCustomView() {
+                fullscreenView?.let { v -> (v.parent as? ViewGroup)?.removeView(v) }
+                fullscreenView = null
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                exitImmersive()
+                val cb = fullscreenCallback
+                fullscreenCallback = null
+                cb?.onCustomViewHidden()
+            }
         }
         // find-in-page counts
         wv.setFindListener { ordinal, matches, done ->
@@ -992,7 +1209,8 @@ class MainActivity : Activity() {
         wv.setDownloadListener { url, _, contentDisposition, mimeType, _ ->
             handleDownload(url, contentDisposition, mimeType)
         }
-        return wv
+        // v1.9.4 — UC Swipe Forward&Backward edge gesture (setting ON ho to)
+        (wv as? BackgroundWebView)?.orbitEdgeGesture = { ev -> handleEdgeGesture(ev) }
     }
 
     // ---------------------------------------------------------------- navigation
@@ -1040,7 +1258,19 @@ class MainActivity : Activity() {
         val tab = tabs.firstOrNull { it.id == tabId } ?: return
         tab.url = url
         when {
-            url == NEWTAB -> loadInternal(tab, NEWTAB)
+            url == NEWTAB -> {
+                if (!tab.isIncognito) {
+                    // v1.9.4 — HOME = SHARED persistent webview. RELOAD NAHI —
+                    // music queue / YT For-You / feed scroll sab waise ka waisa.
+                    tab.isInternal = true
+                    tab.webView = ensureHomeWebView()
+                    if (activeTab === tab) attachTabView(tab) else selectTab(tab.id)
+                    tab.title = "New Tab"
+                    refreshChrome()
+                } else {
+                    loadInternal(tab, NEWTAB)
+                }
+            }
             url.startsWith("orbit://search?q=") -> {
                 val q = java.net.URLDecoder.decode(url.removePrefix("orbit://search?q="), "UTF-8")
                 loadInternal(tab, "orbit://search?q=" + java.net.URLEncoder.encode(q, "UTF-8"))
@@ -1051,9 +1281,53 @@ class MainActivity : Activity() {
         refreshChrome()
     }
 
+    /**
+     * v1.9.4 — SHARED HOME WebView (UC/Chrome NTP parity).
+     * Pehli dafa ban jata hai, phir HAMESHA wahi instance — koi reload nahi.
+     * Isi se home par wapas aane par music player/YouTube dobara load nahi hota.
+     */
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun ensureHomeWebView(): WebView {
+        homeWebView?.let {
+            homeTab.webView = it
+            return it
+        }
+        val hw = buildWebView(homeTab)
+        homeTab.webView = hw
+        hw.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+        hw.postDelayed({ runCatching { ensureCity() } }, 300)
+        hw.postDelayed({ runCatching { maybeWarmPrerender() } }, 1500)
+        homeWebView = hw
+        return hw
+    }
+
+    /** v1.9.4 — shared home teardown (sirf onDestroy / renderer-gone par). */
+    private fun destroyHomeWebView() {
+        val hw = homeWebView ?: return
+        homeWebView = null
+        homeTab.webView = null
+        tabs.forEach { if (it.webView === hw) it.webView = null }
+        runCatching {
+            PlaybackCoordinator.webViewDestroyed(hw)
+            hw.stopLoading()
+            (hw.parent as? ViewGroup)?.removeView(hw)
+            hw.destroy()
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun loadInternal(tab: Tab, url: String) {
         tab.isInternal = true
+        // v1.9.4 — NON-INCOGNITO home: shared webview (zero reload). Ye branch
+        // selectTab/navigate se direct calls ke liye hai (incognito neeche).
+        if (url == NEWTAB && !tab.isIncognito) {
+            val hw = ensureHomeWebView()
+            tab.webView = hw
+            tab.title = "New Tab"
+            if (activeTab === tab) attachTabView(tab)
+            refreshChrome()
+            return
+        }
         // v1.4.0 — internal pages (newtab/music/ai) ke liye JS ALWAYS on
         // (page khud JS se banta hai; user ka "JavaScript OFF" pref sirf real sites par)
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
@@ -1066,9 +1340,8 @@ class MainActivity : Activity() {
         }
         when {
             url == NEWTAB -> {
+                // yahan sirf INCOGNITO aata hai — apna fresh eclipse newtab (isolation)
                 wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
-                // v1.7.0 — feed engines + warm prerender (newtab render ke BAAD, UI
-                // kabhi block na ho)
                 wv.postDelayed({ runCatching { ensureCity() } }, 300)
                 wv.postDelayed({ runCatching { maybeWarmPrerender() } }, 1500)
             }
@@ -1090,6 +1363,11 @@ class MainActivity : Activity() {
 
     private fun loadUrlInTab(tab: Tab, url: String) {
         tab.isInternal = false
+        // v1.9.4 — SHARED HOME GUARD: home webview me site load kabhi nahi hoti —
+        // warna music queue/feeds ud jate. Site ke liye tab ka APNA webview banao.
+        if (tab.webView === homeWebView) {
+            tab.webView = buildWebView(tab)
+        }
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
         // native browser jaisa chalega.
@@ -1172,6 +1450,10 @@ class MainActivity : Activity() {
     *   Network dheema ho to bhi tap = instant site. Connecting relay skip (net
     *   bikharta hai), warm 90s ke baad stale. */
     private fun maybeWarmPrerender() {
+        // v1.9.4 — Preload Page setting: "off" = prerender band (UC parity)
+        if (preloadPref() == "off") return
+        // "wap" = Wi-Fi only (metered network par bachao)
+        if (preloadPref() == "wap" && !OrbitEngine.isUnmeteredNow(this)) return
         warmTab?.let { if (System.currentTimeMillis() - warmAt > 90_000L) dropWarmTab() }
         if (warmTab != null) return
         if (RelayEngine.state == "connecting") return
@@ -1340,6 +1622,24 @@ class MainActivity : Activity() {
             runOnUiThread {
                 LocalStore.setSetting(this@MainActivity, key, value)
                 refreshChrome()
+            }
+        }
+
+        /**
+         * v1.9.4 — SOCIAL MEDIA DOWNLOADER: page-JS ne video/reel source pakda
+         * (Instagram/Facebook/X/TikTok pe direct mp4 src) to ye callback aata hai.
+         * Download bar offer dikhta hai — tap = OrbitDownloader multi-segment.
+         */
+        @JavascriptInterface
+        fun socialVideo(json: String) {
+            runOnUiThread {
+                runCatching {
+                    val arr = JSONArray(json)
+                    if (arr.length() > 0) {
+                        val url = arr.getString(0)
+                        if (url.startsWith("http")) offerSocialDownload(url)
+                    }
+                }
             }
         }
 
@@ -1595,6 +1895,47 @@ class MainActivity : Activity() {
             }
             return
         }
+        // v1.9.4 — Themes: wallpaper pick → home background push (data-URI, CORS-safe)
+        if (requestCode == REQ_WALLPAPER) {
+            if (resultCode == RESULT_OK) {
+                val uri = data?.data
+                if (uri != null) {
+                    Thread {
+                        runCatching {
+                            val raw = contentResolver.openInputStream(uri)?.use { inp ->
+                                BitmapFactory.decodeStream(inp)
+                            } ?: return@Thread
+                            // 720px cap — memory-safe, base64 transportable
+                            val maxSide = 720
+                            val scale = minOf(
+                                maxSide.toFloat() / raw.width,
+                                maxSide.toFloat() / raw.height,
+                            ).coerceAtMost(1f)
+                            val w = (raw.width * scale).toInt().coerceAtLeast(1)
+                            val h = (raw.height * scale).toInt().coerceAtLeast(1)
+                            val scaled = Bitmap.createScaledBitmap(raw, w, h, true)
+                            val baos = java.io.ByteArrayOutputStream()
+                            scaled.compress(Bitmap.CompressFormat.JPEG, 68, baos)
+                            val b64 = android.util.Base64.encodeToString(
+                                baos.toByteArray(), android.util.Base64.NO_WRAP,
+                            )
+                            raw.recycle()
+                            scaled.recycle()
+                            LocalStore.setSetting(this@MainActivity, "wallpaper", "data:image/jpeg;base64,$b64")
+                            runOnUiThread {
+                                applyTheme("wallpaper")
+                                Toast.makeText(this@MainActivity, "Wallpaper applied", Toast.LENGTH_SHORT).show()
+                            }
+                        }.onFailure {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "Wallpaper failed: ${it.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }.also { it.isDaemon = true }.start()
+                }
+            }
+            return
+        }
         if (requestCode != REQ_LENS_CAPTURE) return
         val file = lensCaptureFile ?: return
         lensCaptureFile = null
@@ -1791,6 +2132,8 @@ class MainActivity : Activity() {
         // BRAVE MODULE — matched ad/tracker request server tak jaane se PEHLE drop
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
             val url = request?.url?.toString() ?: return null
+            // v1.9.4 — whitelist: user ne site ke ads allow kiye to seedha pass
+            if (isAdWhitelisted(url)) return null
             if (shieldsEnabled() && AdBlocker.shouldBlock(url)) {
                 tab.blockedCount++
                 AdBlocker.countBlock()
@@ -1848,6 +2191,11 @@ class MainActivity : Activity() {
             tab.url = url
             tab.title = view.title?.ifBlank { null } ?: domainOf(url)
             refreshChrome()
+            // v1.9.4 — SOCIAL MEDIA DOWNLOADER: social sites par video/reel source
+            // scan (page ke mp4 srcs) — mile to OrbitBridge.socialVideo se offer
+            if (socialDownloaderEnabled() && isSocialHost(url)) {
+                view.evaluateJavascript(SOCIAL_VIDEO_SCANNER_JS, null)
+            }
             // Incognito tab — history me KUCH nahi jata (Chrome parity)
             if (!tab.isIncognito) LocalStore.addHistory(this@MainActivity, url, tab.title)
         }
@@ -1869,6 +2217,19 @@ class MainActivity : Activity() {
             runCatching {
                 (wv.parent as? ViewGroup)?.removeView(wv)
                 wv.destroy()
+            }
+            // v1.9.4 — SHARED HOME renderer gone: homeWebView null karo (next
+            // ensureHomeWebView fresh bana dega) + active home tab attach rebuild.
+            if (wv === homeWebView) {
+                homeWebView = null
+                homeTab.webView = null
+                tabs.forEach { if (it.webView === wv) it.webView = null }
+                if (tab === activeTab && tab.url == NEWTAB) {
+                    tab.webView = ensureHomeWebView()
+                    attachTabView(tab)
+                    refreshChrome()
+                }
+                return true
             }
             tab.webView = null
             tab.evicted = true
@@ -2129,6 +2490,12 @@ class MainActivity : Activity() {
         row(R.drawable.ic_download, "Downloads") { showDownloadsPage() }
         row(R.drawable.ic_star, "Add bookmark") { toggleCurrentBookmark() }
         row(R.drawable.ic_find, "Find in page") { showFindBar() }
+        // v1.9.4 — UC TOOLBOX: bottom sheet me 9 quick tools (Speed Mode, Music,
+        // Screenshot, Clipboard, Translate, QR, Save Page, Full Screen, Find)
+        row(R.drawable.ic_speed, "Tools") { showToolsSheet() }
+        row(R.drawable.ic_camera, "Screenshot") { captureScreenshot() }
+        row(R.drawable.ic_savepage, "Save page") { savePageArchive() }
+        row(R.drawable.ic_translate, "Translate page") { translateCurrentPage() }
         row(R.drawable.ic_share, "Share") { sharePage() }
         divider()
         rowToggle(R.drawable.ic_desktop, "Desktop site", tab?.desktopSite == true) { toggleDesktopSite() }
@@ -2232,6 +2599,27 @@ class MainActivity : Activity() {
     private fun startOrbitDownload(url: String, contentDisposition: String?, mimeType: String?) {
         val name = runCatching { URLUtil.guessFileName(url, contentDisposition, mimeType) }
             .getOrDefault("orbit-download")
+        // v1.9.4 — UC "New Task" setting: Always Ask = file name dialog pehle
+        if (LocalStore.getSetting(this, "newTask", "ask") == "ask") {
+            val input = EditText(this).apply {
+                setText(name)
+                setSingleLine(true)
+                setPadding(dp(24), dp(10), dp(24), dp(0))
+            }
+            AlertDialog.Builder(this, R.style.OrbitDialog)
+                .setTitle("New download task")
+                .setView(input)
+                .setPositiveButton("Download") { _, _ ->
+                    launchOrbitDownload(url, input.text.toString().trim().ifBlank { name }, mimeType)
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            launchOrbitDownload(url, name, mimeType)
+        }
+    }
+
+    private fun launchOrbitDownload(url: String, name: String, mimeType: String?) {
         val t = OrbitDownloader.start(this, url, name, mimeType ?: "")
         if (t == null) {
             Toast.makeText(this, "This file can't be downloaded", Toast.LENGTH_SHORT).show()
@@ -2984,79 +3372,109 @@ class MainActivity : Activity() {
 
     /** v1.4.0 — Chrome jaisa SETTINGS page: Basics / Advanced / Sync & sign-in /
      *  Orbit AI / About sections, har on-off cheez par real switch. */
+    /**
+     * v1.9.4 — UC-STYLE SETTINGS ARCHITECTURE (screenshot parity).
+     * Pehla screen: AD Setting / Customized Banner / Set as Default Browser /
+     * Browsing / Download / Notification / Search / Social Media Downloader /
+     * Themes / Cloud Boost / Language / Clear Records / Account / About +
+     * bottom "Reset to Default". Har row ka REAL working sub-screen.
+     */
     private fun showSettings() {
         openPage("Settings") { content ->
-            fun toggleRow(iconRes: Int, title: String, sub: String, key: String, def: String, liveApply: (Boolean) -> Unit = {}) {
-                val initial = LocalStore.getSetting(this, key, def) != "off"
-                val tgl = makeToggle(initial) { on ->
-                    LocalStore.setSetting(this, key, if (on) "on" else "off")
-                    liveApply(on)
-                }
-                content.addView(pageRow(iconRes, title, sub, right = tgl))
+            // ---- AD Setting ----
+            content.addView(pageRow(
+                R.drawable.ic_shield, "AD Setting",
+                "Ad blocker · pop-ups · whitelist (${AdBlocker.totalBlocked} blocked)",
+            ) { showAdSettings() })
+            // ---- Customized Banner ----
+            content.addView(pageRow(
+                R.drawable.ic_banner, "Customized Banner",
+                "Home screen banner text & visibility",
+            ) { showBannerSettings() })
+            // ---- Set as Default Browser (live role state) ----
+            val defTgl = makeToggle(isDefaultBrowser()) {
+                requestDefaultBrowserRole()
             }
-
-            pageHeader("Basics", content)
-            // Search engine picker
+            val defRow = pageRow(R.drawable.ic_home, "Set as Default Browser", "Open links in Orbit", right = defTgl)
+            vpnUiHooks.add { defTgl.tag = null }  // hook slot — state onResume refresh hota hai
+            content.addView(defRow)
+            // ---- Browsing Settings ----
+            content.addView(pageRow(
+                R.drawable.ic_settings, "Browsing Settings",
+                "Font · preload · tab view · gestures · UA",
+            ) { showBrowsingSettings() })
+            // ---- Download Settings ----
+            content.addView(pageRow(
+                R.drawable.ic_download, "Download Settings",
+                "Path · max tasks · auto reconnect",
+            ) { showDownloadSettings() })
+            // ---- Notification Settings ----
+            content.addView(pageRow(
+                R.drawable.ic_notif_orbit, "Notification Settings",
+                "Push · Just In · site notifications",
+            ) { showNotificationSettings() })
+            // ---- Search Settings ----
             val engineName = when (LocalStore.getSetting(this, "searchEngine", "google")) {
                 "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
             }
-            content.addView(pageRow(R.drawable.ic_find, "Search engine", engineName) { showSearchEngineCard() })
-            // VPN row — live status (hook se update hota hai)
-            val vpnSub = TextView(this).apply {
-                text = RelayEngine.statusText
-                textSize = 12f
-                setTextColor(0xFF9AA0A6.toInt())
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
+            content.addView(pageRow(
+                R.drawable.ic_find, "Search Settings",
+                "Default: $engineName · suggestions",
+            ) { showSearchSettingsPage() })
+            // ---- Social Media Downloader ----
+            content.addView(pageRow(
+                R.drawable.ic_social, "Social Media Downloader Settings",
+                "Auto-detect videos on social sites",
+            ) { showSocialDownloaderSettings() })
+            // ---- Themes ----
+            val themeName = when (LocalStore.getSetting(this, "appTheme", "dark")) {
+                "amoled" -> "AMOLED Black"; "wallpaper" -> "Wallpaper"; else -> "Dark"
             }
-            val vpnRow = pageRow(R.drawable.ic_vpn, "VPN", RelayEngine.statusText, right = null) { showVpnSheet() }
-            // pageRow apna subtitle khud banata hai — hook ke liye usko pakdo
-            val vpnCol = vpnRow.getChildAt(1) as? LinearLayout
-            val vpnSubInRow = vpnCol?.getChildAt(1) as? TextView ?: vpnSub
-            vpnUiHooks.add { vpnSubInRow.text = RelayEngine.statusText }
-            content.addView(vpnRow)
-            // v1.6.0 — "Auto-install updates" toggle REMOVE (user request: hamesha ON
-            // rahe — runAutoUpdate ab hamesha silent install karta hai, setting nahi)
-            toggleRow(R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
-            toggleRow(R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
-            toggleRow(R.drawable.ic_notsecure, "Block pop-ups", "Block pop-up windows and redirects", "blockPopups", "on")
-            toggleRow(R.drawable.ic_lock, "Accept cookies", "Sites remember your sign-ins", "cookiesEnabled", "on") { on ->
-                runCatching {
-                    CookieManager.getInstance().setAcceptCookie(on)
-                    tabs.forEach { t ->
-                        t.webView?.let { CookieManager.getInstance().setAcceptThirdPartyCookies(it, on) }
-                    }
-                }
+            content.addView(pageRow(
+                R.drawable.ic_theme, "Themes", themeName,
+            ) { showThemesPage() })
+            // ---- Cloud Boost ----
+            val boost = LocalStore.getSetting(this, "cloudBoost", "on")
+            content.addView(pageRow(
+                R.drawable.ic_cloud, "Cloud Boost",
+                if (boost == "off") "Off" else "ON — compression & acceleration",
+            ) { showCloudBoostSheet() })
+            // ---- Language ----
+            val langName = languageName(LocalStore.getSetting(this, "appLanguage", "en"))
+            content.addView(pageRow(
+                R.drawable.ic_language, "Language", langName,
+            ) { showLanguagePage() })
+            // ---- Clear Records ----
+            content.addView(pageRow(
+                R.drawable.ic_trash, "Clear Records",
+                "Cache · cookies · history · form data · passwords",
+            ) { showClearRecords() })
+            // ---- Account ----
+            val acct = LocalStore.getSetting(this, "orbitAccount", "")
+            content.addView(pageRow(
+                R.drawable.ic_account, "Account",
+                if (acct.isNotBlank()) "Signed in as $acct" else "Sign in with Google or Orbit",
+            ) { showSignInSheet() })
+            // ---- About Orbit ----
+            content.addView(pageRow(
+                R.drawable.ic_about, "About Orbit", "V${BuildConfig.VERSION_NAME}",
+            ) { showAbout() })
+
+            // ---- Reset to Default (bottom centered, UC parity) ----
+            val reset = TextView(this).apply {
+                text = "Reset to Default"
+                textSize = 15f
+                setTextColor(0xFFE8EAED.toInt())
+                gravity = Gravity.CENTER
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(18) }
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                setOnClickListener { confirmResetToDefault() }
             }
-            toggleRow(R.drawable.ic_settings, "JavaScript", "Run scripts on sites (recommended: on)", "jsEnabled", "on") { on ->
-                // live reload non-internal active tab — warna purana page purani setting par hi rahega
-                val t = activeTab
-                if (t != null && !t.isInternal) t.webView?.let { wv ->
-                    wv.settings.javaScriptEnabled = on
-                    wv.reload()
-                }
-            }
-            content.addView(pageRow(R.drawable.ic_trash, "Clear browsing data", "History, cookies, cache") { showClearDataCard() })
-            content.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
-
-            pageHeader("Advanced", content)
-            toggleRow(R.drawable.ic_desktop, "Desktop site default", "New tabs open as desktop", "desktopDefault", "off")
-            toggleRow(R.drawable.ic_settings, "Media autoplay", "Play videos without tapping", "autoplay", "on") { on ->
-                tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
-            }
-            toggleRow(R.drawable.ic_update, "Sleeping tabs", "Freeze inactive tabs to save battery", "sleepTabs", "on")
-            // v1.6.0 — "Memory saver" toggle REMOVE (user request) — eviction hamesha
-            // active (evictExcessTabs ab setting nahi check karta)
-
-            pageHeader("Sign in & sync", content)
-            content.addView(pageRow(R.drawable.ic_google, "Sign in with Google", "Use your phone's Google account") { showGoogleSignIn() })
-            content.addView(pageRow(R.drawable.ic_sync, "Orbit Sync", "Bookmarks + history backup") { showSync() })
-
-            // v1.6.0 — "Orbit AI" section REMOVE (user request: option nahi chahiye)
-
-            pageHeader("About", content)
-            content.addView(pageRow(R.drawable.ic_update, "Check for updates", "Orbit v${BuildConfig.VERSION_NAME}") { runAutoUpdate(manual = true) })
-            content.addView(pageRow(R.drawable.ic_about, "About Orbit", "Fast. Private. Yours.") { showAbout() })
+            content.addView(reset)
         }
     }
 
@@ -3557,11 +3975,15 @@ class MainActivity : Activity() {
             shieldBadge.visibility = View.GONE
             btnStar.visibility = View.GONE
             btnClear.visibility = if (omnibox.text.isBlank()) View.GONE else View.VISIBLE
+            // v1.9.4 — Typing Assistant bar (keyboard ke upar quick-input)
+            typingBar?.visibility = if (typingAssistantPref()) View.VISIBLE else View.GONE
+            positionTypingBar()
         } else {
             omniIcon.visibility = if (pageLoading) View.INVISIBLE else View.VISIBLE
             btnClear.visibility = View.GONE
             updateShieldBadge()
             activeTab?.let { updateBookmarkStar(it) }
+            typingBar?.visibility = View.GONE
         }
     }
 
@@ -3621,7 +4043,11 @@ class MainActivity : Activity() {
         // v1.6.0 — "Memory saver" setting removed: eviction HAMESHA active
         // MODULE 3 FIX — media owner tab eviction se OUT: video background me
         // chal rahi ho to uska WebView kabhi destroy nahi hoga
-        var live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
+        // v1.9.4 — SHARED HOME WebView eviction se OUT (music queue zinda rehta hai)
+        var live = tabs.filter {
+            it !== activeTab && it.webView != null &&
+                it.webView !== homeWebView && !PlaybackCoordinator.isMediaOwner(it.webView)
+        }
         for (tab in live.sortedBy { it.lastActive }) {
             if (live.size < MAX_LIVE_WEBVIEWS) break
             // MODULE 3 — evicted WebView media play kar raha tha to service band
@@ -3636,7 +4062,10 @@ class MainActivity : Activity() {
             }
             tab.webView = null
             tab.evicted = true
-            live = tabs.filter { it !== activeTab && it.webView != null && !PlaybackCoordinator.isMediaOwner(it.webView) }
+            live = tabs.filter {
+                it !== activeTab && it.webView != null &&
+                    it.webView !== homeWebView && !PlaybackCoordinator.isMediaOwner(it.webView)
+            }
         }
     }
 
@@ -4164,6 +4593,1978 @@ class MainActivity : Activity() {
             .show()
     }
 
+    // ==================================================================
+    // v1.9.4 — UC BROWSER PARITY MODULE (speed engine + tools + settings)
+    // ==================================================================
+
+    /** v1.9.4 — Change Link Color If Clicked: visited links ko purple karta hai
+     *  (localStorage visited set + CSS class inject). document-start me chalta hai. */
+    private val VISITED_LINKS_JS: String = """
+        (function () {
+          try {
+            if (window.__orbitVisited) return;
+            window.__orbitVisited = 1;
+            var KEY = 'orbitVisited';
+            var load = function () { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
+            var save = function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} };
+            var map = load();
+            var here = location.href;
+            if (here) { map[here] = 1; try { save(map); } catch (e) {} }
+            var st = document.createElement('style');
+            st.textContent = 'a.orbit-visited{color:#9a6cff !important;}';
+            (document.head || document.documentElement).appendChild(st);
+            var mark = function () {
+              try {
+                var as = document.querySelectorAll('a[href]');
+                for (var i = 0; i < as.length; i++) {
+                  var h = as[i].href;
+                  if (h && map[h]) as[i].classList.add('orbit-visited');
+                }
+              } catch (e) {}
+            };
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', mark);
+            } else { mark(); }
+            try {
+              new MutationObserver(function () { setTimeout(mark, 300); }).observe(
+                document.documentElement, { childList: true, subtree: true });
+            } catch (e) {}
+          } catch (e) {}
+        })();
+    """.trimIndent()
+
+    /** v1.9.4 — Social video scanner (document-end inject, social sites only). */
+    private val SOCIAL_VIDEO_SCANNER_JS: String = """
+        (function () {
+          try {
+            var found = {};
+            var push = function (u) {
+              try {
+                if (!u) return;
+                if (u.indexOf('blob:') === 0) return;
+                if (u.indexOf('http') !== 0) return;
+                if (u.length > 2000) return;
+                found[u] = 1;
+              } catch (e) {}
+            };
+            try {
+              var vs = document.querySelectorAll('video, video source');
+              for (var i = 0; i < vs.length; i++) {
+                push(vs[i].getAttribute && vs[i].getAttribute('src'));
+                push(vs[i].src);
+                try {
+                  var cands = vs[i].querySelectorAll ? vs[i].querySelectorAll('source') : [];
+                  for (var k = 0; k < cands.length; k++) push(cands[k].src);
+                } catch (e2) {}
+              }
+            } catch (e3) {}
+            try {
+              var html = document.documentElement.innerHTML || '';
+              var re = /https?:\\\/\\\/[^"'\\\\ ]+\.mp4[^"'\\\\ ]*/g;
+              var m;
+              var n = 0;
+              while ((m = re.exec(html)) !== null && n < 8) {
+                push(m[0].replace(/\\u0026/g, '&').replace(/\\u002F/g, '/'));
+                n++;
+              }
+            } catch (e4) {}
+            var list = [];
+            for (var key in found) { list.push(key); if (list.length >= 5) break; }
+            if (list.length && window.OrbitBridge && OrbitBridge.socialVideo) {
+              OrbitBridge.socialVideo(JSON.stringify(list));
+            }
+          } catch (e) {}
+        })();
+    """.trimIndent()
+
+    /** v1.9.4 — iPhone/iPad UA strings (Website Preferences). */
+    private val IPHONE_UA =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " +
+            "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+    private val IPAD_UA =
+        "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " +
+            "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+
+    private val SOCIAL_HOSTS = listOf(
+        "facebook.com", "instagram.com", "twitter.com", "x.com", "tiktok.com",
+        "pinterest.com", "reddit.com", "linkedin.com",
+    )
+
+    // ---------------------------------------------------------------- v1.9.4 prefs
+
+    private fun uaMode(): String = LocalStore.getSetting(this, "uaMode", "android")
+    private fun textZoomPref(): Int =
+        LocalStore.getSetting(this, "textZoom", "100").toIntOrNull()?.coerceIn(50, 200) ?: 100
+    private fun ytShieldEnabled(): Boolean = LocalStore.getSetting(this, "ytShield", "on") != "off"
+    private fun visitedLinksPref(): Boolean = LocalStore.getSetting(this, "visitedLinks", "off") == "on"
+    private fun formsPasswordsPref(): String = LocalStore.getSetting(this, "formsPasswords", "ask")
+    private fun swipeGesturePref(): Boolean = LocalStore.getSetting(this, "swipeNav", "on") != "off"
+    private fun reopenTabsPref(): Boolean = LocalStore.getSetting(this, "reopenTabs", "off") == "on"
+    private fun showStatusBarPref(): Boolean = LocalStore.getSetting(this, "showStatusBar", "off") != "off"
+    private fun typingAssistantPref(): Boolean = LocalStore.getSetting(this, "typingAssistant", "on") != "off"
+    private fun animationsPref(): Boolean = LocalStore.getSetting(this, "uiAnimation", "on") != "off"
+    private fun volumeScrollPref(): Boolean = LocalStore.getSetting(this, "volumeScroll", "off") == "on"
+    private fun socialDownloaderEnabled(): Boolean = LocalStore.getSetting(this, "socialDownloader", "on") != "off"
+    private fun preloadPref(): String = LocalStore.getSetting(this, "preloadPages", "wap")
+    private fun tabViewPref(): String = LocalStore.getSetting(this, "tabView", "card")
+    private fun justInPref(): Boolean = LocalStore.getSetting(this, "justIn", "on") != "off"
+    private fun pushNotifPref(): Boolean = LocalStore.getSetting(this, "pushNotif", "on") != "off"
+
+    private fun isSocialHost(url: String): Boolean {
+        val h = domainOf(url).lowercase()
+        return SOCIAL_HOSTS.any { h == it || h.endsWith(".$it") }
+    }
+
+    private fun languageName(code: String): String = when (code) {
+        "hi" -> "Hindi"; "gu" -> "Gujarati"; "bn" -> "Bengali"; "ta" -> "Tamil"; "te" -> "Telugu"
+        else -> "English"
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 immersive
+
+    private fun enterImmersive() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.let { c ->
+                    c.hide(WindowInsets.Type.systemBars())
+                    c.systemBarsBehavior =
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                        View.SYSTEM_UI_FLAG_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    )
+            }
+        }
+    }
+
+    private fun exitImmersive() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                window.insetsController?.show(WindowInsets.Type.systemBars())
+            } else {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            }
+        }
+    }
+
+    /** v1.9.4 — Tools sheet ka Full Screen toggle (status+nav bars hide/show). */
+    private fun toggleImmersive() {
+        if (showStatusBarPref()) {
+            LocalStore.setSetting(this, "showStatusBar", "off")
+            exitImmersive()
+            Toast.makeText(this, "Full screen OFF", Toast.LENGTH_SHORT).show()
+        } else {
+            LocalStore.setSetting(this, "showStatusBar", "on")
+            enterImmersive()
+            Toast.makeText(this, "Full screen ON — swipe from top edge to exit", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 typing assistant
+
+    /** UC "Typing Assistant" — omnibox focus par keyboard ke upar quick-input
+     *  bar: www. / .com / .in / / / arrows. Real text insert at cursor. */
+    private fun setupTypingBar() {
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(0xFF202124.toInt())
+            visibility = View.GONE
+        }
+        fun chip(label: String, insert: () -> Unit) {
+            val c = TextView(this).apply {
+                text = label
+                textSize = 13.5f
+                setTextColor(0xFFE8EAED.toInt())
+                gravity = Gravity.CENTER
+                setPadding(dp(14), dp(6), dp(14), dp(6))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(16).toFloat()
+                    setColor(0xFF3C4043.toInt())
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                ).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) }
+                setOnClickListener { insert() }
+            }
+            bar.addView(c)
+        }
+        fun insertAtCursor(s: String) {
+            val ed = omnibox.editableText
+            val pos = omnibox.selectionEnd.coerceIn(0, ed.length)
+            ed.insert(pos, s)
+            omnibox.setSelection(pos + s.length)
+        }
+        chip("www.", { insertAtCursor("www.") })
+        chip(".com", { insertAtCursor(".com") })
+        chip(".in", { insertAtCursor(".in") })
+        chip("/", { insertAtCursor("/") })
+        chip("\u2190", { if (omnibox.selectionStart > 0) omnibox.setSelection(omnibox.selectionStart - 1) })
+        chip("\u2192", { if (omnibox.selectionEnd < omnibox.length()) omnibox.setSelection(omnibox.selectionEnd + 1) })
+        // toolbar ke niche dalo — root layout me omnibox ke baad
+        val root = findViewById<ViewGroup>(android.R.id.content)
+        root.addView(
+            bar,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
+        bar.y = resources.displayMetrics.heightPixels.toFloat()  // offscreen initial
+        typingBar = bar
+        bar.post { positionTypingBar() }
+    }
+
+    /** Keyboard ke THEEK UPAR anchor karo (ime insets se height nikal kar). */
+    private fun positionTypingBar() {
+        val bar = typingBar ?: return
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val rootInsets = window.decorView.rootWindowInsets
+                val ime = rootInsets.getInsets(WindowInsets.Type.ime())
+                val nav = rootInsets.getInsets(WindowInsets.Type.navigationBars())
+                val bottom = maxOf(ime.bottom, nav.bottom)
+                bar.translationY = (-bottom).toFloat()
+            } else {
+                bar.translationY = 0f
+                @Suppress("DEPRECATION")
+                val visible = window.decorView.systemUiVisibility and
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                bar.y = (resources.displayMetrics.heightPixels - dp(54)).toFloat()
+                bar.tag = visible
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 swipe gestures
+
+    /** UC "Swipe Forward&Backward" — screen kinare se swipe = back/forward,
+     *  arrow hint overlay ke saath. WebView scroll ke saath co-exist karta hai:
+     *  trigger sirf edge-start + horizontal-dominant move par hota hai. */
+    private var edgeStartX = 0f
+    private var edgeStartY = 0f
+    private var edgeFired = false
+
+    private fun setupGestureHint() {
+        val tv = TextView(this).apply {
+            text = "\u2190"
+            textSize = 42f
+            setTextColor(0xFF8AB4F8.toInt())
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            layoutParams = ViewGroup.LayoutParams(dp(64), dp(64))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0x66000000)
+            }
+        }
+        findViewById<ViewGroup>(android.R.id.content).addView(tv)
+        gestureHint = tv
+    }
+
+    private fun handleEdgeGesture(ev: MotionEvent): Boolean {
+        if (!swipeGesturePref()) return false
+        if (pageOpen || fullscreenView != null) return false
+        val wv = activeTab?.webView ?: return false
+        val w = resources.displayMetrics.widthPixels
+        val edge = dp(36).toFloat()
+        val threshold = dp(90).toFloat()
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                edgeStartX = ev.rawX
+                edgeStartY = ev.rawY
+                edgeFired = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!edgeFired) {
+                    val startedAtEdge = edgeStartX <= edge || edgeStartX >= w - edge
+                    val dx = ev.rawX - edgeStartX
+                    val dy = ev.rawY - edgeStartY
+                    if (startedAtEdge && kotlin.math.abs(dx) > threshold && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f) {
+                        edgeFired = true
+                        val goBack = dx > 0
+                        val ok = if (goBack) {
+                            if (wv.canGoBack()) { wv.goBack(); true } else false
+                        } else {
+                            if (wv.canGoForward()) { wv.goForward(); true } else false
+                        }
+                        showGestureHint(goBack, ok)
+                        return ok
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> edgeFired = false
+        }
+        return false
+    }
+
+    private fun showGestureHint(leftArrow: Boolean, success: Boolean) {
+        val tv = gestureHint ?: return
+        if (!success) return
+        runCatching {
+            tv.text = if (leftArrow) "\u2190" else "\u2192"
+            tv.visibility = View.VISIBLE
+            tv.alpha = 0.9f
+            tv.scaleX = 0.6f
+            tv.scaleY = 0.6f
+            val cx = (resources.displayMetrics.widthPixels / 2).toFloat()
+            val cy = (resources.displayMetrics.heightPixels / 2).toFloat()
+            tv.x = cx - dp(32)
+            tv.y = cy - dp(32)
+            tv.animate().alpha(0f).scaleX(1.6f).scaleY(1.6f).setDuration(420)
+                .withEndAction { tv.visibility = View.GONE }
+                .start()
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 brightness
+
+    /** In-app brightness overlay — system brightness se independent, ultra-dim
+     *  night mode tak. Dim = black overlay alpha (0-78%), touches pass-through. */
+    private fun applyBrightnessPref() {
+        val pct = brightnessLevelPref()
+        val root = findViewById<ViewGroup>(android.R.id.content)
+        if (brightnessOverlay == null) {
+            brightnessOverlay = View(this).apply {
+                setBackgroundColor(0xFF000000.toInt())
+                setOnTouchListener { _, _ -> false } // pass-through — dim only
+            }
+            root.addView(brightnessOverlay)
+        }
+        val alpha = ((pct / 100f) * 0.78f * 255f).toInt().coerceIn(0, 200)
+        brightnessOverlay?.visibility = if (alpha > 4) View.VISIBLE else View.GONE
+        brightnessOverlay?.background?.alpha = alpha
+    }
+
+    private fun brightnessLevelPref(): Int =
+        LocalStore.getSetting(this, "brightness", "0").toIntOrNull()?.coerceIn(0, 100) ?: 0
+
+    private fun showBrightnessDialog() {
+        val cur = brightnessLevelPref()
+        val seek = android.widget.SeekBar(this).apply {
+            max = 100
+            progress = cur
+        }
+        val label = TextView(this).apply {
+            text = if (cur > 0) "Brightness: $cur%" else "Normal (no dim)"
+            textSize = 14f
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(dp(24), dp(18), dp(24), dp(4))
+        }
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                label.text = if (value > 0) "Brightness: $value%" else "Normal (no dim)"
+                LocalStore.setSetting(this@MainActivity, "brightness", value.toString())
+                applyBrightnessPref()
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(14), dp(24), dp(20))
+            addView(label)
+            addView(seek, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Brightness")
+            .setView(box)
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 volume scroll
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // UC Scroll Options — volume keys se page scroll (setting ON ho to)
+        if (volumeScrollPref() && !omnibox.hasFocus() && !pageOpen) {
+            val wv = activeTab?.webView
+            if (wv != null && fullscreenView == null) {
+                val delta = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) -560 else 560
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    wv.evaluateJavascript(
+                        "window.scrollBy({top:$delta,behavior:'smooth'});", null,
+                    )
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 clipboard
+
+    /** App focus me copy hua content clipboard history me pakdo. Android 10+
+     *  background apps clip nahi padh sakte — sirf foreground (browser norm). */
+    private fun installClipboardHook() {
+        if (clipHookInstalled) return
+        runCatching {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+            cm.addPrimaryClipChangedListener {
+                runCatching {
+                    val item = cm.primaryClip ?: return@addPrimaryClipChangedListener
+                    if (item.itemCount > 0) {
+                        val text = item.getItemAt(0).coerceToText(this)?.toString() ?: return@runCatching
+                        ClipboardStore.add(this, text)
+                    }
+                }
+            }
+            clipHookInstalled = true
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 screenshot
+
+    /** UC Screen Shot tool — visible + full-page. PixelCopy (API 29+) sync
+     *  latch se; full-page = content-height canvas (slowWholeDocumentDraw on). */
+    private fun captureScreenshot() {
+        val wv = activeTab?.webView ?: run {
+            Toast.makeText(this, "No page to capture", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Screen Shot")
+            .setItems(arrayOf("This screen", "Full page")) { _, which ->
+                if (which == 0) captureVisible(wv) else captureFullPage(wv)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun saveOrShareBitmap(bmp: Bitmap, name: String) {
+        val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "screenshots")
+        runCatching {
+            dir.mkdirs()
+            val f = File(dir, name)
+            f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            Toast.makeText(this, "Saved: ${f.name}", Toast.LENGTH_SHORT).show()
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(
+                    this@MainActivity, "$packageName.fileprovider", f,
+                ))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            runCatching { startActivity(Intent.createChooser(share, "Share screenshot")) }
+        }.onFailure {
+            Toast.makeText(this, "Screenshot failed: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun captureVisible(wv: WebView) {
+        runCatching {
+            // Canvas draw (slowWholeDocumentDraw ON hai) — WebView ka tile raster
+            // canvas me mil jata hai, API 26+ sab par deterministic. PixelCopy
+            // overload ambiguity ka bhool bhi nahi hoti.
+            val bmp = Bitmap.createBitmap(wv.width, wv.height, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            wv.draw(c)
+            saveOrShareBitmap(bmp, "orbit-shot-${System.currentTimeMillis()}.jpg")
+        }.onFailure {
+            Toast.makeText(this, "Screenshot failed: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun captureFullPage(wv: WebView) {
+        runCatching {
+            val scale = resources.displayMetrics.density
+            val contentH = (wv.contentHeight * scale).toInt()
+            val h = contentH.coerceIn(wv.height, 12000)  // sane cap 12000px
+            val bmp = Bitmap.createBitmap(wv.width, h, Bitmap.Config.ARGB_8888)
+            val c = Canvas(bmp)
+            wv.draw(c)
+            saveOrShareBitmap(bmp, "orbit-full-${System.currentTimeMillis()}.jpg")
+        }.onFailure {
+            // full-page fail → visible fallback (kabhi bhi blank return nahi)
+            captureVisible(wv)
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 save page
+
+    /** UC Save Page — saveWebArchive(.mht) + file:// se wapas kholna. */
+    private fun savePageArchive() {
+        val wv = activeTab?.webView ?: return
+        if (activeTab?.isInternal == true) {
+            Toast.makeText(this, "Save a website page (not the home screen)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        runCatching {
+            val dir = File(getExternalFilesDir(null), "SavedPages")
+            dir.mkdirs()
+            val name = "orbit-page-${System.currentTimeMillis()}.mht"
+            val path = File(dir, name).absolutePath
+            wv.saveWebArchive(path)
+            val list = savedPages().toMutableList()
+            list.add(0, "${activeTab?.title.orEmpty().ifBlank { domainOf(activeTab?.url ?: "") }}|$path")
+            while (list.size > 20) list.removeAt(list.size - 1)
+            LocalStore.setSetting(this, "savedPages", JObj().put("v", list as List<String>).toString())
+            Toast.makeText(this, "Page saved offline (${name})", Toast.LENGTH_LONG).show()
+        }.onFailure {
+            Toast.makeText(this, "Save failed: ${it.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun savedPages(): List<String> = runCatching {
+        val raw = LocalStore.getSetting(this, "savedPages", "")
+        if (raw.isBlank()) emptyList()
+        else JObj(raw).optJSONArray("v")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+    }.getOrDefault(emptyList())
+
+    private fun showSavedPagesSheet() {
+        val pages = savedPages()
+        if (pages.isEmpty()) {
+            Toast.makeText(this, "No saved pages yet — use Save page from Tools", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(18), dp(22), dp(16))
+        }
+        box.addView(TextView(this).apply {
+            text = "Saved pages (offline)"
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        pages.forEach { entry ->
+            val parts = entry.split("|", limit = 2)
+            val title = parts.getOrNull(0) ?: "Page"
+            val path = parts.getOrNull(1) ?: return@forEach
+            val r = TextView(this).apply {
+                text = title
+                textSize = 14.5f
+                setTextColor(0xFFE8EAED.toInt())
+                setPadding(dp(8), dp(12), dp(8), dp(12))
+                background = getDrawable(R.drawable.btn_ripple)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setOnClickListener {
+                    hideCardOverlay()
+                    activeTab?.id?.let { id ->
+                        val tab = tabs.firstOrNull { it.id == id } ?: return@let
+                        loadUrlInTab(tab, "file://" + path)
+                        attachTabView(tab)
+                    }
+                }
+            }
+            box.addView(r)
+        }
+        showCardOverlay(box)
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 translate
+
+    /** UC AI Translation — Google Translate element inject (real-time page
+     *  translate). Target = Language setting. CSP-blocked sites par toast. */
+    private fun translateCurrentPage() {
+        val wv = activeTab?.webView ?: return
+        if (activeTab?.isInternal == true) {
+            Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val lang = LocalStore.getSetting(this, "appLanguage", "en")
+        val js = "(function(){" +
+            "try{if(window.__orbitTr){" +
+            "window.__orbitTr.style.display='';return;}" +
+            "var w=document.createElement('div');w.id='orbit_translate_wrap';" +
+            "w.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#1a73e8;color:#fff;font:13px sans-serif;padding:6px 12px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.4)';" +
+            "w.innerHTML='Translating this page...';" +
+            "document.body.appendChild(w);window.__orbitTr=w;" +
+            "var s=document.createElement('script');" +
+            "s.src='https://translate.googleapis.com/translate_a/element.js?cb=orbitTrCb';" +
+            "s.onerror=function(){try{w.innerHTML='This site blocked translation (CSP)';setTimeout(function(){w.style.display='none';},3000);}catch(e){}};" +
+            "window.orbitTrCb=function(){" +
+            "try{new google.translate.TranslateElement({pageLanguage:'auto',includedLanguages:'$lang',autoDisplay:true,layout:google.translate.TranslateElement.InlineLayout.SIMPLE},'orbit_translate_wrap');" +
+            "setTimeout(function(){try{w.innerHTML='Tap the blue bar to pick language';setTimeout(function(){w.style.display='none';},2500);}catch(e){}},1200);" +
+            "}catch(e){}};" +
+            "document.body.appendChild(s);" +
+            "}catch(e){}})()"
+        runCatching { wv.evaluateJavascript(js, null) }
+        Toast.makeText(this, "Translating page (${languageName(lang)})...", Toast.LENGTH_SHORT).show()
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 tab restore
+
+    /** UC "Reopen Tabs on Startup" — session tabs JSON me save / restore. */
+    private fun saveTabsForRestore() {
+        runCatching {
+            if (!reopenTabsPref()) {
+                LocalStore.removeSetting(this, "lastTabs")
+                return
+            }
+            val arr = JSONArray()
+            tabs.take(10).forEach { t ->
+                if (!t.isIncognito && t.url.startsWith("http")) {
+                    arr.put(JObj()
+                        .put("u", t.url)
+                        .put("t", t.title)
+                        .put("d", t.desktopSite))
+                }
+            }
+            if (arr.length() > 0) {
+                LocalStore.setSetting(this, "lastTabs", JObj().put("v", arr).toString())
+            } else {
+                LocalStore.removeSetting(this, "lastTabs")
+            }
+        }
+    }
+
+    private fun restoreTabsIfEnabled(): Boolean {
+        if (!reopenTabsPref()) return false
+        val raw = LocalStore.getSetting(this, "lastTabs", "")
+        if (raw.isBlank()) return false
+        return runCatching {
+            val arr = JObj(raw).optJSONArray("v") ?: return false
+            if (arr.length() == 0) return false
+            var first = true
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val url = o.optString("u")
+                if (!url.startsWith("http")) continue
+                if (first) {
+                    val tab = Tab(nextTabId++, url, o.optString("t", domainOf(url)))
+                    tab.isInternal = false
+                    tab.desktopSite = o.optBoolean("d", false)
+                    tabs.add(tab)
+                    selectTab(tab.id)
+                    loadUrlInTab(tab, url)
+                    first = false
+                } else {
+                    val tab = Tab(nextTabId++, url, o.optString("t", domainOf(url)))
+                    tab.isInternal = false
+                    tab.desktopSite = o.optBoolean("d", false)
+                    tabs.add(tab)
+                }
+            }
+            !first
+        }.getOrDefault(false)
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 Just In + quick access notif
+
+    /** UC "Just In" — app open rehte hue har 30 min top local news alert. */
+    private fun scheduleJustInCheck() {
+        justInRunnable = object : Runnable {
+            override fun run() {
+                if (isFinishing || isDestroyed) return
+                if (justInPref() && pushNotifPref()) runJustInCheck()
+                sleeper.postDelayed(this, 30 * 60 * 1000L)
+            }
+        }
+        sleeper.postDelayed(justInRunnable!!, 5 * 60 * 1000L)
+    }
+
+    private var justInRunnable: Runnable? = null
+
+    private fun runJustInCheck() {
+        Thread {
+            runCatching {
+                val lastHead = LocalStore.getSetting(this, "justInHead", "")
+                val city = LocalStore.getSetting(this, "userCity", "India")
+                val resp = feedHttp.newCall(
+                    Request.Builder()
+                        .url("https://news.google.com/rss/search?q=" +
+                            java.net.URLEncoder.encode("$city news", "UTF-8") +
+                            "&hl=en-IN&gl=IN&ceid=IN:en")
+                        .build(),
+                ).execute().use { r ->
+                    r.body?.string().orEmpty()
+                }
+                val m = Regex("<title>(.*?)</title>").find(resp)
+                val head = m?.groupValues?.get(1)?.trim().orEmpty()
+                if (head.isNotBlank() && head != lastHead && !head.contains("Top stories")) {
+                    LocalStore.setSetting(this, "justInHead", head)
+                    runOnUiThread {
+                        showJustInNotification(head)
+                    }
+                }
+            }
+        }.also { it.isDaemon = true }.start()
+    }
+
+    private fun notifChannel(): String {
+        runCatching {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            if (Build.VERSION.SDK_INT >= 26) {
+                nm?.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        "orbit_justin", "Just In", android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                    ),
+                )
+                nm?.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        "orbit_quick", "Quick Access", android.app.NotificationManager.IMPORTANCE_LOW,
+                    ),
+                )
+            }
+        }
+        return "orbit_justin"
+    }
+
+    private fun showJustInNotification(headline: String) {
+        runCatching {
+            val pi = PendingIntent.getActivity(
+                this, 9011,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val n = androidx.core.app.NotificationCompat.Builder(this, notifChannel())
+                .setSmallIcon(R.drawable.ic_notif_orbit)
+                .setContentTitle("Just In")
+                .setContentText(headline)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .build()
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            nm?.notify(9011, n)
+        }
+    }
+
+    /** UC Push Notification — persistent Quick Access bar notification
+     *  (New Tab / QR Scan / Downloads actions). Push Notif setting controls. */
+    private fun updateQuickAccessNotification() {
+        runCatching {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            if (!pushNotifPref()) {
+                nm?.cancel(9012)
+                return
+            }
+            maybeGrantNotifPermission()
+            val openMain = PendingIntent.getActivity(
+                this, 9021,
+                Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val qr = PendingIntent.getActivity(
+                this, 9022,
+                Intent(this, MainActivity::class.java).putExtra("quick", "qr"),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val dl = PendingIntent.getActivity(
+                this, 9023,
+                Intent(this, MainActivity::class.java).putExtra("quick", "downloads"),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val n = androidx.core.app.NotificationCompat.Builder(this, "orbit_quick")
+                .setSmallIcon(R.drawable.ic_notif_orbit)
+                .setContentTitle("Orbit Browser")
+                .setContentText("Quick search & tools")
+                .setContentIntent(openMain)
+                .setOngoing(true)
+                .addAction(0, "QR Scan", qr)
+                .addAction(0, "Downloads", dl)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+                .build()
+            nm?.notify(9012, n)
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 default browser
+
+    private fun isDefaultBrowser(): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.example.com"))
+        val act = intent.resolveActivity(packageManager)
+        act?.packageName == packageName
+    }.getOrDefault(false)
+
+    private fun requestDefaultBrowserRole() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val rm = getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER) &&
+                    !rm.isRoleHeld(android.app.role.RoleManager.ROLE_BROWSER)
+                ) {
+                    startActivityForResult(
+                        rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER),
+                        REQ_DEFAULT_BROWSER,
+                    )
+                    return
+                }
+            }
+            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            Toast.makeText(this, "Set Orbit as the browser app", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 social download
+
+    /** Social video source mila → download bar offer (OrbitDownloader). */
+    private fun offerSocialDownload(url: String) {
+        if (dlBar.visibility == View.VISIBLE) return
+        val name = runCatching { URLUtil.guessFileName(url, null, "video/mp4") }
+            .getOrDefault("orbit-video-${System.currentTimeMillis()}.mp4")
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+        }
+        box.addView(TextView(this).apply {
+            text = "Video found on this page"
+            textSize = 14.5f
+            setTextColor(0xFFE8EAED.toInt())
+        })
+        box.addView(TextView(this).apply {
+            text = name
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(10), 0, 0)
+        }
+        fun act(label: String, bold: Boolean, fn: () -> Unit) {
+            actions.addView(TextView(this).apply {
+                text = label
+                textSize = 14f
+                setTextColor(if (bold) 0xFF8AB4F8.toInt() else 0xFF9AA0A6.toInt())
+                setTypeface(null, if (bold) Typeface.BOLD else Typeface.NORMAL)
+                setPadding(dp(16), dp(6), dp(16), dp(6))
+                background = getDrawable(R.drawable.btn_ripple)
+                setOnClickListener { fn() }
+            })
+        }
+        act("Skip", false) { dlBar.visibility = View.GONE }
+        act("Download", true) {
+            dlBar.visibility = View.GONE
+            handleDownload(url, null, "video/mp4")
+        }
+        box.addView(actions)
+        dlBar.removeAllViews()
+        dlBar.addView(box)
+        dlBar.visibility = View.VISIBLE
+        dlBar.postDelayed({ if (dlBar.tag != "pinned") dlBar.visibility = View.GONE }, 8000)
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 UC TOOLS SHEET
+
+    /** UC Browser ka bottom tools sheet — EXACT layout (2x5 grid + Cancel).
+     *  Har tool ka real backend: Speed Mode / Orbit Music / Screen Shot /
+     *  Clipboard / AI Translation / QR Scanner / Save Page / Full Screen /
+     *  Find in Page. */
+    private fun showToolsSheet() {
+        if (isFinishing || isDestroyed) return
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setOnClickListener { (it.parent as? ViewGroup)?.removeView(it) }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(
+                    dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(),
+                    0f, 0f, 0f, 0f,
+                )
+                setColor(0xFF16181D.toInt())
+            }
+            setPadding(dp(16), dp(10), dp(16), dp(14))
+            isClickable = true
+        }
+        root.addView(card, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        ))
+
+        // drag handle
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                setMargins(0, dp(6), 0, dp(10))
+            }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(0xFF5F6368.toInt())
+            }
+        })
+
+        data class Tool(val icon: Int, val label: String, val act: () -> Unit)
+
+        val tools = listOf(
+            Tool(R.drawable.ic_speed, "Speed Mode") {
+                toggleSpeedMode()
+            },
+            Tool(R.drawable.ic_music, "Orbit Music") {
+                activeTab?.id?.let { navigate(it, "orbit://music") }
+            },
+            Tool(R.drawable.ic_camera, "Screen Shot") {
+                captureScreenshot()
+            },
+            Tool(R.drawable.ic_clipboard, "Clipboard") {
+                showClipboardSheet()
+            },
+            Tool(R.drawable.ic_translate, "AI Translation") {
+                translateCurrentPage()
+            },
+            Tool(R.drawable.ic_qr, "QR Scanner") {
+                startLensScan()
+            },
+            Tool(R.drawable.ic_savepage, "Save Page") {
+                AlertDialog.Builder(this, R.style.OrbitDialog)
+                    .setTitle("Save Page")
+                    .setItems(arrayOf("Save this page (MHTML)", "View saved pages")) { _, which ->
+                        if (which == 0) savePageArchive() else showSavedPagesSheet()
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            },
+            Tool(R.drawable.ic_fullscreen, "Full Screen") {
+                toggleImmersive()
+            },
+            Tool(R.drawable.ic_find, "Find in Page") {
+                showFindBar()
+            },
+            Tool(0, "Cancel") {}, // placeholder — grid me cancel nahi, neeche button hai
+        ).take(9) // 2 rows x 5 minus cancel placeholder handling
+
+        val grid = GridLayout(this).apply {
+            columnCount = 5
+            rowCount = 2
+            useDefaultMargins = false
+        }
+        val colW = resources.displayMetrics.widthPixels / 5
+        tools.forEach { t ->
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = colW
+                    height = ViewGroup.LayoutParams.WRAP_CONTENT
+                    setMargins(0, dp(10), 0, dp(10))
+                }
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                setOnClickListener {
+                    (root.parent as? ViewGroup)?.removeView(root)
+                    t.act()
+                }
+            }
+            val iv = ImageView(this).apply {
+                setImageResource(t.icon)
+                setColorFilter(0xFFE8EAE9.toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(24).toFloat()
+                    setColor(0xFF26282E.toInt())
+                }
+                setPadding(dp(14), dp(14), dp(14), dp(14))
+                layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            }
+            val tv = TextView(this).apply {
+                text = t.label
+                textSize = 10.5f
+                setTextColor(0xFFBDC1C6.toInt())
+                gravity = Gravity.CENTER
+                maxLines = 2
+                setPadding(dp(2), dp(6), dp(2), 0)
+            }
+            cell.addView(iv)
+            cell.addView(tv)
+            grid.addView(cell)
+        }
+        card.addView(grid)
+
+        // Cancel — UC parity: full-width pill bottom
+        card.addView(TextView(this).apply {
+            text = "Cancel"
+            textSize = 15f
+            setTextColor(0xFFE8EAE9.toInt())
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(6))
+            setOnClickListener { (root.parent as? ViewGroup)?.removeView(root) }
+        })
+
+        (findViewById<ViewGroup>(android.R.id.content)).addView(root)
+        card.translationY = dp(120).toFloat()
+        card.animate().translationY(0f).setDuration(180).start()
+    }
+
+    /** Speed Mode toggle — text-first lite browsing (images off + instant text). */
+    private fun toggleSpeedMode() {
+        val on = OrbitEngine.speedModeOn(this)
+        LocalStore.setSetting(this, "speedMode", if (on) "off" else "on")
+        val nowOn = !on
+        tabs.forEach { t ->
+            t.webView?.settings?.loadsImagesAutomatically = !nowOn || t.isIncognito
+        }
+        val wv = activeTab?.webView
+        if (wv != null && !activeTab?.isInternal!!) {
+            wv.settings.loadsImagesAutomatically = !nowOn
+            wv.reload()
+        }
+        Toast.makeText(
+            this,
+            if (nowOn) "Speed Mode ON — text-first fast browsing" else "Speed Mode OFF — full pages",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    /** v1.9.4 — Clipboard history sheet (UC parity): tap = URL navigate /
+     *  omnibox insert; long-press delete; Clear all. */
+    private fun showClipboardSheet() {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setOnClickListener { (it.parent as? ViewGroup)?.removeView(it) }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(
+                    dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(),
+                    0f, 0f, 0f, 0f,
+                )
+                setColor(0xFF16181D.toInt())
+            }
+            setPadding(dp(18), dp(12), dp(18), dp(16))
+            isClickable = true
+        }
+        root.addView(card, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        ))
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                setMargins(0, dp(6), 0, dp(10))
+            }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(0xFF5F6368.toInt())
+            }
+        })
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        titleRow.addView(TextView(this).apply {
+            text = "Clipboard"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        titleRow.addView(TextView(this).apply {
+            text = "Clear all"
+            textSize = 13.5f
+            setTextColor(0xFF8AB4F8.toInt())
+            setPadding(dp(12), dp(6), dp(4), dp(6))
+            setOnClickListener {
+                ClipboardStore.clear(this@MainActivity)
+                Toast.makeText(this@MainActivity, "Clipboard cleared", Toast.LENGTH_SHORT).show()
+                (root.parent as? ViewGroup)?.removeView(root)
+            }
+        })
+        card.addView(titleRow)
+
+        val entries = ClipboardStore.list(this)
+        if (entries.isEmpty()) {
+            card.addView(TextView(this).apply {
+                text = "Nothing copied yet.\nCopy text or a link while browsing — it will appear here."
+                textSize = 13.5f
+                setTextColor(0xFF9AA0A6.toInt())
+                setPadding(dp(4), dp(18), dp(4), dp(24))
+            })
+        } else {
+            val sc = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
+            val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            entries.forEachIndexed { idx, (clipText, at) ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    background = getDrawable(R.drawable.btn_ripple)
+                    isClickable = true
+                    isLongClickable = true
+                    setOnLongClickListener {
+                        ClipboardStore.removeAt(this@MainActivity, idx)
+                        Toast.makeText(this@MainActivity, "Deleted", Toast.LENGTH_SHORT).show()
+                        (root.parent as? ViewGroup)?.removeView(root)
+                        showClipboardSheet()
+                        true
+                    }
+                }
+                row.addView(TextView(this).apply {
+                    text = if (clipText.length > 90) clipText.take(90) + "…" else clipText
+                    textSize = 14f
+                    setTextColor(0xFFE8EAED.toInt())
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                row.addView(TextView(this).apply {
+                    text = SimpleDateFormat("dd MMM, HH:mm", Locale.US).format(Date(at))
+                    textSize = 11.5f
+                    setTextColor(0xFF9AA0A6.toInt())
+                    setPadding(0, dp(3), 0, 0)
+                })
+                row.setOnClickListener {
+                    (root.parent as? ViewGroup)?.removeView(root)
+                    if (ClipboardStore.looksLikeUrl(clipText)) {
+                        activeTab?.id?.let { id -> navigate(id, normalizeInput(clipText)) }
+                    } else {
+                        omnibox.requestFocus()
+                        omnibox.setText(clipText)
+                        omnibox.setSelection(clipText.length)
+                    }
+                }
+                list.addView(row)
+            }
+            sc.addView(list)
+            card.addView(sc)
+        }
+        // footer action — paste into search
+        card.addView(TextView(this).apply {
+            text = "Cancel"
+            textSize = 15f
+            setTextColor(0xFFE8EAE9.toInt())
+            gravity = Gravity.CENTER
+            setPadding(0, dp(14), 0, dp(4))
+            setOnClickListener { (root.parent as? ViewGroup)?.removeView(root) }
+        })
+        (findViewById<ViewGroup>(android.R.id.content)).addView(root)
+        card.translationY = dp(120).toFloat()
+        card.animate().translationY(0f).setDuration(180).start()
+    }
+
+    /** v1.9.4 — UC Account sign-in sheet: Google + Orbit Account + policy footer. */
+    private fun showSignInSheet() {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setOnClickListener { (it.parent as? ViewGroup)?.removeView(it) }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(
+                    dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(),
+                    0f, 0f, 0f, 0f,
+                )
+                setColor(0xFF1E2026.toInt())
+            }
+            setPadding(dp(22), dp(16), dp(22), dp(22))
+            isClickable = true
+        }
+        root.addView(card, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        ))
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                setMargins(0, dp(4), 0, dp(12))
+            }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(0xFF5F6368.toInt())
+            }
+        })
+        card.addView(TextView(this).apply {
+            text = "Sign in"
+            textSize = 21f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(14))
+        })
+
+        // Google button (grey filled rounded — UC parity)
+        val googleBtn = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(26).toFloat()
+                setColor(0xFF3C4043.toInt())
+            }
+            setPadding(0, dp(13), 0, dp(13))
+            setOnClickListener {
+                (root.parent as? ViewGroup)?.removeView(root)
+                showGoogleSignIn()
+            }
+        }
+        val gIcon = TextView(this).apply {
+            text = "G"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFF4285F4.toInt())
+            setPadding(0, 0, dp(10), 0)
+        }
+        googleBtn.addView(gIcon)
+        googleBtn.addView(TextView(this).apply {
+            text = "Sign in with Google"
+            textSize = 15f
+            setTextColor(0xFFE8EAED.toInt())
+        })
+        card.addView(googleBtn, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { setMargins(0, 0, 0, dp(12)) })
+
+        // Orbit Account button (darker filled — UC parity)
+        val orbitBtn = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(26).toFloat()
+                setColor(0xFF2A2C31.toInt())
+            }
+            setPadding(0, dp(13), 0, dp(13))
+            setOnClickListener {
+                (root.parent as? ViewGroup)?.removeView(root)
+                showOrbitAccountDialog()
+            }
+        }
+        orbitBtn.addView(TextView(this).apply {
+            text = "Sign in with Orbit Account"
+            textSize = 15f
+            setTextColor(0xFFE8EAED.toInt())
+        })
+        card.addView(orbitBtn)
+
+        // Policy footer (clickable links — UC parity)
+        val footer = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(dp(6), dp(14), dp(6), 0)
+            gravity = Gravity.CENTER
+            text = "By signing in, you agree with our Privacy Policy and Terms of Use"
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity, R.style.OrbitDialog)
+                    .setTitle("Privacy & Terms")
+                    .setMessage(
+                        "Orbit Browser is a local-first browser:\n\n" +
+                            "- History, bookmarks, passwords and settings stay on this device.\n" +
+                            "- No account is required for browsing.\n" +
+                            "- Sign-in data is stored only for sync features you trigger.\n\n" +
+                            "Use of the app implies acceptance of this policy.",
+                    )
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+        card.addView(footer)
+
+        (findViewById<ViewGroup>(android.R.id.content)).addView(root)
+        card.translationY = dp(120).toFloat()
+        card.animate().translationY(0f).setDuration(180).start()
+    }
+
+    /** Orbit Account — device-local account (email + hashed password).
+     *  Bookmarks/settings sync baaki features ka base; data device par hi. */
+    private fun showOrbitAccountDialog() {
+        val acct = LocalStore.getSetting(this, "orbitAccount", "")
+        if (acct.isNotBlank()) {
+            AlertDialog.Builder(this, R.style.OrbitDialog)
+                .setTitle("Orbit Account")
+                .setMessage("Signed in as $acct\n\nSign out?")
+                .setPositiveButton("Sign out") { _, _ ->
+                    LocalStore.removeSetting(this, "orbitAccount")
+                    Toast.makeText(this, "Signed out", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
+        val email = EditText(this).apply {
+            hint = "Email"
+            inputType = InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setSingleLine(true)
+        }
+        val pass = EditText(this).apply {
+            hint = "Password (min 6 chars)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(10), dp(24), dp(0))
+            addView(email)
+            addView(pass, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) })
+        }
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Sign in with Orbit Account")
+            .setView(box)
+            .setPositiveButton("Sign in") { _, _ ->
+                val e = email.text.toString().trim()
+                val p = pass.text.toString()
+                if (!e.contains("@") || p.length < 6) {
+                    Toast.makeText(this, "Valid email + 6+ char password needed", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                // password SHA-256 hash — plain kabhi store nahi
+                val hash = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(p.toByteArray()).joinToString("") { "%02x".format(it) }
+                LocalStore.setSetting(this, "orbitAccount", e)
+                LocalStore.setSetting(this, "orbitAccountHash", hash)
+                Toast.makeText(this, "Signed in as $e (device-local)", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------------- v1.9.4 UC SETTINGS SUB-PAGES
+
+    /** Reusable bottom option-sheet (UC "selector" parity): title + list of
+     *  (key,value) options + current highlight + optional footer toggle. */
+    private fun showOptionSheet(
+        title: String,
+        current: String,
+        options: List<Pair<String, String>>,   // label to value
+        onPick: (String) -> Unit,
+    ) {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xB3000000.toInt())
+            setOnClickListener { (it.parent as? ViewGroup)?.removeView(it) }
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadii = floatArrayOf(
+                    dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(), dp(22).toFloat(),
+                    0f, 0f, 0f, 0f,
+                )
+                setColor(0xFF1E2026.toInt())
+            }
+            setPadding(dp(20), dp(14), dp(20), dp(14))
+            isClickable = true
+        }
+        root.addView(card, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM,
+        ))
+        card.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                setMargins(0, dp(4), 0, dp(10))
+            }
+            background = GradientDrawable().apply {
+                cornerRadius = dp(2).toFloat()
+                setColor(0xFF5F6368.toInt())
+            }
+        })
+        card.addView(TextView(this).apply {
+            text = title
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            setPadding(0, 0, 0, dp(10))
+        })
+        options.forEach { (label, value) ->
+            val r = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = getDrawable(R.drawable.btn_ripple)
+                isClickable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(48),
+                )
+                setOnClickListener {
+                    (root.parent as? ViewGroup)?.removeView(root)
+                    onPick(value)
+                }
+            }
+            r.addView(TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(0xFFE8EAED.toInt())
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            r.addView(ImageView(this).apply {
+                setImageResource(if (value == current) R.drawable.ic_star else R.drawable.ic_down)
+                setColorFilter(if (value == current) 0xFF8AB4F8.toInt() else 0x00000000)
+                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+            })
+            card.addView(r)
+        }
+        (findViewById<ViewGroup>(android.R.id.content)).addView(root)
+        card.translationY = dp(120).toFloat()
+        card.animate().translationY(0f).setDuration(180).start()
+    }
+
+    /** ---- AD Setting (ad blocker dept) ---- */
+    private fun showAdSettings() {
+        openPage("AD Setting") { content ->
+            pageHeader("Blocking", content)
+            content.addView(toggleRow(
+                R.drawable.ic_shield, "Block ads & trackers", "Network-level — pages 30-40% faster load", "shields", "on",
+            ))
+            content.addView(toggleRow(
+                R.drawable.ic_notsecure, "Block pop-ups", "Pop-up windows and redirects", "blockPopups", "on",
+            ))
+            content.addView(toggleRow(
+                R.drawable.ic_speed, "YouTube ad shield", "Skip YouTube video ads instantly", "ytShield", "on",
+            ))
+            pageHeader("Stats", content)
+            content.addView(pageRow(
+                R.drawable.ic_shield, "Blocked so far (this session)",
+                "${AdBlocker.totalBlocked} requests",
+            ) { })
+            pageHeader("Whitelist (ads allowed)", content)
+            val wl = adWhitelist()
+            if (wl.isEmpty()) {
+                content.addView(pageEmpty("No whitelisted sites. Add one below to allow its ads."))
+            } else {
+                wl.forEach { host ->
+                    content.addView(pageRow(R.drawable.ic_shield, host, "Ads allowed") {
+                        AlertDialog.Builder(this, R.style.OrbitDialog)
+                            .setTitle("Remove $host from whitelist?")
+                            .setPositiveButton("Remove") { _, _ ->
+                                saveAdWhitelist(adWhitelist() - host)
+                                showAdSettings()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    })
+                }
+            }
+            content.addView(pageRow(R.drawable.ic_star, "Add current site", "Allow ads on the site you're browsing") {
+                val url = activeTab?.url.orEmpty()
+                if (!url.startsWith("http")) {
+                    Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
+                    return@pageRow
+                }
+                val host = domainOf(url)
+                saveAdWhitelist(adWhitelist() + host)
+                Toast.makeText(this, "$host whitelisted", Toast.LENGTH_SHORT).show()
+                showAdSettings()
+            })
+            pageHeader("Advanced", content)
+            content.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
+        }
+    }
+
+    private fun adWhitelist(): Set<String> = runCatching {
+        val raw = LocalStore.getSetting(this, "adWhitelist", "")
+        if (raw.isBlank()) emptySet() else JObj(raw).optJSONArray("v")?.let { a ->
+            (0 until a.length()).map { a.getString(it) }.toSet()
+        } ?: emptySet()
+    }.getOrDefault(emptySet())
+
+    private fun saveAdWhitelist(set: Set<String>) {
+        val arr = JSONArray()
+        set.sorted().forEach { arr.put(it) }
+        LocalStore.setSetting(this, "adWhitelist", JObj().put("v", arr).toString())
+    }
+
+    /** Whitelist check — shouldInterceptRequest se pehle aata hai. */
+    private fun isAdWhitelisted(url: String): Boolean {
+        val host = domainOf(url).lowercase()
+        if (host.isBlank()) return false
+        return adWhitelist().any { wl -> host == wl || host.endsWith(".$wl") }
+    }
+
+    private fun toggleRow(
+        iconRes: Int, title: String, sub: String, key: String, def: String,
+        liveApply: (Boolean) -> Unit = {},
+    ): View {
+        val initial = LocalStore.getSetting(this, key, def) != "off"
+        val tgl = makeToggle(initial) { on ->
+            LocalStore.setSetting(this, key, if (on) "on" else "off")
+            liveApply(on)
+        }
+        return pageRow(iconRes, title, sub, right = tgl)
+    }
+
+    /** ---- Customized Banner ---- */
+    private fun showBannerSettings() {
+        openPage("Customized Banner") { content ->
+            content.addView(toggleRow(
+                R.drawable.ic_banner, "Show banner on home", "Small greeting strip under the search bar", "bannerOn", "off",
+            ) { on ->
+                pushBannerToHome()
+            })
+            val cur = LocalStore.getSetting(this, "bannerText", "Welcome to Orbit Browser")
+            val input = EditText(this).apply {
+                setText(cur)
+                hint = "Banner text"
+                inputType = InputType.TYPE_CLASS_TEXT
+                setSingleLine(true)
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+            }
+            content.addView(input)
+            content.addView(pageRow(R.drawable.ic_star, "Save banner text", "Applies to the home screen instantly") {
+                val t = input.text.toString().trim().take(60)
+                LocalStore.setSetting(this, "bannerText", t.ifBlank { "Welcome to Orbit Browser" })
+                pushBannerToHome()
+                Toast.makeText(this, "Banner updated", Toast.LENGTH_SHORT).show()
+            })
+            content.addView(pageRow(R.drawable.ic_theme, "Quick shortcuts", "2x5 speed dial grid on home") { showSearchSettingsPage() })
+        }
+    }
+
+    private fun pushBannerToHome() {
+        val show = LocalStore.getSetting(this, "bannerOn", "off") == "on"
+        val text = LocalStore.getSetting(this, "bannerText", "Welcome to Orbit Browser")
+        val t = activeTab ?: tabs.firstOrNull { it.url == NEWTAB } ?: return
+        t.webView?.evaluateJavascript(
+            "if(window.bannerPush)bannerPush(${escapeJs(text)}, ${if (show) "true" else "false"});", null,
+        )
+    }
+
+    /** ---- Browsing Settings (14 rows — screenshot parity) ---- */
+    private fun showBrowsingSettings() {
+        openPage("Browsing Settings") { content ->
+            content.addView(pageRow(
+                R.drawable.ic_find, "Font & Layout",
+                "${textZoomPref()}%(Standard)",
+            ) { showFontLayoutDialog() })
+            content.addView(pageRow(
+                R.drawable.ic_cloud, "Preload Page",
+                when (preloadPref()) { "off" -> "Off"; "always" -> "Always"; else -> "WAP Pages" },
+            ) { showOptionSheet("Preload Page", preloadPref(), listOf(
+                "Off" to "off", "Wi-Fi Only (WAP Pages)" to "wap", "Always" to "always",
+            )) { v ->
+                LocalStore.setSetting(this, "preloadPages", v)
+                showBrowsingSettings()
+            } })
+            content.addView(pageRow(
+                R.drawable.ic_tabs, "Tab View",
+                when (tabViewPref()) { "grid" -> "Grid View"; "list" -> "List View"; else -> "Card View" },
+            ) { showOptionSheet("Tab View", tabViewPref(), listOf(
+                "Card View" to "card", "Grid View" to "grid", "List View" to "list",
+            )) { v ->
+                LocalStore.setSetting(this, "tabView", v)
+                showBrowsingSettings()
+            } })
+            content.addView(pageRow(
+                R.drawable.ic_theme, "Image Quality",
+                when (OrbitEngine.imageQuality(this)) {
+                    "none" -> "No Images"; "low" -> "Low"; "medium" -> "Medium"; else -> "High"
+                },
+            ) { showOptionSheet("Image Quality", OrbitEngine.imageQuality(this), listOf(
+                "No Images (text-only)" to "none", "Low" to "low", "Medium" to "medium", "High" to "high",
+            )) { v ->
+                LocalStore.setSetting(this, "imageQuality", v)
+                val allow = OrbitEngine.imagesAllowed(this, false)
+                tabs.forEach { t ->
+                    t.webView?.settings?.loadsImagesAutomatically = allow || t.isIncognito
+                    if (!t.isIncognito && t.webView != null) {
+                        t.webView?.settings?.loadsImagesAutomatically = allow
+                        if (!t.isInternal) t.webView?.reload()
+                    }
+                }
+                showBrowsingSettings()
+            } })
+            content.addView(toggleRow(
+                R.drawable.ic_swipe, "Swipe Forward&Backward", "Edge swipe se back/forward", "swipeNav", "on",
+            ))
+            content.addView(toggleRow(
+                R.drawable.ic_newtab, "Reopen Tabs on Startup", "Last session ke tabs wapas khule", "reopenTabs", "off",
+            ) { on -> if (!on) LocalStore.removeSetting(this, "lastTabs") })
+            content.addView(pageRow(
+                R.drawable.ic_typing, "Forms and Passwords",
+                if (formsPasswordsPref() == "never") "Never save" else "Always ask",
+            ) { showOptionSheet("Forms and Passwords", formsPasswordsPref(), listOf(
+                "Always ask" to "ask", "Never save" to "never",
+            )) { v ->
+                LocalStore.setSetting(this, "formsPasswords", v)
+                val never = v == "never"
+                tabs.forEach { t ->
+                    @Suppress("DEPRECATION")
+                    t.webView?.settings?.saveFormData = !never
+                }
+                showBrowsingSettings()
+            } })
+            content.addView(pageRow(
+                R.drawable.ic_scroll, "Scroll Options", "Volume keys scroll · tap-to-top",
+            ) { showScrollOptions() })
+            content.addView(pageRow(
+                R.drawable.ic_brightness, "Brightness",
+                if (brightnessLevelPref() > 0) "${brightnessLevelPref()}% dim" else "System",
+            ) { showBrightnessDialog() })
+            content.addView(toggleRow(
+                R.drawable.ic_settings, "Animation", "Tab aur page transition animations", "uiAnimation", "on",
+            ))
+            content.addView(toggleRow(
+                R.drawable.ic_fullscreen, "Show Status Bar", "Android top bar browsing ke time", "showStatusBar", "off",
+            ) { on -> if (on) exitImmersive() else enterImmersive() })
+            content.addView(toggleRow(
+                R.drawable.ic_typing, "Typing Assistant", "www. .com .in quick-input bar", "typingAssistant", "on",
+            ) { on ->
+                typingBar?.visibility = if (on && omnibox.hasFocus()) View.VISIBLE else View.GONE
+            })
+            content.addView(toggleRow(
+                R.drawable.ic_linkcolor, "Change Link Color If Clicked", "Visited links purple", "visitedLinks", "off",
+            ) { on ->
+                val t = activeTab
+                if (t != null && !t.isInternal) t.webView?.reload()
+            })
+            content.addView(pageRow(
+                R.drawable.ic_desktop, "Website Preferences (UA)", "Android · Desktop · iPhone · iPad",
+            ) { showUaOptions() })
+            pageHeader("Media", content)
+            content.addView(toggleRow(
+                R.drawable.ic_play, "Media autoplay", "Videos bina tap ke chalte hai", "autoplay", "on",
+            ) { on ->
+                tabs.forEach { t -> t.webView?.settings?.mediaPlaybackRequiresUserGesture = !on }
+            })
+        }
+    }
+
+    private fun showFontLayoutDialog() {
+        val cur = textZoomPref()
+        val seek = android.widget.SeekBar(this).apply {
+            max = 150 // 50..200 mapped
+            progress = cur - 50
+        }
+        val label = TextView(this).apply {
+            text = "Font size: $cur%"
+            textSize = 14f
+            setTextColor(0xFF9AA0A6.toInt())
+            setPadding(dp(24), dp(18), dp(24), dp(4))
+        }
+        seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                val pct = value + 50
+                label.text = "Font size: $pct%" + if (pct == 100) " (Standard)" else ""
+                LocalStore.setSetting(this@MainActivity, "textZoom", pct.toString())
+                tabs.forEach { t -> t.webView?.settings?.textZoom = pct }
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label)
+            addView(seek, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { setMargins(dp(24), dp(10), dp(24), dp(20)) })
+        }
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Font & Layout")
+            .setView(box)
+            .setPositiveButton("Done", null)
+            .show()
+    }
+
+    private fun showScrollOptions() {
+        openPage("Scroll Options") { content ->
+            content.addView(toggleRow(
+                R.drawable.ic_scroll, "Volume key scrolling", "Volume up/down se page scroll", "volumeScroll", "off",
+            ))
+            content.addView(toggleRow(
+                R.drawable.ic_scroll, "Tap-to-top button", "Scroll up par floating top button", "tapToTop", "off",
+            ))
+        }
+    }
+
+    private fun showUaOptions() {
+        val cur = uaMode()
+        showOptionSheet("Website Preferences (UA)", cur, listOf(
+            "Android Mobile" to "android",
+            "Desktop (Windows)" to "desktop",
+            "iPhone" to "iphone",
+            "iPad" to "ipad",
+        )) { v ->
+            LocalStore.setSetting(this, "uaMode", v)
+            val t = activeTab
+            if (t != null && !t.isInternal) {
+                t.webView?.settings?.userAgentString = when (v) {
+                    "desktop" -> DESKTOP_UA; "iphone" -> IPHONE_UA; "ipad" -> IPAD_UA; else -> realUA
+                }
+                t.webView?.reload()
+            }
+        }
+    }
+
+    /** ---- Download Settings (screenshot parity) ---- */
+    private fun showDownloadSettings() {
+        openPage("Download Settings") { content ->
+            val paths = listOf(
+                "Downloads (/sdcard)" to android.os.Environment.DIRECTORY_DOWNLOADS,
+                "Pictures" to android.os.Environment.DIRECTORY_PICTURES,
+                "Music" to android.os.Environment.DIRECTORY_MUSIC,
+                "Movies" to android.os.Environment.DIRECTORY_MOVIES,
+                "Documents" to android.os.Environment.DIRECTORY_DOCUMENTS,
+            )
+            val curPath = OrbitDownloader.relPath
+            content.addView(pageRow(
+                R.drawable.ic_download, "Default Path",
+                "/sdcard/" + (paths.firstOrNull { it.second == curPath }?.first?.substringBefore(" ") ?: "Download"),
+            ) { showOptionSheet("Default Path", curPath, paths) { v ->
+                OrbitDownloader.relPath = v
+                LocalStore.setSetting(this, "downloadPath", v)
+            } })
+            val maxDl = LocalStore.getSetting(this, "maxDownloads", "3").toIntOrNull()?.coerceIn(1, 6) ?: 3
+            content.addView(pageRow(
+                R.drawable.ic_download, "Max Downloads", "$maxDl",
+            ) { showOptionSheet("Max Downloads", maxDl.toString(), (1..6).map { "$it to $it" to it.toString() }) { v ->
+                LocalStore.setSetting(this, "maxDownloads", v)
+                OrbitDownloader.maxConcurrent = v.toIntOrNull() ?: 3
+            } })
+            content.addView(pageRow(
+                R.drawable.ic_newtab, "New Task",
+                if (LocalStore.getSetting(this, "newTask", "ask") == "direct") "Download Immediately" else "Always Ask",
+            ) { showOptionSheet("New Task", LocalStore.getSetting(this, "newTask", "ask"), listOf(
+                "Always Ask (name dialog)" to "ask", "Download Immediately" to "direct",
+            )) { v -> LocalStore.setSetting(this, "newTask", v) } })
+            content.addView(toggleRow(
+                R.drawable.ic_refresh, "Auto Reconnect", "Interrupted download khud resume", "autoReconnect", "on",
+            ) { on -> OrbitDownloader.autoReconnect = on })
+            content.addView(toggleRow(
+                R.drawable.ic_notif_orbit, "Notification", "Pulse light and notification sound", "dlNotifSound", "off",
+            ))
+            pageHeader("Queue", content)
+            val running = LocalStore.listDownloads(this).filter {
+                it.status == OrbitDownloader.ST_RUNNING || it.status == OrbitDownloader.ST_PAUSED
+            }
+            content.addView(pageRow(R.drawable.ic_download, "Active tasks", "${running.size} queued/running") { showDownloadsPage() })
+        }
+        // live wiring — page kholte hi settings ko engine me push
+        OrbitDownloader.maxConcurrent =
+            LocalStore.getSetting(this, "maxDownloads", "3").toIntOrNull()?.coerceIn(1, 6) ?: 3
+        OrbitDownloader.autoReconnect = LocalStore.getSetting(this, "autoReconnect", "on") != "off"
+        OrbitDownloader.relPath = LocalStore.getSetting(this, "downloadPath", android.os.Environment.DIRECTORY_DOWNLOADS)
+    }
+
+    /** ---- Notification Settings (screenshot parity) ---- */
+    private fun showNotificationSettings() {
+        openPage("Notification Settings") { content ->
+            content.addView(toggleRow(
+                R.drawable.ic_notif_orbit, "Push Notification", "System notification bar", "pushNotif", "on",
+            ) { on -> updateQuickAccessNotification() })
+            content.addView(toggleRow(
+                R.drawable.ic_speed, "\u201CJust In\u201D Notification", "Get alert when surfing", "justIn", "on",
+            ))
+            content.addView(pageRow(
+                R.drawable.ic_shield, "Site Notification", "Web push permissions per website",
+            ) { showSiteNotifications() })
+            content.addView(pageRow(
+                R.drawable.ic_tabs, "Quick Access", "Shortcuts in the notification bar",
+            ) { showQuickAccessSettings() })
+        }
+    }
+
+    private fun showSiteNotifications() {
+        openPage("Site Notification") { content ->
+            content.addView(toggleRow(
+                R.drawable.ic_notsecure, "Block site notification requests", "Koi site notif maang sake? Default block", "blockSiteNotif", "on",
+            ))
+            pageHeader("Granted sites", content)
+            val granted = LocalStore.getSetting(this, "siteNotifs", "")
+            val list = runCatching {
+                if (granted.isBlank()) emptyList() else JObj(granted).optJSONArray("v")?.let { a ->
+                    (0 until a.length()).map { a.getString(it) }
+                } ?: emptyList()
+            }.getOrDefault(emptyList())
+            if (list.isEmpty()) {
+                content.addView(pageEmpty(
+                    "No site notifications requested yet.\n\nOrbit WebView apps se web-push requests nahi aate — yahan future grants dikhenge.",
+                ))
+            } else {
+                list.forEach { host ->
+                    content.addView(pageRow(R.drawable.ic_shield, host, "Allowed") {
+                        val newV = list - host
+                        LocalStore.setSetting(this, "siteNotifs",
+                            JObj().put("v", JSONArray(newV)).toString())
+                        showSiteNotifications()
+                    })
+                }
+            }
+        }
+    }
+
+    private fun showQuickAccessSettings() {
+        openPage("Quick Access") { content ->
+            content.addView(pageEmpty(
+                "Quick Access notification me ye shortcuts hain:\n\n" +
+                    "1. Orbit — app open\n2. QR Scan — scanner\n3. Downloads — download manager\n\n" +
+                    "Push Notification toggle se poora bar on/off hota hai.",
+            ))
+        }
+    }
+
+    /** ---- Search Settings page ---- */
+    private fun showSearchSettingsPage() {
+        openPage("Search Settings") { content ->
+            val engineName = when (LocalStore.getSetting(this, "searchEngine", "google")) {
+                "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
+            }
+            content.addView(pageRow(R.drawable.ic_find, "Default search engine", "$engineName — search bar + omnibox") {
+                showSearchEngineCard()
+            })
+            content.addView(toggleRow(
+                R.drawable.ic_find, "Search suggestions", "Typing par history + engine suggestions", "searchSuggestions", "on",
+            ) { on -> if (!on) suggestPopup?.dismiss() })
+            pageHeader("Note", content)
+            content.addView(pageEmpty(
+                "Google is the default engine.\n\nVPN (Spider Mode) ON hone par DuckDuckGo force hota hai — privacy guarantee ke liye. VPN OFF hone par aapki choice wapas lagti hai.",
+            ))
+        }
+    }
+
+    /** ---- Social Media Downloader Settings ---- */
+    private fun showSocialDownloaderSettings() {
+        openPage("Social Media Downloader Settings") { content ->
+            content.addView(toggleRow(
+                R.drawable.ic_social, "Auto-detect videos", "Reels/videos par Download offer", "socialDownloader", "on",
+            ))
+            pageHeader("Supported sites", content)
+            SOCIAL_HOSTS.forEach { host ->
+                content.addView(pageRow(R.drawable.ic_social, host, "Video source scan ON") { })
+            }
+            content.addView(pageEmpty(
+                "Page load hote hi Orbit scan karta hai direct video sources (mp4). Mile to bottom bar par Download offer aata hai — Orbit download engine (4-thread parallel) use hota hai.",
+            ))
+        }
+    }
+
+    /** ---- Themes page (Dark / AMOLED / Wallpaper) ---- */
+    private fun showThemesPage() {
+        openPage("Themes") { content ->
+            val cur = LocalStore.getSetting(this, "appTheme", "dark")
+            content.addView(pageRow(
+                R.drawable.ic_theme, "Dark", if (cur == "dark") "Current" else "Default dark grey",
+            ) { applyTheme("dark") }.also {
+                if (cur == "dark") it.setBackgroundColor(0x1A8AB4F8.toInt())
+            })
+            content.addView(pageRow(
+                R.drawable.ic_theme, "AMOLED Black", if (cur == "amoled") "Current" else "Pure #000000 — battery saver",
+            ) { applyTheme("amoled") }.also {
+                if (cur == "amoled") it.setBackgroundColor(0x1A8AB4F8.toInt())
+            })
+            content.addView(pageRow(
+                R.drawable.ic_banner, "Wallpaper", if (cur == "wallpaper") "Current" else "Pick a custom home wallpaper",
+            ) {
+                runCatching {
+                    val i = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                    startActivityForResult(i, REQ_WALLPAPER)
+                }.onFailure {
+                    Toast.makeText(this, "Gallery not available", Toast.LENGTH_SHORT).show()
+                }
+            }.also {
+                if (cur == "wallpaper") it.setBackgroundColor(0x1A8AB4F8.toInt())
+            })
+            pageHeader("Preview note", content)
+            content.addView(pageEmpty(
+                "Theme turant home screen par apply hota hai (Dim overlay + background). AMOLED Black pure black use karta hai — OLED screens par battery bachata hai.",
+            ))
+        }
+    }
+
+    private fun applyTheme(mode: String) {
+        LocalStore.setSetting(this, "appTheme", mode)
+        tabs.forEach { t ->
+            if (t.url == NEWTAB) {
+                t.webView?.evaluateJavascript(
+                    "if(window.themePush)themePush(${escapeJs(mode)});", null,
+                )
+            }
+        }
+        // WebView chrome bg bhi theme follow kare
+        val bg = when (mode) {
+            "amoled" -> 0xFF000000.toInt(); else -> 0xFF202124.toInt()
+        }
+        tabs.forEach { t -> t.webView?.setBackgroundColor(bg) }
+        homeWebView?.setBackgroundColor(bg)
+        Toast.makeText(this, "Theme: " + when (mode) {
+            "amoled" -> "AMOLED Black"; "wallpaper" -> "Wallpaper"; else -> "Dark"
+        }, Toast.LENGTH_SHORT).show()
+    }
+
+    /** ---- Cloud Boost sheet ---- */
+    private fun showCloudBoostSheet() {
+        val cur = LocalStore.getSetting(this, "cloudBoost", "on")
+        showOptionSheet("Cloud Boost", cur, listOf(
+            "ON — full acceleration (recommended)" to "on",
+            "Wi-Fi only" to "wifi",
+            "Off" to "off",
+        )) { v ->
+            LocalStore.setSetting(this, "cloudBoost", v)
+            Toast.makeText(
+                this,
+                if (v == "off") "Cloud Boost OFF" else "Cloud Boost ON — preconnect + prefetch active",
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    /** ---- Language page ---- */
+    private fun showLanguagePage() {
+        val cur = LocalStore.getSetting(this, "appLanguage", "en")
+        showOptionSheet("Language", cur, listOf(
+            "English" to "en", "Hindi (translate + search)" to "hi",
+            "Gujarati (translate + search)" to "gu", "Bengali" to "bn",
+            "Tamil" to "ta", "Telugu" to "te",
+        )) { v ->
+            LocalStore.setSetting(this, "appLanguage", v)
+            Toast.makeText(
+                this,
+                "Language: ${languageName(v)} — AI Translation + Google search hl apply",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    /** ---- Clear Records (UC style checkboxes) ---- */
+    private fun showClearRecords() {
+        val opts = listOf(
+            "Cache" to CheckBox(this),
+            "Cookies" to CheckBox(this),
+            "History" to CheckBox(this),
+            "Form data" to CheckBox(this),
+            "Passwords" to CheckBox(this),
+        )
+        opts.forEach { it.second.isChecked = true }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(10), dp(24), dp(0))
+        }
+        opts.forEach { (label, cb) ->
+            cb.text = label
+            cb.setTextColor(0xFFE8EAED.toInt())
+            box.addView(cb, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(42),
+            ))
+        }
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Clear Records")
+            .setView(box)
+            .setPositiveButton("Clear") { _, _ ->
+                val selected = opts.filter { it.second.isChecked }.map { it.first }
+                runCatching {
+                    if ("Cache" in selected) WebView(this).clearCache(true)
+                    if ("Cookies" in selected) android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                    if ("History" in selected) LocalStore.clearHistory(this)
+                    if ("Form data" in selected) WebViewDatabase.getInstance(this).clearFormData()
+                    if ("Passwords" in selected) WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword()
+                }
+                Toast.makeText(this, "Cleared: ${selected.joinToString()}", Toast.LENGTH_LONG).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** ---- Reset to Default (UC bottom button) ---- */
+    private fun confirmResetToDefault() {
+        AlertDialog.Builder(this, R.style.OrbitDialog)
+            .setTitle("Reset to Default")
+            .setMessage("All settings will reset to factory defaults.\n\nHistory, bookmarks and downloads will NOT be deleted.")
+            .setPositiveButton("Reset") { _, _ ->
+                runCatching {
+                    LocalStore.clearAllSettings(this)
+                    // engine-level defaults dobara lagao
+                    tabs.forEach { t ->
+                        t.webView?.settings?.textZoom = 100
+                        t.webView?.settings?.loadsImagesAutomatically = true
+                        t.webView?.settings?.mediaPlaybackRequiresUserGesture = false
+                    }
+                    OrbitDownloader.maxConcurrent = 3
+                    OrbitDownloader.autoReconnect = true
+                    OrbitDownloader.relPath = android.os.Environment.DIRECTORY_DOWNLOADS
+                    applyBrightnessPref()
+                    updateQuickAccessNotification()
+                    Toast.makeText(this, "Settings reset to default", Toast.LENGTH_LONG).show()
+                    showSettings()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private fun assetHtml(name: String): String =
@@ -4193,6 +6594,12 @@ class MainActivity : Activity() {
 
         // v1.7.0 — voice search (home search bar mic) request code
         private const val REQ_VOICE = 4203
+
+        // v1.9.4 — Set as Default Browser role request
+        private const val REQ_DEFAULT_BROWSER = 4204
+
+        // v1.9.4 — Themes wallpaper picker request
+        private const val REQ_WALLPAPER = 4205
 
         /** Desktop site toggle ke liye — modern desktop Chrome UA */
         const val DESKTOP_UA =
