@@ -1018,6 +1018,40 @@ function relTime(t) {
   } catch (e) { return ''; }
 }
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ==================== v1.9.8 INSTANT HOME (merged from v1.9.7 cache-render) ====================
+// Har successful fetch ke baad compact snapshot localStorage me. NTP dobara
+// render hote waqt skeletons ka intezar NAHI — cached content TURANT dikhta hai,
+// phir background fetch fresh data laakar replace kar deta hai (render functions
+// innerHTML overwrite karte hai — duplicate-free).
+function orbCGet(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function orbCSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function orbCacheRender() {
+  try {
+    var m = orbCGet('orbCacheMusic');
+    if (m && m.length && !MQ.list.length) { MQ.list = m; MQ.idx = -1; MQ.skips = 0; renderMusic(); }
+    var y = orbCGet('orbCacheYt');
+    if (y && y.length && !YT.pool.length) { YT.pool = y; ytStartStrip(); }
+    var n = orbCGet('orbCacheNews');
+    if (n && n.length) {
+      var el = document.getElementById('newsList');
+      if (el && !el.querySelector('.nrow')) {
+        var html = '';
+        for (var x = 0; x < n.length; x++) {
+          (function (nx) {
+            var src = (nx.s || 'Google News').replace(/&quot;/g, '');
+            var tt = (nx.t || '').replace(/ - [^-]+$/, '');
+            html += '<div class="nrow" data-u="' + esc(nx.l) + '">' +
+              '<div class="nt">' + esc(tt) + '</div>' +
+              '<div class="nm"><b>' + esc(src) + '</b>' + (nx.ts ? ' · ' + relTime(nx.ts) : '') + '</div></div>';
+          })(n[x]);
+        }
+        el.innerHTML = html;
+      }
+    }
+  } catch (e) {}
+}
+try { orbCacheRender(); } catch (e2) {}
 function xmlTag(x, tag) { var n = x.getElementsByTagName(tag)[0]; return n ? n.textContent : ''; }
 // ASYNC feed fetch — JS ko kabhi block nahi karta (slow net par home hamesha smooth).
 // Native fetchFeedAsync → window.feedData(id, body) callback.
@@ -1263,6 +1297,7 @@ function buildMusic() {
       // (renderMusic), PLAYBACK chain isliye unlimited ban sakta hai.
       MQ.list = all;
       MQ.seen = seen;   // global dedupe — isi me dobara wahi gaana kabhi nahi
+      try { orbCSet('orbCacheMusic', all.slice(0, 15)); } catch (eC) {}   // v1.9.8 instant-home
       renderMusic();
     } catch (e) { musicError(); }
   }
@@ -1634,6 +1669,7 @@ function buildYt() {
     var arot = (openN * 3) % Math.max(1, algo.length);
     var algoR = algo.slice(arot).concat(algo.slice(0, arot));
     YT.pool = algoR.concat(disc);
+    try { orbCSet('orbCacheYt', YT.pool.slice(0, 24).map(function (v) { return { id: v.id, t: v.t }; })); } catch (eC2) {}   // v1.9.8 instant-home
     ytStartStrip();
   }
   for (var qi = 0; qi < qs.length; qi++) {
@@ -1865,6 +1901,7 @@ function buildNews() {
       })(out[x]);
     }
     el.innerHTML = html;
+    if (out.length) try { orbCSet('orbCacheNews', out.map(function (x) { return { t: x.t, s: x.s, ts: x.ts, ep: x.ep, l: x.l }; })); } catch (eC3) {}   // v1.9.8 instant-home
   }
   step();
 }

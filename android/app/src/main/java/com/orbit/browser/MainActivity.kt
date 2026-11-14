@@ -284,6 +284,24 @@ class MainActivity : Activity() {
     private fun initNormal() {
         setContentView(R.layout.activity_main)
 
+        // v1.9.8 (merged from v1.9.7) — spider mode engine ko "ddg" likhta hai;
+        // purane versions me prevEngine sirf memory me tha — process beech me mara
+        // to engine DDG par ATAK gaya. Ab: persisted spiderPrevEngine restore
+        // (crash-safe) + one-time migration google par.
+        runCatching {
+            val spiderOnNow = RelayEngine.state == "on" || RelayEngine.state == "connecting"
+            if (!spiderOnNow && LocalStore.getSetting(this, "searchEngine", "google") == "ddg") {
+                val prev = LocalStore.getSetting(this, "spiderPrevEngine", "")
+                if (prev.isNotBlank() && prev != "ddg") {
+                    LocalStore.setSetting(this, "searchEngine", prev)
+                } else if (LocalStore.getSetting(this, "engineMigrated", "0") != "1") {
+                    LocalStore.setSetting(this, "searchEngine", "google")
+                    LocalStore.setSetting(this, "engineMigrated", "1")
+                }
+                LocalStore.setSetting(this, "spiderPrevEngine", "")
+            }
+        }
+
         // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — Chrome-jaisa
         // insets handling: toolbar status bar ke NEECHE baithega.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -3578,6 +3596,8 @@ class MainActivity : Activity() {
                 // prevEngine sirf TRANSITION par save (repeat calls par user ki
                 // original choice overwrite na ho)
                 prevEngine = LocalStore.getSetting(this, "searchEngine", "google").takeIf { it != "ddg" }
+                // v1.9.8 merge (v1.9.7) — persist (process-death-safe restore)
+                LocalStore.setSetting(this, "spiderPrevEngine", prevEngine ?: "")
             }
             // v1.5.0 — CONTINUOUS force (idempotent): har state-event par ddg likho
             // taaki Settings picker + placeholder spider mode me hamesha DDG dikhaye
@@ -3601,6 +3621,7 @@ class MainActivity : Activity() {
                         refreshChrome()
                     }
                     prevEngine = null
+                    LocalStore.setSetting(this, "spiderPrevEngine", "")
                 }
                 reloadNewtabIfVisible()
             }
