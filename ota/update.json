@@ -1,7 +1,7 @@
 {
-  "versionCode": 36,
-  "versionName": "1.9.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.0/orbit-browser-1.9.0.apk",
-  "notes": "v1.9.0 — SONGS FIX + YOUTUBE REVAMP: (1) Songs ka play-button crash FIX — gaane ab 320kbps high-quality me chalte hai, koi 'Song unavailable' toast-spam nahi. (2) YouTube For You me ab UNGI SE SWIPE karo — jitna swipe karo utne NAYE thumbnails aate rahenge; apne-aap slide me sirf 12 thumbnails ghoomte hai phir repeat. (3) AB AAPKI SEARCH KA ALGORITHM: app me jo bhi search kiya hai us hisab se videos pehle dikhenge, har open par alag fresh screen. (4) Gaane bhi ab aapki pasand ke — jo artist/album sune hai uske related suggestions. (5) Video news ab aur fast + fresh. versionCode 36",
+  "versionCode": 37,
+  "versionName": "1.9.1",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.1/orbit-browser-1.9.1.apk",
+  "notes": "v1.9.1 \u2014 UPDATE DELIVERY FIX: (1) Agar koi update download ho chuka hai par install nahi hua to ab home screen par banner dikhega \u2014 tap Install karke update hamesha poori tarah install hoga. (2) App chalti rahe to bhi har 6 ghante me naya update check hota hai. (3) Crash screen par bhi seedha 'Install update' button. (4) Songs play karne par notification wali service aur bhi strong \u2014 purane version ka play-crash ab kisi bhi phone par possible nahi. versionCode 37",
   "minVersionCode": 1
 }
