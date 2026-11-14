@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -111,12 +112,38 @@ class MainActivity : Activity() {
         var blockedCount: Int = 0      // Brave Shields — is page par kitne blocked
         var sleeping: Boolean = false  // Edge sleeping tabs — WebView frozen
         var evicted: Boolean = false   // Opera RAM limiter — WebView destroy hua, select par recreate
+        var ntpAlive: Boolean = false  // v1.9.7 — NTP DOM alive hai (home instant, no reload)
         var lastActive: Long = System.currentTimeMillis()
     }
 
     private val tabs = mutableListOf<Tab>()
     private var activeTab: Tab? = null
     private var nextTabId = 1L
+
+    // v1.9.7 — HTML5 fullscreen video (YouTube) — custom view overlay + landscape
+    private var customView: View? = null
+    private var customCb: WebChromeClient.CustomViewCallback? = null
+    private var customOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private val YT_AD_SKIP_JS = """
+        (function(){
+          if (window.__orbAdSkip) return; window.__orbAdSkip = 1;
+          function orbKill(){
+            try{
+              var p = document.getElementById('movie_player');
+              if (p && p.classList.contains('ad-showing')){
+                var v = p.querySelector('video.html5-main-video');
+                if (v && v.duration) { try { v.currentTime = v.duration; } catch(e){} }
+                var b = p.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot');
+                if (b) { try { b.click(); } catch(e2){} }
+              }
+              var ovs = document.querySelectorAll('.ytp-ad-overlay-container,.ytp-ad-image-overlay,.ytp-ad-message-container');
+              for (var i=0;i<ovs.length;i++) ovs[i].style.display='none';
+            }catch(e){}
+          }
+          setInterval(orbKill, 400);
+          document.addEventListener('DOMContentLoaded', orbKill);
+        })();
+    """.trimIndent()
 
     private lateinit var toolbar: LinearLayout
     private lateinit var container: FrameLayout
@@ -262,6 +289,24 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun initNormal() {
         setContentView(R.layout.activity_main)
+
+        // v1.9.7 — STUCK-DDG RECOVERY (user: "default search engine Google hi hona chahiye"):
+        // spider mode engine ko "ddg" likhta hai; purane versions me prevEngine sirf memory me
+        // tha — process beech me mara to engine DDG par ATAK gaya. Ab: persisted
+        // spiderPrevEngine restore (crash-safe) + one-time migration google par.
+        runCatching {
+            val spiderOn = RelayEngine.state == "on" || RelayEngine.state == "connecting"
+            if (!spiderOn && LocalStore.getSetting(this, "searchEngine", "google") == "ddg") {
+                val prev = LocalStore.getSetting(this, "spiderPrevEngine", "")
+                if (prev.isNotBlank() && prev != "ddg") {
+                    LocalStore.setSetting(this, "searchEngine", prev)
+                } else if (LocalStore.getSetting(this, "engineMigrated", "0") != "1") {
+                    LocalStore.setSetting(this, "searchEngine", "google")
+                    LocalStore.setSetting(this, "engineMigrated", "1")
+                }
+                LocalStore.setSetting(this, "spiderPrevEngine", "")
+            }
+        }
 
         // Android 15 (targetSdk 35) edge-to-edge FORCE karta hai — Chrome-jaisa
         // insets handling: toolbar status bar ke NEECHE baithega.
@@ -587,6 +632,18 @@ class MainActivity : Activity() {
         // wapas "keeps stopping" dialog nahi aayega
     }
 
+    /** v1.9.7 — fullscreen video overlay band + orientation/systemBars restore */
+    private fun hideCustomVideoView() {
+        val cv = customView ?: return
+        (cv.parent as? ViewGroup)?.removeView(cv)
+        customView = null
+        customCb?.let { runCatching { it.onCustomViewHidden() } }
+        customCb = null
+        requestedOrientation = customOrientation
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    }
+
     override fun onBackPressed() {
         // emergency/survival screen chal rahi hai (init adhoora) — kuch na touch karo
         if (!this::tabSwitcher.isInitialized) {
@@ -595,6 +652,11 @@ class MainActivity : Activity() {
         }
         // v1.4.0 — history/bookmarks/settings page khula hai to pehle wo band karo
         // v1.9.4 — department sub-page ho to back-key parent page par wapas
+        if (customView != null) {
+            // v1.9.7 — fullscreen video chal raha hai to pehle wo band (Chrome parity)
+            hideCustomVideoView()
+            return
+        }
         if (pageOpen) {
             popPage()
             return
@@ -969,6 +1031,47 @@ class MainActivity : Activity() {
                 // v1.8.0 — btnReload hata (header clean): progress ab top line loader me hai
             }
 
+            // v1.9.7 — HTML5 VIDEO FULLSCREEN: custom view ko content par overlay karo,
+            // immersive flags + landscape video par sensor-landscape rotation (Chrome parity).
+            // Rotation decision video-child ke ASPECT se — portrait container me khud
+            // custom view fullscreen hota hai isliye child-walk zaroori hai.
+            override fun onShowCustomView(view: View?, callback: WebChromeClient.CustomViewCallback?) {
+                if (customView != null) { callback?.onCustomViewHidden(); return }
+                val cv = view ?: run { callback?.onCustomViewHidden(); return }
+                val content = window.decorView.findViewById<ViewGroup>(android.R.id.content)
+                    ?: run { callback?.onCustomViewHidden(); return }
+                customView = cv
+                customCb = callback
+                customOrientation = requestedOrientation
+                cv.setBackgroundColor(Color.BLACK)
+                content.addView(
+                    cv,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility =
+                    View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                fun isLandscapeVideo(v: View): Boolean {
+                    if (v.width > v.height * 1.05f) return true
+                    val g = v as? ViewGroup ?: return false
+                    for (i in 0 until g.childCount) if (isLandscapeVideo(g.getChildAt(i))) return true
+                    return false
+                }
+                cv.post {
+                    if (customView === cv && isLandscapeVideo(cv)) {
+                        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
+                }
+            }
+
+            override fun onHideCustomView() {
+                hideCustomVideoView()
+            }
+
             // v1.4.0 — "Block pop-ups" setting ON ho to target=_blank window.open
             // bhi block (Chrome "Pop-ups and redirects" parity)
             override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
@@ -1043,11 +1146,23 @@ class MainActivity : Activity() {
     private fun navigate(tabId: Long, url: String) {
         // v1.4.1 — navigation ka matlab keyboard ka kaam khatam: IME turant close
         hideKeyboard()
+        // v1.9.7 — INSTANT HOME: koi alive NTP tab already hai to USI par switch —
+        // home har baar reload nahi hota, music player + YT strip ki state live rehti hai
+        if (url == NEWTAB) {
+            val alive = tabs.firstOrNull {
+                it.id != tabId && it.isInternal && it.url == NEWTAB && it.ntpAlive && it.webView != null
+            }
+            if (alive != null) {
+                selectTab(alive.id)
+                return
+            }
+        }
         // v1.7.0 — INSTANT SERVE: warm prerendered site match? already-loaded tab
         // turant adopt — network wait zero. Home newtab tab site ki jagah le leta hai.
         if (!url.startsWith("orbit://") && maybeAdoptWarm(url)) {
             val old = tabs.firstOrNull { it.id == tabId }
-            if (old != null && old.isInternal && old.url == NEWTAB) closeTabInternal(old)
+            // v1.9.7 — alive NTP tab MAT todo (background me zinda rahega, wapas aane par instant)
+            if (old != null && old.isInternal && old.url == NEWTAB && !old.ntpAlive) closeTabInternal(old)
             refreshChrome()
             return
         }
@@ -1072,6 +1187,12 @@ class MainActivity : Activity() {
         // (page khud JS se banta hai; user ka "JavaScript OFF" pref sirf real sites par)
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         wv.settings.javaScriptEnabled = true
+        // v1.9.7 — NTP alive hai to dobara render NAHI (home instant + music state live)
+        if (url == NEWTAB && tab.ntpAlive) {
+            tab.title = "New Tab"
+            refreshChrome()
+            return
+        }
         tab.title = when {
             url == NEWTAB -> "New Tab"
             url.startsWith("orbit://search") -> "Orbit AI Search"
@@ -1081,6 +1202,7 @@ class MainActivity : Activity() {
         when {
             url == NEWTAB -> {
                 wv.loadDataWithBaseURL("https://orbit.local/", assetHtml("newtab.html"), "text/html", "UTF-8", NEWTAB)
+                tab.ntpAlive = true   // v1.9.7 — ab selectTab/home-switch isse reload nahi karega
                 // v1.7.0 — feed engines + warm prerender (newtab render ke BAAD, UI
                 // kabhi block na ho)
                 wv.postDelayed({ runCatching { ensureCity() } }, 300)
@@ -1104,6 +1226,7 @@ class MainActivity : Activity() {
 
     private fun loadUrlInTab(tab: Tab, url: String) {
         tab.isInternal = false
+        tab.ntpAlive = false   // v1.9.7 — isi webview me site load hui, NTP DOM gaya
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
         // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
         // native browser jaisa chalega.
@@ -1853,6 +1976,14 @@ class MainActivity : Activity() {
             sleeper.removeCallbacks(stallCheck)
             if (!omnibox.hasFocus()) omniIcon.visibility = View.VISIBLE
             updateShieldBadge()
+            // v1.9.7 — YT AD SKIP: youtube par ad-skip userscript inject (400ms watch:
+            // .ad-showing → ad video ko end + skip-button click = click karte hi video)
+            val u = url ?: ""
+            if (!tab.isInternal && u.contains("youtube.com") &&
+                LocalStore.getSetting(this@MainActivity, "ytAdSkip", "on") == "on"
+            ) {
+                view?.evaluateJavascript(YT_AD_SKIP_JS, null)
+            }
             // internal entry (back-nav included) — clean chrome, history me kuch nahi
             if (url == NEWTAB || url == "https://orbit.local/" || tab.isInternal) {
                 refreshChrome()
@@ -3132,6 +3263,7 @@ class MainActivity : Activity() {
             fun privacyDept(c: LinearLayout) {
                 tgl(c, R.drawable.ic_shield, "Shields (block ads & trackers)", "Network-level ad + tracker blocking", "shields", "on")
                 tgl(c, R.drawable.ic_lock, "Anti-fingerprint", "Canvas noise + hardware spoof", "antiFp", "on")
+                tgl(c, R.drawable.ic_forward, "YouTube ad skip", "Ads skipped automatically — videos play directly", "ytAdSkip", "on")
                 c.addView(pageRow(R.drawable.ic_trash, "Clear browsing data", "History, cookies, cache") { showClearDataCard() })
                 c.addView(pageRow(R.drawable.ic_fire, "Fire Button", "Wipe everything instantly") { fireButton() })
             }
@@ -3353,6 +3485,8 @@ class MainActivity : Activity() {
                 // prevEngine sirf TRANSITION par save (repeat calls par user ki
                 // original choice overwrite na ho)
                 prevEngine = LocalStore.getSetting(this, "searchEngine", "google").takeIf { it != "ddg" }
+                // v1.9.7 — persist (process-death-safe restore; pehle memory-only tha)
+                LocalStore.setSetting(this, "spiderPrevEngine", prevEngine ?: "")
             }
             // v1.5.0 — CONTINUOUS force (idempotent): har state-event par ddg likho
             // taaki Settings picker + placeholder spider mode me hamesha DDG dikhaye
@@ -3376,6 +3510,7 @@ class MainActivity : Activity() {
                         refreshChrome()
                     }
                     prevEngine = null
+                    LocalStore.setSetting(this, "spiderPrevEngine", "")
                 }
                 reloadNewtabIfVisible()
             }

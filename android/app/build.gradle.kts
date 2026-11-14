@@ -71,8 +71,8 @@ android {
         applicationId = "com.orbit.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 42 // v1.9.6 — Orbit original logo restore
-        versionName = "1.9.6"
+        versionCode = 43 // v1.9.7 — Google default + YT fullscreen/ad-skip + instant home
+        versionName = "1.9.7"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 
