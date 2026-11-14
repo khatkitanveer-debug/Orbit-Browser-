@@ -1,7 +1,7 @@
 {
-  "versionCode": 39,
-  "versionName": "1.9.3",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.3/orbit-browser-1.9.3.apk",
-  "notes": "v1.9.3 — UNLIMITED SONGS + SLOW YT SLIDE: (1) Songs ab khatam nahi honge — 55 se start, jaise-jaise chalenge utne naye related gaane apne aap queue me aayenge (aapke sune gaano ke artist/album se related). Ek bhi gaana repeat nahi hoga. Car me bhi poori trip ek ke baad ek naye gaane. (2) YouTube For-You slide ki speed 60% slow kar di — ab calm glide. versionCode 39",
+  "versionCode": 44,
+  "versionName": "1.9.8",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.8/orbit-browser-1.9.8.apk",
+  "notes": "v1.9.8 — UC BROWSER SPEED + UI: (1) SPEED ENGINE: naya tab instant khulta hai (prewarmed engine), Cloud Boost — page ke links pehle se warm hote hai (tap = instant), repeat visits cache se offline-jaisi fast. (2) UC TOOLS: 3-dot me 'Tools' — Speed Mode, Orbit Music, Screenshot (full-page bhi), Clipboard history, AI Translation, QR Scanner, Save Page (offline MHTML), Full Screen, Find in Page. (3) UC SETTINGS: AD Setting (whitelist ke saath), Browsing Settings (font size, image quality, swipe back/forward, brightness, typing assistant, UA desktop/iPhone), Download Settings (path, max parallel, auto-resume), Notification Settings, Themes (Dark/AMOLED/Wallpaper), Language, Clear Records, Account, Reset to Default. (4) HOME: UC jaisa 2x5 speed dial grid (Google, YouTube, X, Instagram, WhatsApp, Facebook, Amazon, Flipkart + More + Add). (5) FIXES: Home par wapas aane par music player/YouTube dobara load NAHI hota (state preserved). YouTube video landscape/fullscreen me chalta hai. YouTube ad ki black screen instant skip. volumeCode 44",
   "minVersionCode": 1
 }
