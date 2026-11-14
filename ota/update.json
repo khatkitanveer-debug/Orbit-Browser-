@@ -1,7 +1,7 @@
 {
-  "versionCode": 38,
-  "versionName": "1.9.2",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.2/orbit-browser-1.9.2.apk",
-  "notes": "v1.9.2 — SONGS UNAVAILABLE FIX: (1) Songs ab 2 tarah se play honge — agar device ka decrypt fail ho to app ke andar hi JS decrypt fallback chalta hai, isliye 'Songs are unavailable' toast ab kisi bhi phone par nahi aayega. (2) Gaane ke beech stream fail ho to agla gaana khud chal jata hai (pehle yahan atak jata tha). (3) Decrypt fail hone ka reason ab log me save hota hai. versionCode 38",
+  "versionCode": 39,
+  "versionName": "1.9.3",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.3/orbit-browser-1.9.3.apk",
+  "notes": "v1.9.3 — UNLIMITED SONGS + SLOW YT SLIDE: (1) Songs ab khatam nahi honge — 55 se start, jaise-jaise chalenge utne naye related gaane apne aap queue me aayenge (aapke sune gaano ke artist/album se related). Ek bhi gaana repeat nahi hoga. Car me bhi poori trip ek ke baad ek naye gaane. (2) YouTube For-You slide ki speed 60% slow kar di — ab calm glide. versionCode 39",
   "minVersionCode": 1
 }
