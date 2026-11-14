@@ -1,7 +1,7 @@
 {
-  "versionCode": 40,
-  "versionName": "1.9.4",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.4/orbit-browser-1.9.4.apk",
-  "notes": "v1.9.4 — CHROME-STYLE SETTINGS: Settings page is now fully section-wise like Chrome. Main page shows a 'Search settings' bar with live filtering plus grouped departments (Basics: Search engine, Privacy and security, VPN, Default browser, Sign in & sync; Advanced: Site settings, Tabs, Notifications; About). Tap any department to open its own sub-page with back navigation — all detailed options live inside, exactly like Chrome. All existing toggle behaviors preserved. versionCode 40",
+  "versionCode": 41,
+  "versionName": "1.9.5",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.5/orbit-browser-1.9.5.apk",
+  "notes": "v1.9.5 — CHROME-STYLE APP ICON: Orbit's launcher icon now wears a Chrome-family look — a red/yellow/green color wheel with a blue center on a clean white background (original drawing, inspired design). All previous features (Chrome-style section-wise settings, unlimited songs, slow For-You slide) stay intact. versionCode 41",
   "minVersionCode": 1
 }
