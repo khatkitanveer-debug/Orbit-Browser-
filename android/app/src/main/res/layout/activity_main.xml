@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:background="@color/chrome_bg">
 
-    <!-- Chrome Android toolbar: [omnibox pill][tab count][3-dot] -->
+    <!-- v1.8.0 toolbar: [omnibox pill (site par)][3-dot menu] — baaki sab hata -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
@@ -82,16 +82,9 @@
                 android:visibility="gone"
                 android:text="🛡 0" />
 
-            <ImageButton
-                android:id="@+id/btn_reload"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_gravity="end|center_vertical"
-                android:layout_marginEnd="5dp"
-                android:background="@drawable/btn_ripple"
-                android:src="@drawable/ic_refresh"
-                android:contentDescription="@string/reload"
-                android:tint="@color/chrome_text_dim" />
+            <!-- v1.8.0 — reload button REMOVE (user request: header me reload nahi).
+                 Reload ab pull-to-refresh se hota hai. Niche wala clear X (typing
+                 mode) abhi bhi hai — wo address text saaf karta hai. -->
 
             <!-- v1.3.5 — omnibox focus-mode clear (X): typing ke waqt reload ki
                  jagah X dikhta hai, text saaf karte hi icons wapas -->
@@ -108,58 +101,11 @@
                 android:visibility="gone" />
         </FrameLayout>
 
-        <!-- v1.6.0 — NTP brand: pill hidden hone par toolbar ka khaali hissa —
-             home screen par sirf [Orbit] [home] [tabs] [menu] dikhta hai -->
-        <TextView
-            android:id="@+id/toolbar_brand"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="40dp"
-            android:gravity="center_vertical"
-            android:paddingStart="12dp"
-            android:textSize="17sp"
-            android:textStyle="bold"
-            android:textColor="@color/chrome_text"
-            android:text="Orbit"
-            android:visibility="gone"
-            android:importantForAccessibility="no" />
-
-        <!-- v1.4.1 — HOME button: kisi bhi site se ek tap me Orbit home (newtab) -->
-        <ImageButton
-            android:id="@+id/btn_home"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:src="@drawable/ic_home"
-            android:contentDescription="Home"
-            android:tint="@color/chrome_text" />
-
-        <!-- Chrome tab-count button: rounded square + number -->
-        <FrameLayout
-            android:id="@+id/btn_tabs"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/btn_ripple"
-            android:contentDescription="@string/tabs">
-
-            <FrameLayout
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:background="@drawable/tab_count_bg">
-
-                <TextView
-                    android:id="@+id/tab_count"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:gravity="center"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/chrome_text"
-                    android:text="1" />
-            </FrameLayout>
-        </FrameLayout>
-
+        <!-- v1.8.0 — HEADER CLEAN (user request: upar header me Orbit logo, home
+             button, reload button, tab-count — SAB REMOVE). Ab toolbar me sirf
+             site pages par [omnibox pill] + hamesha [3-dot menu] dikhta hai.
+             Home/Tabs/reload menu ke through milte hai. Home screen par pill bhi
+             hidden hai (v1.6.0) — to header = sirf menu, content full-bleed. -->
         <ImageButton
             android:id="@+id/btn_menu"
             android:layout_width="40dp"

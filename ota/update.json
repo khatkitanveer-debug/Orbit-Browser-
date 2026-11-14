@@ -1,7 +1,7 @@
 {
-  "versionCode": 34,
-  "versionName": "1.7.0",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.7.0/orbit-browser-1.7.0.apk",
-  "notes": "v1.7.0 — HOME = DISCOVER FEED: Google-jaisa home — Orbit logo, search bar me mic + Gemini, Spider VPN + Incognito cards, sliding site cards. Neeche: JioSaavn top-10 music box (1:1 thumbnails auto-slide, play/next/prev, algorithm aapke plays se), YouTube 2x2 thumbnails (watch history + top channels, auto-rotate), LOCAL news (aapke city ki news, roz fresh, tap = seedha article). Loading ring ki jagah line + orbit comet animation. FASTEST: top site background me pehle se load hoti hai (tap = instant). YouTube ads HARD-BLOCKED (koi bhi halat me nahi). versionCode 34",
+  "versionCode": 35,
+  "versionName": "1.8.0",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.8.0/orbit-browser-1.8.0.apk",
+  "notes": "v1.8.0 — CLEAN HEADER + SMARTER HOME: (1) Upar header ka Orbit logo, home, reload, tab-count button SAB REMOVE — ab site par sirf address bar + menu, home par poora content (home/tabs menu me milte hai). (2) YouTube For You box ab LEFT se RIGHT slide hota hai (bade 16:9 cards, touch par pause), 13 top channels (music/movies/news/tech/sports/bhakti) ka bada pool, aapki watch history + interest keywords ka algorithm, HAR OPEN PAR ALAG 24 videos (fresh screen har baar). (3) LOCAL NEWS ab GUJARATI me (Gujarat region par hl=gu feed), SIRF AAJ-KAL ki news — when:2d search + 44-hour pubDate filter, poorani news kabhi nahi; location 2-hour fresh (tower IP se city), news newest-first. (4) VIDEO NEWS strip — TV9 Gujarati, ABP Asmita, News18 Gujarati, Sandesh, VTV, GSTV ki latest videos (3 din tak fresh), tap = seedha video. versionCode 35",
   "minVersionCode": 1
 }

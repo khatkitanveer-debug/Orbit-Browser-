@@ -120,12 +120,12 @@ class MainActivity : Activity() {
 
     private lateinit var toolbar: LinearLayout
     private lateinit var container: FrameLayout
-    // v1.6.0 — home screen (newtab) par omnibox pill HIDE, Orbit brand text show
+    // v1.6.0 — home screen (newtab) par omnibox pill HIDE
+    // v1.8.0 — toolbar_brand/btn_home/btn_tabs/btn_reload REMOVE (user request:
+    // header me logo/home/reload/tab nahi) — ab sirf pill + menu
     private lateinit var omniPill: FrameLayout
-    private lateinit var toolbarBrand: TextView
     private lateinit var omnibox: EditText
     private lateinit var omniIcon: ImageView
-    private lateinit var btnReload: ImageButton
     private lateinit var btnClear: ImageButton
     // v1.4.6 — nullable (lateinit nahi): agar kabhi init order slip ho jaye to
     // NPE/UninitializedPropertyAccessException IMPOSSIBLE — safe-call silently skip
@@ -135,7 +135,6 @@ class MainActivity : Activity() {
     private lateinit var pullRefresh: SwipeRefreshLayout
     // v1.4.1 — active tab load state (ring loader + lock-icon visibility ke liye)
     private var pageLoading = false
-    private lateinit var tabCount: TextView
     private lateinit var tabSwitcher: FrameLayout
     private lateinit var switcherGrid: GridLayout
     private lateinit var switcherTitle: TextView
@@ -191,6 +190,8 @@ class MainActivity : Activity() {
     private val feedCache = LinkedHashMap<String, Pair<Long, String>>()
 
     @Volatile private var cityAt = 0L
+    // v1.8.0 — userCity 2h cache (pehle 24h): tower switch/IP change par city stale
+    // na rahe — news hamesha current location ke hisaab se
 
     // v1.7.0 — WARM PRERENDER TAB ("fastest browser"): newtab khulte hi user ki
     // top-visited site ek offscreen WebView me PRELOAD hoti hai. Usi site ka tile
@@ -265,14 +266,11 @@ class MainActivity : Activity() {
         toolbar = findViewById(R.id.toolbar)
         container = findViewById(R.id.container)
         omniPill = findViewById(R.id.omni_pill)
-        toolbarBrand = findViewById(R.id.toolbar_brand)
         omnibox = findViewById(R.id.omnibox)
         omniIcon = findViewById(R.id.omni_icon)
-        btnReload = findViewById(R.id.btn_reload)
         ringLoader = findViewById(R.id.ring_loader)
         ringWrap = findViewById(R.id.ring_wrap)
         pullRefresh = findViewById(R.id.pull_refresh)
-        tabCount = findViewById(R.id.tab_count)
         tabSwitcher = findViewById(R.id.tab_switcher)
         switcherGrid = findViewById(R.id.switcher_grid)
         switcherTitle = findViewById(R.id.switcher_title)
@@ -376,20 +374,10 @@ class MainActivity : Activity() {
             btnClear.visibility = View.GONE
         }
 
-        btnReload.setOnClickListener {
-            val wv = activeTab?.webView ?: return@setOnClickListener
-            if (wv.progress in 1..99) wv.stopLoading() else wv.reload()
-        }
-        // btn_tabs XML me FrameLayout hai (Chrome tab-count button — square + number
-        // andar). ImageButton cast yahin ClassCastException deta tha = 4 releases ka
-        // launch-crash (v1.1 se). Click-only target, isliye View cast — kabhi nahi tootega.
-        findViewById<View>(R.id.btn_tabs).setOnClickListener { showTabSwitcher() }
+        // v1.8.0 — header clean: btn_home/btn_tabs/btn_reload ke listeners REMOVE
+        // (views hi XML se gaye). Home/Tabs ab 3-dot menu se khulte hai (showMenu),
+        // reload pull-to-refresh se hota hai.
         findViewById<ImageButton>(R.id.btn_menu).setOnClickListener { showMenu() }
-
-        // v1.4.1 — HOME button: kisi bhi site se ek tap me Orbit home (newtab)
-        findViewById<ImageButton>(R.id.btn_home).setOnClickListener {
-            activeTab?.id?.let { navigate(it, NEWTAB) }
-        }
 
         // Chrome pull-to-refresh
         pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
@@ -726,10 +714,9 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Har chrome element ek jagah — toolbar, count, icon, PTR, hint */
+    /** Har chrome element ek jagah — toolbar, pill visibility, PTR, hint */
     private fun refreshChrome() {
         val tab = activeTab ?: return
-        tabCount.text = tabs.size.coerceAtMost(99).toString()
         // user omnibox me TYPING ho to overwrite mat karo (Chrome jaisa)
         if (tab.isInternal) {
             // INTERNAL pages (NTP) par omnibox CLEAN — pichhle page ka URL kabhi
@@ -747,17 +734,16 @@ class MainActivity : Activity() {
         }
         pullRefresh.isEnabled = !tab.isInternal
         // v1.6.0 — HOME SCREEN par upar wala search bar REMOVE (user request: bich
-        // me search bar already hai). Newtab par omnibox pill gone, "Orbit" brand
-        // text dikhta hai; kisi bhi real site par pill wapas aa jati hai.
+        // me search bar already hai). v1.8.0 — brand text bhi GAYA (header clean);
+        // NTP par toolbar ka bg page bg me blend hota hai (sirf menu dikhta hai).
         val onNtp = tab.isInternal && tab.url == NEWTAB
         omniPill.visibility = if (onNtp) View.GONE else View.VISIBLE
-        toolbarBrand.visibility = if (onNtp) View.VISIBLE else View.GONE
         if (tab.isIncognito) {
             omnibox.hint = "Incognito — Search or type URL"
-            toolbar.setBackgroundColor(0xFF3C4043.toInt())
+            toolbar.setBackgroundColor(if (onNtp) 0xFF050507.toInt() else 0xFF3C4043.toInt())
         } else {
             omnibox.hint = getString(R.string.search_hint)
-            toolbar.setBackgroundColor(0xFF202124.toInt())
+            toolbar.setBackgroundColor(if (onNtp) 0xFF1A1A1D.toInt() else 0xFF202124.toInt())
         }
         updateOmniIcon(tab)
         updateBookmarkStar(tab)
@@ -922,8 +908,7 @@ class MainActivity : Activity() {
                 ringLoader?.setProgress(newProgress)
                 // page 15% cross kar gaya = stall-watchdog ki zaroorat nahi
                 if (newProgress >= 15) sleeper.removeCallbacks(stallCheck)
-                // Chrome jaisa: loading me pill ka button X (stop) ban jata hai
-                btnReload.setImageResource(if (newProgress in 1..99) R.drawable.ic_close else R.drawable.ic_refresh)
+                // v1.8.0 — btnReload hata (header clean): progress ab top line loader me hai
             }
 
             // v1.4.0 — "Block pop-ups" setting ON ho to target=_blank window.open
@@ -1083,16 +1068,19 @@ class MainActivity : Activity() {
         }
     }
 
-    /** v1.7.0 — LOCAL NEWS ka base: user ka city + region ip-api se (24h cache).
-    *   Newtab load par ensure — resolve hote hi page par cityPush callback. */
+    /** v1.7.0 — LOCAL NEWS ka base: user ka city + region. v1.8.0: cache 24h→2h
+     *  (mobile tower ka gateway IP badalta rehta hai — location fresh rahe) +
+     *  https fallback (ipapi.co). Mobile data par IP ka city wahi tower ka area
+     *  hota hai — isliye ye "tower location" ke sabse close kaam karta hai. */
     private fun ensureCity() {
         val cached = LocalStore.getSetting(this, "userCity", "")
-        if (cached.isNotBlank() && System.currentTimeMillis() - cityAt < 24 * 60 * 60 * 1000L) {
+        if (cached.isNotBlank() && System.currentTimeMillis() - cityAt < 2 * 60 * 60 * 1000L) {
             pushCityToPage()
             return
         }
         Thread {
             var city = ""; var region = ""
+            // PRIMARY — ip-api (city+region, no key). FALLBACK — ipapi.co https.
             runCatching {
                 feedHttp.newCall(
                     Request.Builder().url("http://ip-api.com/json/?fields=status,city,regionName").build(),
@@ -1102,6 +1090,18 @@ class MainActivity : Activity() {
                     if (o.optString("status") == "success") {
                         city = o.optString("city", "").trim()
                         region = o.optString("regionName", "").trim()
+                    }
+                }
+            }
+            if (city.isBlank()) {
+                runCatching {
+                    feedHttp.newCall(
+                        Request.Builder().url("https://ipapi.co/json/").build(),
+                    ).execute().use { resp ->
+                        val b = resp.body?.string() ?: return@use
+                        val o = org.json.JSONObject(b)
+                        city = o.optString("city", "").trim()
+                        region = o.optString("region", "").trim()
                     }
                 }
             }
@@ -2008,6 +2008,9 @@ class MainActivity : Activity() {
         // Chrome Android menu order
         row(R.drawable.ic_newtab, "New tab") { newTab() }
         row(R.drawable.ic_private, "New Incognito tab") { newTab(incognito = true) }
+        // v1.8.0 — header buttons gaye, isliye Home + Tabs ab menu se (ek tap access)
+        row(R.drawable.ic_home, "Home") { activeTab?.id?.let { navigate(it, NEWTAB) } }
+        row(R.drawable.ic_tabs, "Tabs") { showTabSwitcher() }
         divider()
         row(R.drawable.ic_history, "History") { showHistory() }
         row(R.drawable.ic_star, "Bookmarks") { showBookmarks() }
@@ -3433,18 +3436,17 @@ class MainActivity : Activity() {
         }
     }
 
-    /** v1.3.5 — Chrome-jaisa omnibox focus mode: typing ke waqt lock/shield/star/reload
-     *  icons hide + X dikhao. Suggestions popup aur icons ka "mix" isi se fixed. */
+    /** v1.3.5 — Chrome-jaisa omnibox focus mode: typing ke waqt lock/shield/star
+     *  icons hide + X dikhao. Suggestions popup aur icons ka "mix" isi se fixed.
+     *  (v1.8.0 — reload button header se gaya, to ab sirf ye icons manage hote hai.) */
     private fun applyOmniFocus(focused: Boolean) {
         if (focused) {
             omniIcon.visibility = View.GONE
             shieldBadge.visibility = View.GONE
-            btnReload.visibility = View.GONE
             btnStar.visibility = View.GONE
             btnClear.visibility = if (omnibox.text.isBlank()) View.GONE else View.VISIBLE
         } else {
             omniIcon.visibility = if (pageLoading) View.INVISIBLE else View.VISIBLE
-            btnReload.visibility = View.VISIBLE
             btnClear.visibility = View.GONE
             updateShieldBadge()
             activeTab?.let { updateBookmarkStar(it) }
