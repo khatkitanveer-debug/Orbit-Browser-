@@ -1,7 +1,7 @@
 {
-  "versionCode": 41,
-  "versionName": "1.9.5",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.5/orbit-browser-1.9.5.apk",
-  "notes": "v1.9.5 — CHROME-STYLE APP ICON: Orbit's launcher icon now wears a Chrome-family look — a red/yellow/green color wheel with a blue center on a clean white background (original drawing, inspired design). All previous features (Chrome-style section-wise settings, unlimited songs, slow For-You slide) stay intact. versionCode 41",
+  "versionCode": 42,
+  "versionName": "1.9.6",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.6/orbit-browser-1.9.6.apk",
+  "notes": "v1.9.6 — ORIGINAL ORBIT LOGO RESTORED: The launcher icon is back to the original Orbit identity — the white O ring with satellite dot on the dark background. The Chrome-style icon from v1.9.5 has been fully reverted. Everything else stays the same: Chrome-style section-wise settings, unlimited songs, slow For-You slide. versionCode 42",
   "minVersionCode": 1
 }
