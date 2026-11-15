@@ -71,8 +71,8 @@ android {
         applicationId = "com.orbit.browser"
         minSdk = 26
         targetSdk = 35
-        versionCode = 44 // v1.9.8 — UC Browser parity: speed engine + tools + settings
-        versionName = "1.9.8"
+        versionCode = 45
+        versionName = "1.9.9"
         buildConfigField("String", "GLM_KEY", "\"$orbitKey\"")
     }
 

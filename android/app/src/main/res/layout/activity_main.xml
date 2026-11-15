@@ -17,6 +17,18 @@
         android:paddingEnd="4dp"
         android:background="@color/chrome_bg">
 
+        <!-- v1.9.9 — CHROME-STYLE HEADER (user request: "home button profile button
+             3 dot button ye chrome jise lagao... header black karo"). Chrome home
+             button layout: [home] [omnibox] [profile] [3-dot]. -->
+        <ImageButton
+            android:id="@+id/btn_home"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_home"
+            android:contentDescription="Home"
+            android:tint="@color/chrome_text" />
+
         <!-- Omnibox pill: lock + URL + reload (Chrome jaisa reload pill ke andar).
              v1.6.0 — newtab (home screen) par YE PILL HIDE hoti hai (user request:
              upar wala search bar remove — middle search bar already hai), jagah par
@@ -100,6 +112,16 @@
                 android:tint="@color/chrome_text_dim"
                 android:visibility="gone" />
         </FrameLayout>
+
+        <!-- v1.9.9 — PROFILE button (Chrome avatar parity) — Account/Sign-in sheet -->
+        <ImageButton
+            android:id="@+id/btn_profile"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_ripple"
+            android:src="@drawable/ic_account"
+            android:contentDescription="Profile"
+            android:tint="@color/chrome_text" />
 
         <!-- v1.8.0 — HEADER CLEAN (user request: upar header me Orbit logo, home
              button, reload button, tab-count — SAB REMOVE). Ab toolbar me sirf

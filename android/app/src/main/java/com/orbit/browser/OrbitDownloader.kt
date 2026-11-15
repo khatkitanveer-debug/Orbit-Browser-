@@ -398,10 +398,53 @@ object OrbitDownloader {
         cleanupParts(t)
         main.post {
             Toast.makeText(ctx, "Download complete: ${t.name}", Toast.LENGTH_SHORT).show()
+            // v1.9.9 — Download Settings "Notification" toggle ab REAL hai (user:
+            // "sirf naam likha hai, kaam nahi karta"). ON = system completion
+            // notification + pulse light + sound + vibration. OFF = sirf toast.
+            runCatching { postDoneNotification(ctx, t) }
             notifyUi()
         }
         // v1.9.4 — ek slot khuli: queue ka agla task auto-start
         resumeNextQueued(ctx)
+    }
+
+    /**
+     * v1.9.9 — Download COMPLETE notification (Download Settings ka
+     * "Notification — Pulse light and notification sound" toggle se gated).
+     * Channel bina sound ke banta hai; sound/vibration/lights toggle ON hone
+     * par per-notification flags se lagte hai (user ka control saccha rahe).
+     */
+    private fun postDoneNotification(ctx: Context, t: Task) {
+        val on = LocalStore.getSetting(ctx, "dlNotifSound", "off") == "on"
+        val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+            ?: return
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(
+                android.app.NotificationChannel(
+                    "orbit_dl_done", "Download complete",
+                    android.app.NotificationManager.IMPORTANCE_DEFAULT,
+                ).apply { setShowBadge(true) },
+            )
+        }
+        if (!on) return   // toggle OFF = koi system notification nahi (toast hi kaafi)
+        val openDl = android.app.PendingIntent.getActivity(
+            ctx, 9301,
+            android.content.Intent(ctx, MainActivity::class.java)
+                .putExtra("quick", "downloads"),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = androidx.core.app.NotificationCompat.Builder(ctx, "orbit_dl_done")
+            .setSmallIcon(R.drawable.ic_download)
+            .setContentTitle("Download complete")
+            .setContentText(t.name)
+            .setContentIntent(openDl)
+            .setAutoCancel(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setDefaults(
+                androidx.core.app.NotificationCompat.DEFAULT_ALL,   // sound + vibration + lights
+            )
+            .build()
+        nm.notify(9310, n)
     }
 
     /** v1.9.4 — Max Downloads queue: pehla PAUSED+queued task resume. */

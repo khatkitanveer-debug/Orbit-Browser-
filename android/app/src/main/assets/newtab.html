@@ -48,24 +48,40 @@
   .barbtn:active { background: #4a4b4f; }
   .barbtn svg { width: 20px; height: 20px; }
 
-  /* ==================== v1.7.0 QUICK CARDS — Spider VPN + Incognito ==================== */
-  .quick { display: flex; gap: 10px; width: 100%; max-width: 600px; margin-top: 16px;
-           flex-shrink: 0; }
-  .qcard { flex: 1; display: flex; align-items: center; gap: 10px; padding: 11px 12px;
-           border-radius: 16px; border: 1px solid rgba(255,255,255,.09);
-           background: linear-gradient(135deg, rgba(48,49,52,.92), rgba(38,39,42,.92));
+  /* ==================== v1.9.9 QUICK PILLS — Chrome AI-Mode/Incognito style
+     (user: "sirf upar ke 2 option ayse lagao jaise screen shot diya hai") +
+     DONO par ON/OFF switch (user: "Incognito me bhi on off ka button chahiye
+     same vpn jaisa"). Chrome screenshot: centered compact pills, icon + label;
+     hum + Chrome switch (Material track/thumb) dono cards me. ==================== */
+  .quick { display: flex; gap: 12px; width: 100%; max-width: 600px; margin-top: 16px;
+           flex-shrink: 0; justify-content: center; }
+  .qcard { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px;
+           padding: 10px 12px; border-radius: 999px;
+           border: 1px solid rgba(255,255,255,.10);
+           background: linear-gradient(135deg, rgba(48,49,52,.95), rgba(38,39,42,.95));
            cursor: pointer; text-align: left; font-family: inherit; }
   .qcard:active { background: #3c4043; }
-  .qcard .qi { width: 32px; height: 32px; border-radius: 10px; display: flex; align-items: center;
+  .qcard .qi { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center;
                justify-content: center; flex-shrink: 0; }
-  .qcard .qi svg { width: 19px; height: 19px; }
-  .qcard .qcol { min-width: 0; }
+  .qcard .qi svg { width: 18px; height: 18px; }
+  .qcard .qcol { min-width: 0; flex: 1; }
   .qcard .qt { font-size: 13.5px; color: #e8eaed; font-weight: 600; line-height: 1.2;
                white-space: nowrap; }
-  .qcard .qs { font-size: 11px; color: #9aa0a6; margin-top: 3px; max-width: 150px;
+  .qcard .qs { font-size: 10.5px; color: #9aa0a6; margin-top: 2px; max-width: 120px;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .qcard.vpn .qi { background: rgba(138,180,248,.14); }
   .qcard.inc .qi { background: rgba(255,184,77,.15); }
+  /* Chrome/Material switch — track 30x16, thumb 12, ON = blue */
+  .qcard .qsw { flex-shrink: 0; width: 34px; height: 20px; border-radius: 999px;
+                background: #5f6368; position: relative; transition: background .16s;
+                border: 0; padding: 0; cursor: pointer; }
+  .qcard .qsw::after { content: ''; position: absolute; top: 3px; left: 3px;
+                width: 14px; height: 14px; border-radius: 50%; background: #e8eaed;
+                transition: left .16s; }
+  .qcard .qsw.on { background: #8ab4f8; }
+  .qcard .qsw.on::after { left: 17px; background: #202124; }
+  /* VPN/Incognito ACTIVE state — pill border highlight */
+  .qcard.on { border-color: rgba(138,180,248,.45); }
 
   /* ==================== v1.7.0 DISCOVER FEED — music / youtube / news boxes ==================== */
   #feed { width: 100%; max-width: 600px; display: flex; flex-direction: column;
@@ -410,7 +426,8 @@
     </div>
   </form>
 
-  <!-- v1.7.0 — QUICK CARDS: Spider VPN (left) + Incognito (right) -->
+  <!-- v1.9.9 — QUICK PILLS: Spider VPN (left) + Incognito (right) — Chrome
+       screenshot style + DONO par Material switch (user demand) -->
   <div class="quick">
     <button type="button" class="qcard vpn" id="vpnCard">
       <span class="qi">
@@ -422,8 +439,9 @@
       </span>
       <span class="qcol">
         <span class="qt">Spider VPN</span><br>
-        <span class="qs" id="vpnStatus">Off — tap to secure</span>
+        <span class="qs" id="vpnStatus">Tap to secure</span>
       </span>
+      <span class="qsw" id="vpnSwitch" role="switch" aria-checked="false" aria-label="Spider VPN on/off"></span>
     </button>
     <button type="button" class="qcard inc" id="incCard">
       <span class="qi">
@@ -434,8 +452,9 @@
       </span>
       <span class="qcol">
         <span class="qt">Incognito</span><br>
-        <span class="qs">IP hidden · nothing saved</span>
+        <span class="qs" id="incStatus">Tap for privacy</span>
       </span>
+      <span class="qsw" id="incSwitch" role="switch" aria-checked="false" aria-label="Incognito on/off"></span>
     </button>
   </div>
 
@@ -1081,23 +1100,72 @@ document.body.addEventListener('click', function (ev) {
   }
 }, true);
 
-// ---------- QUICK CARDS (Spider VPN / Incognito) ----------
+// ---------- QUICK PILLS (Spider VPN / Incognito) — v1.9.9 ----------
+// User demand: (1) "shortcut card ek bhi kaam nahi kar raha" — native resolveTab
+// fix (dead-tab bug); (2) "Incognito me bhi on off ka button chahiye same vpn
+// jaisa" — dono pills par Material switch; (3) card body tap = full action.
 (function () {
+  function vpnOn() {
+    var st = 'off';
+    try { st = OrbitBridge.vpnState() || 'off'; } catch (e) {}
+    return st === 'on' || st === 'connecting';
+  }
+  function incOn() {
+    try { return OrbitBridge.incognitoActive() === true; } catch (e) { return false; }
+  }
+  function paintSwitch(id, on) {
+    var sw = document.getElementById(id);
+    if (!sw) return;
+    sw.classList.toggle('on', !!on);
+    sw.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
   function updQuick() {
     var st = 'off';
     try { st = OrbitBridge.vpnState() || 'off'; } catch (e) {}
     var el = document.getElementById('vpnStatus');
-    if (!el) return;
-    var txt = st === 'on' ? 'Protected' : st === 'connecting' ? 'Connecting…' : 'Off — tap to secure';
-    try {
-      var j = JSON.parse(OrbitBridge.vpnInfo() || '{}');
-      if (j.state === 'on' && j.country) txt = 'Protected · ' + j.country;
-    } catch (e) {}
-    el.textContent = txt;
-    el.style.color = st === 'on' ? '#81C995' : st === 'connecting' ? '#FBBC05' : '#9aa0a6';
+    if (el) {
+      var txt = st === 'on' ? 'Protected' : st === 'connecting' ? 'Connecting…' : 'Tap to secure';
+      try {
+        var j = JSON.parse(OrbitBridge.vpnInfo() || '{}');
+        if (j.state === 'on' && j.country) txt = 'Protected · ' + j.country;
+      } catch (e) {}
+      el.textContent = txt;
+      el.style.color = st === 'on' ? '#81C995' : st === 'connecting' ? '#FBBC05' : '#9aa0a6';
+    }
+    paintSwitch('vpnSwitch', vpnOn());
+    var vc = document.getElementById('vpnCard');
+    if (vc) vc.classList.toggle('on', vpnOn());
+    // Incognito switch — koi incognito tab zinda hai? (native bridge)
+    var ia = incOn();
+    paintSwitch('incSwitch', ia);
+    var ic = document.getElementById('incCard');
+    if (ic) {
+      ic.classList.toggle('on', ia);
+      var s2 = document.getElementById('incStatus');
+      if (s2) {
+        s2.textContent = ia ? 'Nothing saved' : 'Tap for privacy';
+        s2.style.color = ia ? '#81C995' : '#9aa0a6';
+      }
+    }
   }
   var vc = document.getElementById('vpnCard');
   var ic = document.getElementById('incCard');
+  var vs = document.getElementById('vpnSwitch');
+  var is2 = document.getElementById('incSwitch');
+  // SWITCH taps — bubble card click me na jaye
+  if (vs) vs.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if (vpnOn()) { try { OrbitBridge.vpnOff(); } catch (e) {} }
+    else { try { OrbitBridge.vpnOn(); } catch (e) {} paintSwitch('vpnSwitch', true); }
+    setTimeout(updQuick, 350);
+  });
+  if (is2) is2.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    if (incOn()) { try { OrbitBridge.closeIncognito(); } catch (e) {} }
+    else { try { OrbitBridge.newIncognito(); } catch (e) {} }
+    setTimeout(updQuick, 350);
+  });
+  // CARD body taps — VPN = sheet, Incognito = new incognito tab
   if (vc) vc.addEventListener('click', function () { try { OrbitBridge.openVpnSheet(); } catch (e) {} });
   if (ic) ic.addEventListener('click', function () { try { OrbitBridge.newIncognito(); } catch (e) {} });
   setInterval(updQuick, 3000);
@@ -2085,6 +2153,39 @@ window.spiderPush = function (j) {
     else if (on) spiderInfo();
   }, 3000);
 })();
+
+// ==================== v1.9.9 FEED WATCHDOG (home "hamesha loading" FIX) ====================
+// User report: "Main screen hamesha loading leti hai jab ke Chrome offline jaise
+// chalta hai". ROOT: slow/blocked network par feed na aaye to skeletons INFINITE
+// chalte rehte hai (music/YT/news teeno par). FIX: 9s watchdog — jo section abhi
+// bhi skeleton par hai usko friendly retry card me badal do (tap = fresh fetch).
+// Infinite spinner kabhi nahi — Chrome-jaisa "ya data ya honest message" UX.
+function feedRetryCard(id, label) {
+  var el = document.getElementById(id);
+  if (!el || !el.querySelector('.skel')) return false;   // data aa gaya / pehle se retry card
+  el.innerHTML = '<div class="berr" data-feedretry="' + id + '">' + label +
+    ' is taking longer than usual.<br><b style="color:#8ab4f8">Tap to retry</b></div>';
+  return true;
+}
+setTimeout(function () {
+  try {
+    feedRetryCard('songList', 'Music');
+    feedRetryCard('ytGrid', 'YouTube videos');
+    feedRetryCard('newsList', 'News');
+  } catch (e) {}
+}, 9000);
+try {
+  document.body.addEventListener('click', function (ev) {
+    var t = ev.target.closest && ev.target.closest('[data-feedretry]');
+    if (!t) return;
+    var id = t.getAttribute('data-feedretry');
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+    if (id === 'songList') { MQ.built = false; MQ.page = 1; buildMusic(); }
+    else if (id === 'ytGrid') { YT.built = false; buildYt(); }
+    else if (id === 'newsList') { buildNews(); }
+  });
+} catch (eW) {}
 
 // ==================== v1.9.4 UC THEME + BANNER BRIDGE ====================
 // Native Settings (Themes / Customized Banner) inko evaluateJavascript se

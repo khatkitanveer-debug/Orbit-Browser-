@@ -50,7 +50,9 @@ import android.widget.CheckBox
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.webkit.CookieManager
+import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -153,6 +155,8 @@ class MainActivity : Activity() {
     private var ringLoader: OrbitLineLoader? = null
     // v1.4.4 — ring ab omnibox ke andar NAHI, search bar ke NEECHE floating overlay
     private var ringWrap: FrameLayout? = null
+    // v1.9.9 — tap-to-top floating pill (Scroll Options toggle)
+    private var tapTopFab: TextView? = null
     private lateinit var pullRefresh: SwipeRefreshLayout
     // v1.4.1 — active tab load state (ring loader + lock-icon visibility ke liye)
     private var pageLoading = false
@@ -360,24 +364,43 @@ class MainActivity : Activity() {
         btnStar = findViewById(R.id.btn_star)
         btnStar.setOnClickListener { toggleCurrentBookmark() }
 
-        // v1.4.0 — full-screen page overlay (history / bookmarks / settings pages)
+        // v1.9.9 — TAP-TO-TOP floating button (Browsing Settings > Scroll Options
+        // > "Tap-to-top button" toggle ab REAL hai — pehle sirf naam tha).
+        // WebView me UP scroll karte hi bottom-right par "Top" pill aata hai.
+        setupTapTopFab()
+
+        // v1.4.0 — full-screen page overlay (history/bookmarks/settings pages)
         // android.R.id.content = FrameLayout root — iske upar kuch bhi overlap ho sakta hai
+        // v1.9.9 FIX — "SETTINGS KE HEADER SCREENS MIX HO RAHI HAI" (user report):
+        // pageOverlay bina LayoutParams ke addView hua tha → FrameLayout default
+        // WRAP_CONTENT milta hai → overlay kabhi-kabhi poora screen COVER nahi
+        // karta (chhoti content = chhota overlay) → neeche home WebView bikhri
+        // hui dikhti thi = headers "mix". AB: explicit MATCH_PARENT — overlay
+        // HAMESHA full-screen (har settings/history/bookmarks page pe).
         pageOverlay = FrameLayout(this).apply {
             visibility = View.GONE
             setBackgroundColor(0xFF202124.toInt())
         }
-        // v1.6.0 FIX — pageOverlay android.R.id.content me hai (root ka padding isi
-        // liye us par lagta hai). Insets listener na hota to Settings/History jaisi
-        // full-screen pages STATUS BAR ke NEECHE overlap karti thin (user bug report:
-        // "Settings screen notification bar ke sath mix ho gayi hai").
+        // Insets: status/nav bar ke NEECHE content (Android 11+ listener; Android
+        // 8-10 par fitsSystemWindows fallback neeche).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             pageOverlay.setOnApplyWindowInsetsListener { v, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars())
-                v.setPadding(bars.left, bars.top, bars.right, 0)
+                val bars = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout(),
+                )
+                v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
                 insets
             }
         }
-        findViewById<ViewGroup>(android.R.id.content).addView(pageOverlay)
+        findViewById<ViewGroup>(android.R.id.content).addView(
+            pageOverlay,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        // Android <11: window edge-to-edge force nahi hota (ye sirf R+ hai) —
+        // overlay root ke neeche naturally status-bar ke niche baithta hai.
 
         // v1.4.0 — Orbit VPN (relay engine) init + silent auto-restore
         RelayEngine.setRelayCacheDir(this)
@@ -430,6 +453,25 @@ class MainActivity : Activity() {
         // (views hi XML se gaye). Home/Tabs ab 3-dot menu se khulte hai (showMenu),
         // reload pull-to-refresh se hota hai.
         findViewById<ImageButton>(R.id.btn_menu).setOnClickListener { showMenu() }
+        // v1.9.9 — CHROME-STYLE HEADER (user: "home button profile button 3 dot
+        // button ye chrome jise lagao... header black karo"):
+        //   home    = har site se seedha home screen (Chrome home-button parity)
+        //   profile = Account/Sign-in sheet (Chrome avatar parity)
+        //   3-dot   = existing menu
+        findViewById<ImageButton>(R.id.btn_home).setOnClickListener {
+            val tab = activeTab ?: return@setOnClickListener
+            if (tab.isInternal && tab.url == NEWTAB) {
+                // already home — shared webview ko top par scroll (Chrome home btn behavior)
+                runCatching {
+                    tab.webView?.evaluateJavascript(
+                        "try{window.scrollTo({top:0,behavior:'smooth'})}catch(e){window.scrollTo(0,0)}", null,
+                    )
+                }
+            } else {
+                navigate(tab.id, NEWTAB)
+            }
+        }
+        findViewById<ImageButton>(R.id.btn_profile).setOnClickListener { showSignInSheet() }
 
         // Chrome pull-to-refresh
         pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
@@ -518,6 +560,20 @@ class MainActivity : Activity() {
         OrbitDownloader.relPath = LocalStore.getSetting(this, "downloadPath", Environment.DIRECTORY_DOWNLOADS)
         // v1.9.4 — Status bar pref (browsing me hide) startup par apply
         runCatching { if (!showStatusBarPref()) enterImmersive() }
+        // v1.9.9 — DEFAULT ENGINE GOOGLE (user demand: "Default search engine
+        // google hi hona chahiye"). v1.9.7 se default google hai, par purane
+        // versions (<=v1.9.6, default ddg) se upgrade karne walon ka PERSISTED
+        // "ddg" rah jata hai — home bar "Search DuckDuckGo…" dikhata tha.
+        // ONE-TIME migration: ddg user-choise ya old-default — dono ko google
+        // karo (ek hi baar, engineMigratedG guard se).
+        runCatching {
+            if (LocalStore.getSetting(this, "engineMigratedG", "") != "1") {
+                if (LocalStore.getSetting(this, "searchEngine", "google") == "ddg") {
+                    LocalStore.setSetting(this, "searchEngine", "google")
+                }
+                LocalStore.setSetting(this, "engineMigratedG", "1")
+            }
+        }
     }
 
     // ---------------------------------------------------------- survival mode
@@ -916,7 +972,8 @@ class MainActivity : Activity() {
         pullRefresh.isEnabled = !tab.isInternal
         // v1.6.0 — HOME SCREEN par upar wala search bar REMOVE (user request: bich
         // me search bar already hai). v1.8.0 — brand text bhi GAYA (header clean);
-        // NTP par toolbar ka bg page bg me blend hota hai (sirf menu dikhta hai).
+        // v1.9.9 — CHROME-STYLE HEADER: home/profile/3-dot buttons hamesha; header
+        // NTP par PURE BLACK (user: "header black karo"), site par Chrome grey.
         val onNtp = tab.isInternal && tab.url == NEWTAB
         omniPill.visibility = if (onNtp) View.GONE else View.VISIBLE
         if (tab.isIncognito) {
@@ -924,7 +981,7 @@ class MainActivity : Activity() {
             toolbar.setBackgroundColor(if (onNtp) 0xFF050507.toInt() else 0xFF3C4043.toInt())
         } else {
             omnibox.hint = getString(R.string.search_hint)
-            toolbar.setBackgroundColor(if (onNtp) 0xFF1A1A1D.toInt() else 0xFF202124.toInt())
+            toolbar.setBackgroundColor(if (onNtp) 0xFF000000.toInt() else 0xFF202124.toInt())
         }
         updateOmniIcon(tab)
         updateBookmarkStar(tab)
@@ -1136,6 +1193,38 @@ class MainActivity : Activity() {
         }
         wv.webViewClient = OrbitWebViewClient(tab)
         wv.webChromeClient = object : WebChromeClient() {
+            // v1.9.9 — Site Notification / permission requests ab REAL control:
+            // Notification Settings > "Block site notification requests" ON = har
+            // site permission prompt (mic/camera/etc) AUTOMATIC deny (koi popup nahi).
+            // OFF = Orbit ka apna Allow/Block dialog — user har request decide karta hai.
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                runOnUiThread {
+                    if (LocalStore.getSetting(this@MainActivity, "blockSiteNotif", "on") == "on") {
+                        runCatching { request.deny() }
+                        return@runOnUiThread
+                    }
+                    runCatching {
+                        val host = domainOf(request.origin.toString())
+                        AlertDialog.Builder(this@MainActivity, R.style.OrbitDialog)
+                            .setTitle("Site permission")
+                            .setMessage("$host wants access to:\n${request.resources.joinToString { r -> r.removePrefix("android.webkit.resource.") }}")
+                            .setPositiveButton("Allow") { _, _ -> runCatching { request.grant(request.resources) } }
+                            .setNegativeButton("Block") { _, _ -> runCatching { request.deny() } }
+                            .setOnCancelListener { runCatching { request.deny() } }
+                            .show()
+                    }.onFailure { runCatching { request.deny() } }
+                }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(origin: String?, callback: GeolocationPermissions.Callback?) {
+                // geolocation alag feature hai — site-notification block isse nahi rokti
+                // NOTE: callback?.invoke(...) Kotlin stdlib DeepRecursiveFunction.invoke
+                // overload se AMBIGUOUS ho jata tha (build error) — if-null + member
+                // call saaf resolution deta hai.
+                val cb = callback ?: return
+                cb.invoke(origin, false, false)
+            }
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 if (!tab.isInternal && !title.isNullOrBlank()) {
                     tab.title = title
@@ -1229,6 +1318,13 @@ class MainActivity : Activity() {
         }
         // v1.9.4 — UC Swipe Forward&Backward edge gesture (setting ON ho to)
         (wv as? BackgroundWebView)?.orbitEdgeGesture = { ev -> handleEdgeGesture(ev) }
+        // v1.9.9 — TAP-TO-TOP scroll watch: upar scroll par pill show/hide
+        // (Scroll Options > Tap-to-top toggle — ab REAL button hai)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            wv.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                updateTapTop(tab, scrollY, scrollY - oldScrollY)
+            }
+        }
     }
 
     // ---------------------------------------------------------------- navigation
@@ -1563,10 +1659,25 @@ class MainActivity : Activity() {
     // ---------------------------------------------------------------- bridge
 
     private inner class Bridge(private val tab: Tab) {
+
+        /**
+         * v1.9.9 CRITICAL FIX — HOME SE SAB KUCH DEAD THA (user: "shortcut card
+         * ek bhi kaam nahi kar rahe, search bar bhi"). ROOT: v1.9.4 shared-home
+         * refactor me Bridge(homeTab) bana — par homeTab (id 910001) KABHI
+         * `tabs` list me add hi nahi hota. Tile tap → navigate(homeTab.id) →
+         * tabs.firstOrNull{ id==910001 } = NULL → silent return. Har tile, home
+         * search bar, engine picker save — SAB maan-maar ke mar gaye.
+         * FIX: resolveTab() — apna id tabs me na mile to ACTIVE tab use karo
+         * (home webview dikhane wala tab hi active hota hai — 100% match).
+         */
+        private fun resolveTab(): Tab = tabs.firstOrNull { it.id == tab.id }
+            ?: activeTab
+            ?: tab
+
         @JavascriptInterface
         fun navigate(url: String, newTab: Boolean) {
             runOnUiThread {
-                if (newTab) newTabWithUrl(url) else navigate(tab.id, url)
+                if (newTab) newTabWithUrl(url) else navigate(resolveTab().id, url)
             }
         }
 
@@ -1574,7 +1685,7 @@ class MainActivity : Activity() {
         fun search(q: String) {
             // newtab search bar — Settings me chuna hua search engine (default Google)
             runOnUiThread {
-                navigate(tab.id, searchEngineUrl() + java.net.URLEncoder.encode(q, "UTF-8"))
+                navigate(resolveTab().id, searchEngineUrl() + java.net.URLEncoder.encode(q, "UTF-8"))
             }
         }
 
@@ -1811,6 +1922,42 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun newIncognito() {
             runOnUiThread { newTab(incognito = true) }
+        }
+
+        /**
+         * v1.9.9 — home Incognito pill ka OFF switch (user: "Incognito me bhi on
+         * off ka button chahiye same vpn jaisa"). Sab incognito tabs band + home
+         * par wapas. VPN (relay) chalu ho to band NAHI karta — wo alag switch hai.
+         */
+        @JavascriptInterface
+        fun closeIncognito() {
+            runOnUiThread {
+                val inc = tabs.filter { it.isIncognito }
+                if (inc.isEmpty()) return@runOnUiThread
+                val hasNormal = tabs.any { !it.isIncognito }
+                inc.forEach { closeTabInternal(it) }
+                if (hasNormal) {
+                    selectTab(tabs.firstOrNull { !it.isIncognito }?.id ?: return@runOnUiThread)
+                } else {
+                    newTab()   // sab incognito the — fresh normal tab
+                }
+                Toast.makeText(this@MainActivity, "Incognito closed", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        /** v1.9.9 — koi incognito tab active hai? (home pill switch state sync) */
+        @JavascriptInterface
+        fun incognitoActive(): Boolean = runCatching {
+            synchronized(tabs) { tabs.any { it.isIncognito } }
+        }.getOrDefault(false)
+
+        /** v1.9.9 — home VPN pill ka OFF switch (relay disconnect; spider state sync) */
+        @JavascriptInterface
+        fun vpnOff() {
+            runOnUiThread {
+                RelayEngine.disconnect(this@MainActivity)
+                spiderApplyState(forceUi = true)
+            }
         }
 
         /** Local news — user ka city (ip-api, 24h cache). Blank = abhi resolve nahi. */
@@ -2150,6 +2297,13 @@ class MainActivity : Activity() {
         // BRAVE MODULE — matched ad/tracker request server tak jaane se PEHLE drop
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
             val url = request?.url?.toString() ?: return null
+            // v1.9.9 WHITE-SCREEN FIX — MAIN FRAME kabhi block nahi karo!
+            // (user: "kuch site visit karne par screen white ho kar atak jati hai")
+            // ROOT: kai sites apna MAIN page ad-network redirect se load karti hai
+            // (cheap/news sites) — main frame blocked = empty 200 = WHITE STUCK
+            // screen. Subresource blocking (ads/trackers) waise hi chalta rahega —
+            // v1.9.4 ka ad-block fully intact, sirf main frame ab safe hai.
+            if (request.isForMainFrame) return null
             // v1.9.4 — whitelist: user ne site ke ads allow kiye to seedha pass
             if (isAdWhitelisted(url)) return null
             if (shieldsEnabled() && AdBlocker.shouldBlock(url)) {
@@ -2221,6 +2375,14 @@ class MainActivity : Activity() {
         override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
             // sirf main frame — subresource errors page todte nahi
             if (request?.isForMainFrame == true) {
+                // v1.9.9 — ERR_ABORTED / redirected-by-JS loads ko error page se
+                // REPLACE mat karo (user: "screen white ho kar atak jati hai" ka
+                // dusra source: JS navigation abort par galat error page paint ho
+                // jata tha). Chrome bhi inhe ignore karta hai.
+                val code = runCatching { error?.errorCode }.getOrDefault(0)
+                // ERROR_ABORTED = -1 (WebViewClient static; Kotlin subclass scope
+                // me bare constant resolve nahi hota — literal + comment safest)
+                if (code == -1 /* WebViewClient.ERROR_ABORTED */) return
                 showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page failed to load")
             }
         }
@@ -2280,6 +2442,63 @@ class MainActivity : Activity() {
     }
 
     // ---------------------------------------------------------------- chrome (omnibox etc.)
+
+    /**
+     * v1.9.9 — TAP-TO-TOP floating pill (Scroll Options > "Tap-to-top button").
+     * Pehle ye toggle sirf naam tha — koi button exist hi nahi karta. Ab: WebView
+     * me UP scroll karte hi bottom-right par pill dikhta hai, tap = smooth top.
+     * FAB content FrameLayout (ring_wrap ka parent) me hai — WebView ke upar.
+     */
+    private fun setupTapTopFab() {
+        val host = (ringWrap?.parent as? ViewGroup)
+            ?: (findViewById<View>(R.id.container).parent as? ViewGroup)
+            ?: return
+        val fab = TextView(this).apply {
+            text = "\u2191 Top"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(0xFFE8EAED.toInt())
+            gravity = Gravity.CENTER
+            minWidth = dp(74)
+            setPadding(dp(14), 0, dp(14), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(0xEE303134.toInt())
+                setStroke(dp(1), 0xFF5F6368.toInt())
+            }
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(40),
+                Gravity.BOTTOM or Gravity.END,
+            ).apply { setMargins(0, 0, dp(16), dp(88)) }
+            visibility = View.GONE
+            elevation = dp(12).toFloat()
+        }
+        fab.setOnClickListener {
+            runCatching {
+                val wv = activeTab?.webView ?: return@setOnClickListener
+                // smooth scroll — JS scroll behavior (WebView.scrollTo instant hai)
+                wv.evaluateJavascript(
+                    "try{window.scrollTo({top:0,behavior:'smooth'})}catch(e){window.scrollTo(0,0)}", null,
+                )
+                fab.visibility = View.GONE
+            }
+        }
+        host.addView(fab)
+        tapTopFab = fab
+    }
+
+    /** WebView scroll par tap-to-top pill show/hide (active tab only). */
+    private fun updateTapTop(tab: Tab, scrollY: Int, dy: Int) {
+        val fab = tapTopFab ?: return
+        if (tab !== activeTab || !tapToTopPref() || tab.isInternal) {
+            if (fab.visibility != View.GONE) fab.visibility = View.GONE
+            return
+        }
+        val show = scrollY > 500 && dy < -30   // upar scroll + thoda depth
+        val hide = scrollY < 150 || dy > 30    // neeche scroll ya top ke paas
+        if (show && fab.visibility != View.VISIBLE) fab.visibility = View.VISIBLE
+        else if (hide && fab.visibility != View.GONE) fab.visibility = View.GONE
+    }
 
     private fun domainOf(url: String): String = runCatching {
         java.net.URI(url).host ?: url
@@ -3038,9 +3257,15 @@ class MainActivity : Activity() {
         ))
         pageOverlay.visibility = View.VISIBLE
         pageOpen = true
-        pageOverlay.clearAnimation()
-        val anim = TranslateAnimation(dp(36).toFloat(), 0f, 0f, 0f).apply { duration = 170 }
-        pageOverlay.startAnimation(anim)
+        // v1.9.9 — Animation setting ab REAL hai (pehle sirf naam tha):
+        // OFF = page turant dikhta hai, koi slide transition nahi.
+        if (animationsPref()) {
+            pageOverlay.clearAnimation()
+            val anim = TranslateAnimation(dp(36).toFloat(), 0f, 0f, 0f).apply { duration = 170 }
+            pageOverlay.startAnimation(anim)
+        } else {
+            pageOverlay.clearAnimation()
+        }
     }
 
     private fun closePage() {
@@ -3545,18 +3770,8 @@ class MainActivity : Activity() {
                 layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
             })
             r.setOnClickListener {
-                LocalStore.setSetting(this, "searchEngine", key)
-                // v1.5.0 — spider mode me DDG lock hai; user ki choice VPN OFF par
-                // apply hogi (searchEngineUrl hard-guarantee spider mode me DDG dega)
-                if ((RelayEngine.state == "on" || RelayEngine.state == "connecting") && key != "ddg") {
-                    Toast.makeText(
-                        this,
-                        "Spider Mode uses DuckDuckGo — your choice will apply when the VPN is off",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                } else {
-                    Toast.makeText(this, "Search engine: $name", Toast.LENGTH_SHORT).show()
-                }
+                // v1.9.9 — common path: persist + spider-toast + home live refresh
+                applyEngineChoice(key, showToast = true)
                 hideCardOverlay()
             }
             box.addView(r)
@@ -4725,6 +4940,7 @@ class MainActivity : Activity() {
     private fun typingAssistantPref(): Boolean = LocalStore.getSetting(this, "typingAssistant", "on") != "off"
     private fun animationsPref(): Boolean = LocalStore.getSetting(this, "uiAnimation", "on") != "off"
     private fun volumeScrollPref(): Boolean = LocalStore.getSetting(this, "volumeScroll", "off") == "on"
+    private fun tapToTopPref(): Boolean = LocalStore.getSetting(this, "tapToTop", "off") == "on"
     private fun socialDownloaderEnabled(): Boolean = LocalStore.getSetting(this, "socialDownloader", "on") != "off"
     private fun preloadPref(): String = LocalStore.getSetting(this, "preloadPages", "wap")
     private fun tabViewPref(): String = LocalStore.getSetting(this, "tabView", "card")
@@ -6399,20 +6615,133 @@ class MainActivity : Activity() {
     }
 
     /** ---- Search Settings page ---- */
+
+    /** v1.9.9 — UC-STYLE engine data (stepper arrows ka source + names) */
+    private fun engineList(): List<Pair<String, String>> = listOf(
+        "google" to "Google",
+        "bing" to "Bing",
+        "ddg" to "DuckDuckGo",
+        "brave" to "Brave",
+    )
+
+    private fun engineKeyNow(): String = LocalStore.getSetting(this, "searchEngine", "google")
+
+    private fun engineDisplayName(key: String): String =
+        engineList().firstOrNull { it.first == key }?.second ?: "Google"
+
+    /** v1.9.9 — engine change ka EK common path: persist + home bar live refresh.
+     *  (Pehle sirf save hota tha — home webview ka placeholder/icon stale reh
+     *  jata tha jab tak home reload na ho.) */
+    private fun applyEngineChoice(key: String, showToast: Boolean) {
+        LocalStore.setSetting(this, "searchEngine", key)
+        // spider mode me DDG force hai — honest toast (choice VPN off par lagegi)
+        if ((RelayEngine.state == "on" || RelayEngine.state == "connecting") && key != "ddg") {
+            Toast.makeText(
+                this,
+                "Spider Mode uses DuckDuckGo — your choice will apply when the VPN is off",
+                Toast.LENGTH_LONG,
+            ).show()
+        } else if (showToast) {
+            Toast.makeText(this, "Search engine: ${engineDisplayName(key)}", Toast.LENGTH_SHORT).show()
+        }
+        pushEngineToHome()
+    }
+
+    /** Home newtab ka engine icon + placeholder LIVE refresh (bina reload) */
+    private fun pushEngineToHome() {
+        val t = activeTab ?: tabs.firstOrNull { it.url == NEWTAB && !it.isIncognito } ?: return
+        val k = engineKeyNow()
+        t.webView?.evaluateJavascript(
+            "try{curEngine=${escapeJs(k)};" +
+                "if(typeof renderEngBtn==='function')renderEngBtn();" +
+                "if(typeof updatePlaceholder==='function')updatePlaceholder();}catch(e){}", null,
+        )
+    }
+
+    /** v1.9.9 — UC Browser jaisa ENGINE SELECTOR (user request: "searchbar engine
+     *  change me ^ upar niche erow add karo, uski dabane par ia tarha search
+     *  engine dikhne chahiye jaise abhi screen me hai").
+     *  Row: [icon] Default search engine / engine name  |  [^] [v] —
+     *  arrows engine CYCLE karte hai (turant apply), row tap = poora list. */
+    private fun engineSelectorRow(): View {
+        val r = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(6), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58),
+            ).apply { topMargin = dp(2) }
+            background = getDrawable(R.drawable.btn_ripple)
+            isClickable = true
+            isFocusable = true
+        }
+        val iv = ImageView(this).apply {
+            setImageResource(R.drawable.ic_find)
+            setColorFilter(0xFF9AA0A6.toInt())
+            layoutParams = LinearLayout.LayoutParams(dp(22), dp(22))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(16); marginEnd = dp(8)
+            }
+        }
+        col.addView(TextView(this).apply {
+            text = "Default search engine"
+            textSize = 15.5f
+            setTextColor(0xFFE8EAED.toInt())
+            maxLines = 1
+        })
+        val sub = TextView(this).apply {
+            textSize = 12f
+            setTextColor(0xFF9AA0A6.toInt())
+            maxLines = 1
+        }
+        col.addView(sub)
+        fun refreshSub() { sub.text = "${engineDisplayName(engineKeyNow())} — search bar + omnibox" }
+        refreshSub()
+
+        // UP arrow — engine list me PICHHLA (cyclic)
+        fun arrowBtn(up: Boolean): ImageButton = ImageButton(this).apply {
+            setImageResource(if (up) R.drawable.ic_up else R.drawable.ic_down)
+            setColorFilter(0xFFE8EAED.toInt())
+            background = getDrawable(R.drawable.btn_ripple)
+            layoutParams = LinearLayout.LayoutParams(dp(38), dp(38))
+            contentDescription = if (up) "Previous search engine" else "Next search engine"
+        }
+        val engines = engineList()
+        val up = arrowBtn(true)
+        up.setOnClickListener {
+            val idx = engines.indexOfFirst { it.first == engineKeyNow() }.coerceAtLeast(0)
+            val next = engines[(idx - 1 + engines.size) % engines.size]
+            applyEngineChoice(next.first, showToast = true)
+            refreshSub()
+        }
+        val down = arrowBtn(false)
+        down.setOnClickListener {
+            val idx = engines.indexOfFirst { it.first == engineKeyNow() }.coerceAtLeast(0)
+            val next = engines[(idx + 1) % engines.size]
+            applyEngineChoice(next.first, showToast = true)
+            refreshSub()
+        }
+        r.addView(iv)
+        r.addView(col)
+        r.addView(up)
+        r.addView(down)
+        // row tap = poora engine LIST (pehle jaisa card)
+        r.setOnClickListener { showSearchEngineCard() }
+        return r
+    }
+
     private fun showSearchSettingsPage() {
         openPage("Search Settings") { content ->
-            val engineName = when (LocalStore.getSetting(this, "searchEngine", "google")) {
-                "bing" -> "Bing"; "ddg" -> "DuckDuckGo"; "brave" -> "Brave"; else -> "Google"
-            }
-            content.addView(pageRow(R.drawable.ic_find, "Default search engine", "$engineName — search bar + omnibox") {
-                showSearchEngineCard()
-            })
+            content.addView(engineSelectorRow())
             content.addView(toggleRow(
                 R.drawable.ic_find, "Search suggestions", "Typing par history + engine suggestions", "searchSuggestions", "on",
             ) { on -> if (!on) suggestPopup?.dismiss() })
             pageHeader("Note", content)
             content.addView(pageEmpty(
-                "Google is the default engine.\n\nVPN (Spider Mode) ON hone par DuckDuckGo force hota hai — privacy guarantee ke liye. VPN OFF hone par aapki choice wapas lagti hai.",
+                "Google is the default engine.\n\nArrows se engine turant badlo — ya row par tap karke poori list se chuno. VPN (Spider Mode) ON hone par DuckDuckGo force hota hai — privacy guarantee ke liye. VPN OFF hone par aapki choice wapas lagti hai.",
             ))
         }
     }
