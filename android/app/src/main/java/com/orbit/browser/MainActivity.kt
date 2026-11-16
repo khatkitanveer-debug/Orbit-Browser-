@@ -1479,10 +1479,21 @@ class MainActivity : Activity() {
         tab.isInternal = false
         // v1.9.4 — SHARED HOME GUARD: home webview me site load kabhi nahi hoti —
         // warna music queue/feeds ud jate. Site ke liye tab ka APNA webview banao.
+        // v1.9.10 CRITICAL FIX — user: "Serchbar me kuch bhi search karne par search
+        // hota hi nahi hai" (v1.9.9 me bhi). ROOT: guard naya WebView banata tha
+        // par CONTAINER ME ATTACH KABHI NAHI KARTA THA — site ek invisible WebView
+        // me load hoti rahi, screen par home hi dikhta raha. Search bar, shortcut
+        // tiles, home se har navigation — SAB "dead" lagte the (load ho raha tha
+        // background me, dikhta kuch nahi). FIX: naya WebView active tab ka hai to
+        // TURANT attachTabView() — screen par hi load hota dikhega (Chrome parity).
         if (tab.webView === homeWebView) {
             tab.webView = buildWebView(tab)
+            if (tab === activeTab) attachTabView(tab)
         }
         val wv = tab.webView ?: buildWebView(tab).also { tab.webView = it }
+        // v1.9.10 — naya-bana WebView (home swap ya evicted) active tab hai to
+        // container me attach — invisible-load bug ka doosra rasta band.
+        if (tab === activeTab && wv.parent !== container) attachTabView(tab)
         // WebView hi Chromium hai — DIRECT load: cookies, JS, redirects, login sab
         // native browser jaisa chalega.
         wv.settings.javaScriptEnabled = jsEnabledPref()

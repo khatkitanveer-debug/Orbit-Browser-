@@ -1,7 +1,7 @@
 {
-  "versionCode": 45,
-  "versionName": "1.9.9",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.9/orbit-browser-1.9.9.apk",
-  "notes": "v1.9.9 — HOME DEAD-FIX + GOOGLE DEFAULT + UC ENGINE STEPPER + CHROME HEADER: (1) CRITICAL FIX: Main screen ke shortcut cards + search bar + engine picker SAB KAAM KARNE LAGE — v1.9.8 me home navigation ka silent bug tha (har tile tap maan-maar ki mar jata tha). (2) Default search engine ab GOOGLE (purana DuckDuckGo default wapas google migrate) — search bar 'Search Google or type a URL'. (3) Search Settings me UC Browser jaisa engine selector — up/down arrows se engine turant badlo, ya tap karke poori list. (4) Settings screens ka header-mix bug fix (overlay full-screen). (5) Dead toggles ab REAL: Tap-to-top floating button, Animation off = instant pages, Block site notification requests = permission deny + Allow/Block dialog, Download completion notification with sound/pulse. (6) White-screen fixes: main-frame ad-block guard (sites ab white stuck nahi hoti), JS-abort pages replace nahi hote. (7) Home feed 9s watchdog — infinite loading ki jagah 'Tap to retry'. (8) Chrome-style header: home + profile + 3-dot buttons, black header. (9) Spider VPN + Incognito pills Chrome-style — DONO par ON/OFF switch (Incognito switch sab incognito tabs band karta hai). versionCode 45",
+  "versionCode": 46,
+  "versionName": "1.9.10",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.10/orbit-browser-1.9.10.apk",
+  "notes": "v1.9.10 \u2014 SEARCH BAR FIX: search bar / shortcut tiles me kuch bhi tap karne par kuch nahi hota tha (v1.9.9 me bhi). Root: navigation engine naya page bana raha tha par screen par lagata nahi tha \u2014 site background me khul rahi thi, screen par home hi dikhta raha. Ab search, tiles, har link \u2014 sab turant screen par khulenge. versionCode 46",
   "minVersionCode": 1
 }
