@@ -1,7 +1,7 @@
 {
-  "versionCode": 49,
-  "versionName": "1.9.13",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.13/orbit-browser-1.9.13.apk",
-  "notes": "v1.9.13 — OFFLINE CACHE: videos aur songs ab disk-cache me save hote hai — dobara kholne par turant chalte hai, offline me bhi (jitna download hua utna resume hota hai). Network band hone par browser cached pages se chalta hai (back/reload par bhi page dikhta hai). Main screen cached content se instant paint hoti hai. versionCode 49",
+  "versionCode": 50,
+  "versionName": "1.9.14",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.14/orbit-browser-1.9.14.apk",
+  "notes": "v1.9.14 — UPDATE CHECK HAR OPEN PAR: update ab app kholte hi milta hai — app poori tarah band karne par bhi, aur background se wapas khulne par bhi (10 min ke debounce ke saath, screen on/off par spam nahi). Naya version silent download hota hai aur INSTALL prompt khud aata hai. versionCode 50",
   "minVersionCode": 1
 }
