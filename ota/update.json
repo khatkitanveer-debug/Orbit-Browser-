@@ -1,7 +1,7 @@
 {
-  "versionCode": 52,
-  "versionName": "1.9.16",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.16/orbit-browser-1.9.16.apk",
-  "notes": "v1.9.16 — SONGS NEXT-NEXT STOP: music player me gaane apne aap NEXT-NEXT nahi honge — pehle jab koi gaana load nahi hota tha to player chupchap agle-agle gaane pe jump karta tha (6 sec me 5+ gaane badal jate the). Ab 3 lagataar fail par player RUK jata hai aur saaf batata hai — 'Playback stopped — tap a song to retry'. Fail hone par thoda wait bhi karta hai (network recover hone do). Gaana khatam hone par agla gaana chalna (auto-next) pehle jaisa hi hai — wo normal music player behavior hai. v1.9.15 wala list-stable fix bhi isi me hai. versionCode 52",
+  "versionCode": 53,
+  "versionName": "1.9.17",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.17/orbit-browser-1.9.17.apk",
+  "notes": "v1.9.17 — SONGS LIST FIX: music list ab kabhi gayab nahi hogi — cached gaane hamesha dikhenge, chahe network slow ho ya music service busy ho (error card ki jagah cached list dikhegi, aur dobara kholne par service khud recover kar leti hai). Music service busy hone par home par neeche kheech kar (pull-to-refresh) dobara try kar sakte hai. v1.9.16 wala Next-Next stop fix bhi isi me hai. versionCode 53",
   "minVersionCode": 1
 }
