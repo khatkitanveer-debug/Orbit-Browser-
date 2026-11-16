@@ -530,6 +530,10 @@ class MainActivity : Activity() {
         RemoteConfig.refreshAsync(this)
         // silent auto-update: naya version mila to background me khud download,
         // complete hote hi sirf INSTALL button aata hai (Chrome updater jaisa)
+        // v1.9.12 — COLD START par GUARANTEED check (no throttle) + lastOtaCheck
+        // stamp, taki turant baad wala pehla resume duplicate check na kare.
+        otaColdChecked = true
+        LocalStore.setSetting(this, "lastOtaCheck", System.currentTimeMillis().toString())
         runAutoUpdate(manual = false)
         // v1.4.0 — VPN pref ON tha to background me wapas connect (silent)
         RelayEngine.autoRestore(this)
@@ -584,19 +588,42 @@ class MainActivity : Activity() {
 
     // ---------------------------------------------------------- survival mode
 
+    // v1.9.12 — cold-start (onCreate) OTA check ho chuka marker:
+    // true hone par onResume ka pehla call (cold start ke saath aane wala) skip
+    // hoga — warna onCreate + onResume DOUBLE check hoga.
+    private var otaColdChecked = false
+
     // v1.9.1 — OTA check pehle SIRF cold-start (onCreate) par tha: app memory me
     // din-bhar reh gayi to naya update kabhi nahi milta, aur purane version ke
     // bugs (jaise play-crash) user ko dikhte rahenge. Ab onResume par bhi check —
     // 6h throttle (battery/network friendly), silent background me.
+    //
+    // v1.9.12 BUGFIX (user report: "update tabhi aata hai jab app ko poori tarha
+    // band karke wapis open kiya jaye") — warm open (app memory me thi, wapas
+    // khuli) par 6h throttle ke wajah se check SKIP ho jata tha; sirf cold start
+    // par milta tha. Ab: COLD start = guaranteed check (onCreate, no throttle);
+    // HAR warm open (background se wapas aane) par bhi check — bas 10-min
+    // debounce (screen on/off spam se network bachao). Update mila to silent
+    // background download, complete hone par INSTALL prompt khud aata hai.
     override fun onResume() {
         super.onResume()
         // v1.9.4 — Show Status Bar pref re-apply (fullscreen toggle ke baad bhi)
         runCatching { if (!showStatusBarPref()) exitImmersive() }
         runCatching {
-            val last = LocalStore.getSetting(this, "lastOtaCheck", "0").toLongOrNull() ?: 0L
-            if (System.currentTimeMillis() - last > 6 * 60 * 60 * 1000L) {
-                LocalStore.setSetting(this, "lastOtaCheck", System.currentTimeMillis().toString())
-                runAutoUpdate(manual = false)
+            if (otaColdChecked) {
+                // onCreate ne abhi check kiya — ye (cold start ke saath aane wala)
+                // pehla resume duplicate hai, skip. Flag reset: agli baar wakai
+                // warm open hoga to check wapas chalu.
+                otaColdChecked = false
+            } else {
+                // WARM OPEN (app memory me thi, wapas khuli) — 10-min debounce
+                // ke saath check: har open par update milega, screen on/off
+                // spam par network call nahi hogi.
+                val last = LocalStore.getSetting(this, "lastOtaCheck", "0").toLongOrNull() ?: 0L
+                if (System.currentTimeMillis() - last > 10 * 60 * 1000L) {
+                    LocalStore.setSetting(this, "lastOtaCheck", System.currentTimeMillis().toString())
+                    runAutoUpdate(manual = false)
+                }
             }
         }
     }
