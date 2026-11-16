@@ -1,7 +1,7 @@
 {
-  "versionCode": 46,
-  "versionName": "1.9.10",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.10/orbit-browser-1.9.10.apk",
-  "notes": "v1.9.10 \u2014 SEARCH BAR FIX: search bar / shortcut tiles me kuch bhi tap karne par kuch nahi hota tha (v1.9.9 me bhi). Root: navigation engine naya page bana raha tha par screen par lagata nahi tha \u2014 site background me khul rahi thi, screen par home hi dikhta raha. Ab search, tiles, har link \u2014 sab turant screen par khulenge. versionCode 46",
+  "versionCode": 47,
+  "versionName": "1.9.11",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.11/orbit-browser-1.9.11.apk",
+  "notes": "v1.9.11 — BACK BLANK SCREEN FIX: search ya koi site kholne ke baad back slide karne par blank screen (omnibox me about:blank) aati thi — na home aati thi na pichla page. Root: WebView pool ki purani blank entry back-history me chhupi reh jati thi. Ab back par pichla asli page khulega, history na ho to HOME screen khulegi — blank screen ab kabhi nahi aayegi (system back + edge slide dono fixed). versionCode 47",
   "minVersionCode": 1
 }
