@@ -1,7 +1,7 @@
 {
-  "versionCode": 53,
-  "versionName": "1.9.17",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.17/orbit-browser-1.9.17.apk",
-  "notes": "v1.9.17 — SONGS LIST FIX: music list ab kabhi gayab nahi hogi — cached gaane hamesha dikhenge, chahe network slow ho ya music service busy ho (error card ki jagah cached list dikhegi, aur dobara kholne par service khud recover kar leti hai). Music service busy hone par home par neeche kheech kar (pull-to-refresh) dobara try kar sakte hai. v1.9.16 wala Next-Next stop fix bhi isi me hai. versionCode 53",
+  "versionCode": 54,
+  "versionName": "1.9.18",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.18/orbit-browser-1.9.18.apk",
+  "notes": "v1.9.18 — AUTO-NEXT BAND: gaana khatam hone par ab agla gaana APNE AAP nahi chalega — player wahi ruk jayega aur 'Tap a song to play' dikhega. Agla gaana ab SIRF tum khud chalaoge (gaane par tap, ya next/prev button). Music service busy ho to bhi kuch apne-aap skip nahi hoga (3 fail par player rukta hai). Saath me: list kabhi gayab nahi hogi (cached gaane hamesha dikhenge). versionCode 54",
   "minVersionCode": 1
 }
