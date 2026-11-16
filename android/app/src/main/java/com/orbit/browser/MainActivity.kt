@@ -127,6 +127,9 @@ class MainActivity : Activity() {
         // (pool prewarm about:blank load karta hai — wo entry stack me reh jati thi)
         var purgeOnFirstLoad: Boolean = false
         var lastActive: Long = System.currentTimeMillis()
+        // v1.9.13 — offline cache-fallback ka last trigger time (30s window = loop-proof:
+        // failed fallback ka dobara reload nahi — seedha error page)
+        var cacheFallbackAt: Long = 0L
     }
 
     // v1.9.4 UC-BOOST — prewarmed WebView pool: naya tab ZERO lag (UC parity).
@@ -1175,7 +1178,9 @@ class MainActivity : Activity() {
         wv.settings.loadsImagesAutomatically = imagesAllowed
         // v1.9.4 UC-BOOST — CACHE: LOAD_DEFAULT (HTTP cache + BFCache full use;
         // UC ka "offline jaisa" instant repeat-load feel isi se aata hai)
-        wv.settings.cacheMode = OrbitEngine.cacheMode(tab.isIncognito)
+        // v1.9.13 — OFFLINE-AWARE: net na ho to LOAD_CACHE_ELSE_NETWORK (sirf cache —
+        // browser offline ki tarah chalta hai), incognito LOAD_NO_CACHE (pehle jaisa)
+        wv.settings.cacheMode = OrbitEngine.cacheMode(this@MainActivity, tab.isIncognito)
         // v1.9.4 — Save Page (MHTML) ko file:// se wapas kholne ke liye app-scoped
         // file access on (sirf hamara apna archive path, UC Save Page parity)
         wv.settings.allowFileAccess = true
@@ -2352,6 +2357,17 @@ class MainActivity : Activity() {
             // screen. Subresource blocking (ads/trackers) waise hi chalta rahega —
             // v1.9.4 ka ad-block fully intact, sirf main frame ab safe hai.
             if (request.isForMainFrame) return null
+            // v1.9.13 ORBIT MEDIA CACHE — audio/video GETs disk-cache se (offline +
+            // instant replay: "har open par video aur songs loading" + "browser offline
+            // ki tarha chale"). Incognito kabhi nahi, ads pehle hi block ho chuke honge
+            // (ye block unke niche hai) — cache layer shields se INDEPENDENT hai.
+            if (!tab.isIncognito && request.method.equals("GET", ignoreCase = true)) {
+                OrbitMediaCache.intercept(
+                    this@MainActivity, url,
+                    request.requestHeaders?.get("Range"),
+                    request.requestHeaders?.get("User-Agent"),
+                )?.let { return it }
+            }
             // v1.9.4 — whitelist: user ne site ke ads allow kiye to seedha pass
             if (isAdWhitelisted(url)) return null
             if (shieldsEnabled() && AdBlocker.shouldBlock(url)) {
@@ -2376,6 +2392,15 @@ class MainActivity : Activity() {
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
             // MODULE 3 — main-frame navigation: media wale origin se door gaye to playback band
             PlaybackCoordinator.onPageNavigatedAway(url ?: "")
+            // v1.9.13 — offline-fallback ke baad cacheMode wapas normal. 30s fallback
+            // window ke ANDAR restore NAHI (fallback reload khud usi window me hai —
+            // warna uska LOAD_CACHE_ELSE_NETWORK turant revert ho jata). Naya navigation
+            // (window ke bahar) fresh connectivity ke hisaab se mode le leta hai.
+            if (System.currentTimeMillis() - tab.cacheFallbackAt > 30_000L) {
+                runCatching {
+                    view?.settings?.cacheMode = OrbitEngine.cacheMode(this@MainActivity, tab.isIncognito)
+                }
+            }
             // BACK-navigate karke NTP/internal entry par wapas aana — Chrome ki
             // tarah CLEAN omnibox (pichhla URL kabhi nahi dikhega)
             if (url == NEWTAB || url == "https://orbit.local/") {
@@ -2444,6 +2469,23 @@ class MainActivity : Activity() {
                 // ERROR_ABORTED = -1 (WebViewClient static; Kotlin subclass scope
                 // me bare constant resolve nahi hota — literal + comment safest)
                 if (code == -1 /* WebViewClient.ERROR_ABORTED */) return
+                // v1.9.13 OFFLINE CACHE FALLBACK — net-type error par EK BAAR cached page
+                // (LOAD_CACHE_ELSE_NETWORK) reload hota hai: offline me bhi pehle visit
+                // kiya page cache se dikhta hai ("browser offline ki tarha chale").
+                // 30s window = loop-proof: fallback bhi fail → seedha error page.
+                // Codes: -2 HOST_LOOKUP, -6 CONNECT, -7 IO, -8 TIMEOUT, -15 TOO_MANY
+                // (SSL/bad-url/scheme ke liye fallback NAHI — wo offline error nahi)
+                val netErr = code == -2 || code == -6 || code == -7 || code == -8 || code == -15
+                if (netErr && view != null && !tab.isIncognito &&
+                    System.currentTimeMillis() - tab.cacheFallbackAt > 30_000L
+                ) {
+                    tab.cacheFallbackAt = System.currentTimeMillis()
+                    if (runCatching {
+                            view.settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                            view.reload()
+                        }.isSuccess
+                    ) return
+                }
                 showErrorPage(view ?: return, request.url.toString(), error?.description?.toString() ?: "Page failed to load")
             }
         }

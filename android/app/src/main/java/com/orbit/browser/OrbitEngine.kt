@@ -33,9 +33,26 @@ object OrbitEngine {
 
     // ---------------------------------------------------------------- cache
 
-    /** Cache mode — incognito tab ke alawa hamesha LOAD_DEFAULT (UC/Chrome parity). */
-    fun cacheMode(incognito: Boolean): Int =
-        if (incognito) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
+    /**
+     * v1.9.13 OFFLINE-FIRST cache mode (user: "browser offline ki tarha chalna chahiye").
+     * - online  → LOAD_DEFAULT: HTTP cache full respect (UC/Chrome parity, instant repeat)
+     * - OFFLINE → LOAD_CACHE_ELSE_NETWORK: sirf cache — HTML/CSS/img cached copy se paint,
+     *             network ki wait NAHI (back-nav/reload offline me bhi page dikhta hai)
+     * - incognito → LOAD_NO_CACHE: kuch persist nahi (privacy parity, pehle jaisa)
+     */
+    fun cacheMode(ctx: Context?, incognito: Boolean): Int =
+        if (incognito) WebSettings.LOAD_NO_CACHE
+        else if (ctx != null && !isOnlineNow(ctx)) WebSettings.LOAD_CACHE_ELSE_NETWORK
+        else WebSettings.LOAD_DEFAULT
+
+    /** Internet abhi available? Unknown/exception = true (fail-open — kabhi band na kare). */
+    fun isOnlineNow(ctx: Context): Boolean = runCatching {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return true
+        val net = cm.activeNetwork ?: return false
+        val cap = cm.getNetworkCapabilities(net) ?: return false
+        cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }.getOrDefault(true)
 
     // ---------------------------------------------------------------- cloud boost pref
 
