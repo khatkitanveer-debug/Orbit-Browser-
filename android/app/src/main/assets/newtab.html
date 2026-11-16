@@ -1352,18 +1352,40 @@ function buildMusic() {
   // orbForceRefresh one-shot — MainActivity home reload par set karta hai,
   // isse manual pull par naye gaane guaranteed). musicMore playback-grow
   // untouched (user khud gaana chala raha hai — queue grow expected).
+  // v1.9.17 MUSIC RESCUE PAINT — user report: "loading hi nahi ho rahe songs,
+  // sab song list gayab ho gayi". v1.9.15 gate cached-fresh par SIRF return
+  // karta tha — aur musicError() bina MQ.list check ke error-card paint kar
+  // deta tha: cached-paint ko overwrite = list gayab + MQ.list empty (tap par
+  // bhi kuch nahi). FIX: (1) RESCUE PAINT — cached gaane HAMESHA paint (fetch
+  // se bhi pehle, forced-refresh par bhi) — list kabhi khali nahi dikhegi;
+  // (2) musicError() ab cached-list ko preserve karta hai — error card SIRF
+  // sach me kuch cached na ho tab (pull-to-refresh hint ke saath);
+  // (3) fetch fail/empty par cached list dikhti rehti hai — agli open par
+  // retry automatic (Ts sirf success par set hota hai).
   try {
     var forced = false;
     try { forced = sessionStorage.getItem('orbForceRefresh') === '1'; } catch (eS) {}
     if (forced) {
       try { sessionStorage.removeItem('orbForceRefresh'); } catch (eR) {}   // one-shot
-    } else {
-      var ts = parseInt(orbCGet('orbCacheMusicTs') || '0', 10) || 0;
-      var cached = orbCGet('orbCacheMusic');
-      if (cached && cached.length && ts > 0 &&
+    }
+    var ts = parseInt(orbCGet('orbCacheMusicTs') || '0', 10) || 0;
+    var cached = orbCGet('orbCacheMusic');
+    if (cached && cached.length) {
+      // v1.9.17 RESCUE PAINT — cached gaane paint + queue populate (tap par
+      // turant chalega), chahe fetch aage ho ya na ho — LIST KABHI GAYAB NAHI
+      try {
+        for (var ci = 0; ci < cached.length; ci++) {
+          MQ.seen[(cached[ci].t || '').toLowerCase()] = 1;
+        }
+        if (!MQ.list.length) MQ.list = cached;   // orbCacheRender already painted
+        renderMusic();
+      } catch (eRP) {}
+      if (!forced && ts > 0 &&
           (Date.now() - ts) < 24 * 60 * 60 * 1000) {
         return;   // fresh cache — stable list, fetch skip (apne-aap change band)
       }
+      // stale/legacy cache ya forced — paint dikhta rahega, fetch (daily/
+      // manual refresh) continue; fail par cached list hi dikhti rehti hai
     }
   } catch (eG) {}
   // ALGORITHM v1.9.0 — RELATED SONGS: user jo gaane chalata hai unke artist
@@ -1455,8 +1477,13 @@ function musicMore() {
   step();
 }
 function musicError() {
+  // v1.9.17 CACHED-LIST PRESERVE — agar cached gaane paint hai (MQ.list non-
+  // empty) to error card MAT dalo — user ko gaane dikhte rahenge (list gayab
+  // nahi lagegi), agli open par fetch automatic retry (Ts sirf success par
+  // set hota hai). Error card SIRF tab jab sach me kuch cached na ho.
+  if (MQ.list && MQ.list.length) return;
   var el = document.getElementById('songList');
-  if (el) el.innerHTML = '<div class="berr">Music service is busy right now — open the home screen again in a moment.</div>';
+  if (el) el.innerHTML = '<div class="berr">Music service is busy right now — pull down to refresh, or open the home screen again in a moment.</div>';
   var st = document.getElementById('mStrip');
   if (st) st.style.display = 'none';
 }
