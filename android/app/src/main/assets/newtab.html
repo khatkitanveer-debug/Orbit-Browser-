@@ -1212,6 +1212,16 @@ try {
 // reset (gaana WAKAI chala = fresh count), natural 'ended' par bhi reset;
 // (4) user ka khud ka tap/next/prev = fresh start (non-silent errChain reset);
 // (5) natural 'ended' auto-next UNTOUCHED (v1.9.3 car scenario — feature hai).
+// v1.9.18 AUTO-NEXT OFF — user report (teesri baar): "wapis apne aap next next
+// songs ho rahe hai". v1.9.16 error-chain STOP kaam kar gaya tha, par natural
+// 'ended' -> next track (v1.9.3 car-scenario unlimited queue) feature ke roop
+// me chal raha tha — gaana khatam hote hi agla APNE AAP chalta tha. User ka
+// intent ab crystal clear: app me kuch bhi APNE AAP nahi hona chahiye. FIX:
+// 'ended' par auto-next HATA — player STOP (playing=false, idx=-1, 'Tap a
+// song to play'), agla gaana SIRF user ka tap/next/prev. musicMore (queue
+// grow) untouched — wo ab sirf user-next par hi trigger hoga (end ke 3
+// pehle fetch ki condition MQ.idx >= len-3 par user-next ke dauran hit hogi).
+// NOTE: error-chain STOP (3 fail = ruk) + 1200ms delay v1.9.16 se intact.
 var MQ = { list: [], idx: -1, playing: false, audio: null, built: false, skips: 0,
   errChain: 0,   // v1.9.16 — lagataar error skips (3 par STOP, rapid-march band)
   seen: {}, qUsed: {}, fetching: false, page: 1 };
@@ -1534,11 +1544,19 @@ function renderMusic() {
 function ensureAudio() {
   if (!MQ.audio) {
     MQ.audio = new Audio();
-    // v1.9.16 — auto-next SILENT (crash-toast-spam fix) + pehle errChain reset
-    // (reset pehle, phir advance — warna advance ke andar ka fail count zero
-    // ho jata). natural end = chain break: naya track = nayi shuruaat.
+    // v1.9.18 — AUTO-NEXT OFF: user report 3 baar — "apne aap next next ho
+    // rahe hai". v1.9.16 me error-chain roka tha, par NATURAL auto-next
+    // (gaana khatam -> agla khud chal jata) v1.9.3 car-scenario feature ke
+    // roop me chalta raha — user preference clear: KUCH BHI APNE AAP nahi.
+    // Ab gaana KHATAM = player RUK jata hai (honest UI, row highlight clear,
+    // 'Tap a song to play') — agla gaana user khud tap / next-button se.
     MQ.audio.addEventListener('ended', function () {
-      MQ.errChain = 0; playIdx(MQ.idx + 1, true);
+      MQ.errChain = 0;
+      MQ.playing = false;
+      MQ.idx = -1;
+      var np0 = document.getElementById('nowPlaying');
+      if (np0) np0.textContent = 'Tap a song to play';
+      try { updMusicUi(); } catch (eE1) {}
     });
     // v1.9.16 — gaana WAKAI chal gaya = error-chain break (agla fail fresh
     // ginti me gina jayega, purani fail-streak par nahi)
