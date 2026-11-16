@@ -123,6 +123,9 @@ class MainActivity : Activity() {
         var blockedCount: Int = 0      // Brave Shields — is page par kitne blocked
         var sleeping: Boolean = false  // Edge sleeping tabs — WebView frozen
         var evicted: Boolean = false   // Opera RAM limiter — WebView destroy hua, select par recreate
+        // v1.9.11 — pool-adopt WebView: pehli real load par back-stack purge
+        // (pool prewarm about:blank load karta hai — wo entry stack me reh jati thi)
+        var purgeOnFirstLoad: Boolean = false
         var lastActive: Long = System.currentTimeMillis()
     }
 
@@ -725,6 +728,30 @@ class MainActivity : Activity() {
         // wapas "keeps stopping" dialog nahi aayega
     }
 
+    /** v1.9.11 — SMART BACK (user: "back slide karne par blank screen aati hai").
+     *  Pool prewarm ki wajah se back-stack me about:blank entries rehti hai —
+     *  blind goBack() par blank screen aati thi. Ab: nearest REAL (non-blank)
+     *  entry par jump (goBackOrForward); peeche sirf blank hai to stack purge +
+     *  false — caller home screen dikhata hai. */
+    private fun goBackSmart(wv: WebView): Boolean {
+        val bfl = runCatching { wv.copyBackForwardList() }.getOrNull() ?: return false
+        // WebBackForwardList.getCurrentIndex() = current item position
+        // (getIndex() NAHI exist karta — na WebBackForwardList par, na WebHistoryItem par)
+        val cur = bfl.currentIndex
+        if (cur <= 0) return false
+        var target = -1
+        for (i in cur - 1 downTo 0) {
+            val u = bfl.getItemAtIndex(i)?.url ?: ""
+            if (u.isNotBlank() && u != "about:blank") { target = i; break }
+        }
+        if (target >= 0) {
+            return runCatching { wv.goBackOrForward(target - cur) }.isSuccess
+        }
+        // peeche koi real page nahi — ganda stack saaf karo, caller home dikhaye
+        runCatching { wv.clearHistory() }
+        return false
+    }
+
     override fun onBackPressed() {
         // emergency/survival screen chal rahi hai (init adhoora) — kuch na touch karo
         if (!this::tabSwitcher.isInitialized) {
@@ -756,13 +783,18 @@ class MainActivity : Activity() {
             cb?.onCustomViewHidden()
             return
         }
+        // v1.9.11 — SMART BACK: pehle REAL history (about:blank skip). Nahi mili
+        // to HOME dikhao (user: "ya home screen aani chahiye ya jo back page ho
+        // wahi aana chahiye") — sirf already-home par hi app exit hoga.
         val wv = activeTab?.webView
-        if (wv != null && wv.canGoBack()) {
-            wv.goBack()
-        } else if (tabs.size > 1) {
+        if (wv != null && goBackSmart(wv)) return
+        val onHome = activeTab?.let { it.isInternal && it.url == NEWTAB } == true
+        if (tabs.size > 1) {
             activeTab?.let { closeTab(it.id) } ?: super.onBackPressed()
-        } else {
+        } else if (onHome) {
             super.onBackPressed()
+        } else {
+            activeTab?.let { navigate(it.id, NEWTAB) } ?: super.onBackPressed()
         }
     }
 
@@ -1051,6 +1083,11 @@ class MainActivity : Activity() {
         val pooled = synchronized(webViewPool) { webViewPool.removeFirstOrNull() }
         if (pooled != null) {
             configureWebView(pooled, tab)
+            // v1.9.11 — pool WebView prewarm me about:blank load karta hai: uski
+            // back-stack ki PEHLI entry about:blank hoti hai. Pehli real load
+            // (onPageFinished) par stack purge — warna back slide about:blank par
+            // girta hai (user: "back slide karne par blank screen aati hai")
+            tab.purgeOnFirstLoad = true
             return pooled
         }
         // MODULE 3 v1.3.3 — BackgroundWebView: Chromium ko screen-lock/app-
@@ -2348,7 +2385,9 @@ class MainActivity : Activity() {
                 refreshChrome()
                 return
             }
-            if (!url.isNullOrEmpty() && !url.startsWith("data:")) {
+            // v1.9.11 — about:blank ko tab.url me KABHI nahi (back-stack slip par
+            // omnibox "about:blank" dikhta tha — screenshot wala bug)
+            if (!url.isNullOrEmpty() && !url.startsWith("data:") && url != "about:blank") {
                 tab.url = url
                 refreshChrome()
             }
@@ -2365,11 +2404,22 @@ class MainActivity : Activity() {
             sleeper.removeCallbacks(stallCheck)
             if (!omnibox.hasFocus()) omniIcon.visibility = View.VISIBLE
             updateShieldBadge()
+            // v1.9.11 — pool-adopt WebView ki PEHLI real load ke baad back-stack
+            // purge: prewarm se aayi about:blank entry stack se GAYAB. Ab back
+            // slide real history par girta hai, kabhi blank par nahi.
+            if (tab.purgeOnFirstLoad && view != null && url != "about:blank") {
+                // url != about:blank — adopt ke turant baad prewarm ka apna
+                // onPageFinished fire ho to flag WASTE na ho (renderer async race)
+                tab.purgeOnFirstLoad = false
+                runCatching { view.clearHistory() }
+            }
             // internal entry (back-nav included) — clean chrome, history me kuch nahi
             if (url == NEWTAB || url == "https://orbit.local/" || tab.isInternal) {
                 refreshChrome()
                 return
             }
+            // v1.9.11 — about:blank finish par tab.state/omnibox kabhi ganda nahi
+            if (url == "about:blank") return
             if (view == null || url.isNullOrEmpty()) return
             tab.url = url
             tab.title = view.title?.ifBlank { null } ?: domainOf(url)
@@ -5138,7 +5188,17 @@ class MainActivity : Activity() {
                         edgeFired = true
                         val goBack = dx > 0
                         val ok = if (goBack) {
-                            if (wv.canGoBack()) { wv.goBack(); true } else false
+                            // v1.9.11 — SMART BACK (about:blank skip): real history
+                            // mili → wahan; nahi mili aur site khuli hai → HOME
+                            // (user: "ya home aani chahiye ya jo back page ho wahi")
+                            if (wv.canGoBack() && goBackSmart(wv)) {
+                                true
+                            } else if (activeTab?.isInternal == true) {
+                                false // home/NTP par swipe-back = kuch nahi
+                            } else {
+                                activeTab?.let { navigate(it.id, NEWTAB) }
+                                true
+                            }
                         } else {
                             if (wv.canGoForward()) { wv.goForward(); true } else false
                         }
