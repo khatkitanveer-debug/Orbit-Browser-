@@ -1,7 +1,7 @@
 {
-  "versionCode": 50,
-  "versionName": "1.9.14",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.14/orbit-browser-1.9.14.apk",
-  "notes": "v1.9.14 — UPDATE CHECK HAR OPEN PAR: update ab app kholte hi milta hai — app poori tarah band karne par bhi, aur background se wapas khulne par bhi (10 min ke debounce ke saath, screen on/off par spam nahi). Naya version silent download hota hai aur INSTALL prompt khud aata hai. versionCode 50",
+  "versionCode": 51,
+  "versionName": "1.9.15",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.15/orbit-browser-1.9.15.apk",
+  "notes": "v1.9.15 — MUSIC SHORTCUT STABLE: main screen par Saavn gaane ab apne aap change NAHI hote — wahi list raheti hai. Naye gaane roz ek baar (24h) aate hai, aur home par neeche kheech kar (pull-to-refresh) turant fresh list maang sakte hai. versionCode 51",
   "minVersionCode": 1
 }
