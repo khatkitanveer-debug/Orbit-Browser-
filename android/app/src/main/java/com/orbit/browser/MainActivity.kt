@@ -482,7 +482,23 @@ class MainActivity : Activity() {
         // Chrome pull-to-refresh
         pullRefresh.setColorSchemeColors(0xFF8AB4F8.toInt())
         pullRefresh.setOnRefreshListener {
-            activeTab?.webView?.reload()
+            // v1.9.15 — home/NTP (internal tab) par pull-to-refresh = FORCE-REFRESH:
+            // sessionStorage one-shot flag (orbForceRefresh) set karke JS
+            // location.reload() — newtab.html ka buildMusic flag consume karke
+            // fresh feed fetch karta hai. Wajah: music list ab DAILY-STABLE hai
+            // (user report: "savvan gane shortcut me apne aap change ho rahe
+            // hai") — har home visit par fresh fetch band; manual pull par hi
+            // naye gaane. Normal sites par waise hi plain reload.
+            val wv = activeTab?.webView
+            if (activeTab?.isInternal == true) {
+                runCatching {
+                    wv?.evaluateJavascript(
+                        "try{sessionStorage.setItem('orbForceRefresh','1')}catch(e){};location.reload()", null,
+                    )
+                }
+            } else {
+                wv?.reload()
+            }
         }
         // PTR SIRF PAGE-TOP PAR — end se upar scroll karne par reload NAHI.
         // SwipeRefreshLayout ka default canChildScrollUp() seedhe container

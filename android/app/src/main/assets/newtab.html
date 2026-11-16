@@ -1327,6 +1327,33 @@ function saavnCollect(j, all, seen) {
 function buildMusic() {
   if (MQ.built) return;
   MQ.built = true;
+  // v1.9.15 STABLE MUSIC SHORTCUT — user report: "Main screen par savan gane
+  // shortcut me apne aap change ho rahe hai". ROOT: har NTP render par 250ms
+  // baad fresh trending fetch (top hindi/trending/punjabi/bollywood + user
+  // history queries) finish() par MQ.list REPLACE + renderMusic() innerHTML
+  // overwrite — orbCacheRender ke cached gaane gaayab, naye trending aa gaye
+  // = apne-aap change. FIX (Chrome parity — pinned content stable):
+  // DAILY-STABLE list — cached gaane 24h tak rukte hai (fetch skip,
+  // orbCacheRender ka paint hi final rehta hai); fresh fetch SIRF:
+  // (a) cache empty / pehli baar, (b) cache >= 24h purana (daily refresh —
+  // naye gaane roz milte hai), (c) pull-to-refresh FORCE (sessionStorage
+  // orbForceRefresh one-shot — MainActivity home reload par set karta hai,
+  // isse manual pull par naye gaane guaranteed). musicMore playback-grow
+  // untouched (user khud gaana chala raha hai — queue grow expected).
+  try {
+    var forced = false;
+    try { forced = sessionStorage.getItem('orbForceRefresh') === '1'; } catch (eS) {}
+    if (forced) {
+      try { sessionStorage.removeItem('orbForceRefresh'); } catch (eR) {}   // one-shot
+    } else {
+      var ts = parseInt(orbCGet('orbCacheMusicTs') || '0', 10) || 0;
+      var cached = orbCGet('orbCacheMusic');
+      if (cached && cached.length && ts > 0 &&
+          (Date.now() - ts) < 24 * 60 * 60 * 1000) {
+        return;   // fresh cache — stable list, fetch skip (apne-aap change band)
+      }
+    }
+  } catch (eG) {}
   // ALGORITHM v1.9.0 — RELATED SONGS: user jo gaane chalata hai unke artist
   // + ALBUM dono se related queries (album = wahi vibe ke gaane), phir defaults.
   var qs = ['top hindi songs', 'trending songs', 'top punjabi songs', 'bollywood hits'];
@@ -1365,7 +1392,10 @@ function buildMusic() {
       // (renderMusic), PLAYBACK chain isliye unlimited ban sakta hai.
       MQ.list = all;
       MQ.seen = seen;   // global dedupe — isi me dobara wahi gaana kabhi nahi
-      try { orbCSet('orbCacheMusic', all.slice(0, 15)); } catch (eC) {}   // v1.9.8 instant-home
+      // v1.9.8 instant-home snapshot + v1.9.15 daily-stability timestamp:
+      // Ts = fetch-complete time — agle NTP render par buildMusic isse 24h
+      // staleness check me use karta hai (fresh cache = fetch skip = stable list)
+      try { orbCSet('orbCacheMusic', all.slice(0, 15)); orbCSet('orbCacheMusicTs', Date.now()); } catch (eC) {}
       renderMusic();
     } catch (e) { musicError(); }
   }
