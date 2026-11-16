@@ -1201,7 +1201,19 @@ try {
 // related queries → pagination fallback (p=2,3.. live-verified 0 overlap);
 // (3) MQ.seen global dedupe — koi gaana dobara nahi; (4) rows UI cap 15,
 // duplicate listeners guard; (5) skip-cap 20 bound.
+// v1.9.16 SKIP-CHAIN STOP — user report: "update ke baad bhi apne aap songs
+// Next Next ho rahe hai" (Now playing khud-ba-khud Pal -> Tumse Behtar 6 sec
+// me). v1.9.15 ne LIST stability fix ki thi, par PLAYER ka error-skip chain
+// untouched tha: audio fail -> a.onerror -> playIdx(idx+1) @250ms -> fail ->
+// agla... skip-cap 20 tak RAPID MARCH — ek user-tap par 5+ gaane apne aap
+// badal jate the. FIX: (1) 3 LAGATAAR error = STOP honest UI (stopMusicQueue)
+// — rapid march khatam, koi fake 'Now playing' nahi; (2) skip delay 250ms ->
+// 1200ms — network/CDN ko recover hone do; (3) 'playing' event par errChain
+// reset (gaana WAKAI chala = fresh count), natural 'ended' par bhi reset;
+// (4) user ka khud ka tap/next/prev = fresh start (non-silent errChain reset);
+// (5) natural 'ended' auto-next UNTOUCHED (v1.9.3 car scenario — feature hai).
 var MQ = { list: [], idx: -1, playing: false, audio: null, built: false, skips: 0,
+  errChain: 0,   // v1.9.16 — lagataar error skips (3 par STOP, rapid-march band)
   seen: {}, qUsed: {}, fetching: false, page: 1 };
 function musicHist() {
   try { return JSON.parse(localStorage.getItem('orbit_music') || '[]'); } catch (e) { return []; }
@@ -1495,16 +1507,42 @@ function renderMusic() {
 function ensureAudio() {
   if (!MQ.audio) {
     MQ.audio = new Audio();
-    // auto-next SILENT — ek bhi toast nahi (crash-toast-spam fix)
-    MQ.audio.addEventListener('ended', function () { playIdx(MQ.idx + 1, true); });
+    // v1.9.16 — auto-next SILENT (crash-toast-spam fix) + pehle errChain reset
+    // (reset pehle, phir advance — warna advance ke andar ka fail count zero
+    // ho jata). natural end = chain break: naya track = nayi shuruaat.
+    MQ.audio.addEventListener('ended', function () {
+      MQ.errChain = 0; playIdx(MQ.idx + 1, true);
+    });
+    // v1.9.16 — gaana WAKAI chal gaya = error-chain break (agla fail fresh
+    // ginti me gina jayega, purani fail-streak par nahi)
+    MQ.audio.addEventListener('playing', function () { MQ.errChain = 0; });
   }
   return MQ.audio;
+}
+/** v1.9.16 SKIP-CHAIN STOP — 3 lagataar error par player RUK jata hai (honest
+ *  UI): fake 'Now playing' nahi, idx -1 (row highlight bhi hat jata hai).
+ *  User ko tap karke dobara chalana hai — uska tap hi naya fresh start. */
+function stopMusicQueue(silent) {
+  MQ.errChain = 0;
+  MQ.skips = 0;
+  MQ.playing = false;
+  MQ.idx = -1;
+  try { if (MQ.audio) MQ.audio.pause(); } catch (e9) {}
+  var np0 = document.getElementById('nowPlaying');
+  if (np0) np0.textContent = 'Playback stopped — tap a song to retry';
+  if (!silent) {
+    try { OrbitBridge.toast('Songs are unavailable right now — please try again later'); } catch (e0) {}
+  }
+  try { updMusicUi(); } catch (e3) {}
 }
 /** v1.9.0 crash-proof play: skip-cap (sab fail = ek friendly toast, loop GAYA),
  *  poora body try/catch, 320kbps try + error par 96kbps fallback. */
 function playIdx(i, silent) {
   try {
     if (!MQ.list.length) return;
+    // v1.9.16 — user ka khud ka tap/next/prev = FRESH START: purani error-chain
+    // bhool jao (purane fail streak par 3-error stop user ka tap na roke)
+    if (!silent) MQ.errChain = 0;
     // SKIP-CAP — poori list try ho gayi to ruk jao (recursion ka the end);
     // v1.9.3: unlimited queue me cap 20 (bade queue me 20 tries kaafi)
     if (MQ.skips >= Math.min(MQ.list.length, 20)) {
@@ -1525,9 +1563,14 @@ function playIdx(i, silent) {
     var u = s ? songUrl(s) : '';
     if (!s || !u) {
       MQ.skips++;
+      MQ.errChain++;
+      // v1.9.16 SKIP-CHAIN STOP — 3 lagataar error par rapid march BAND
+      if (MQ.errChain >= 3) return stopMusicQueue(silent);
       // toast sirf CHAIN ke pehle skip par (11 toasts nahi — UX)
       if (!silent && MQ.skips === 1) { try { OrbitBridge.toast('Song unavailable — skipping'); } catch (e1) {} }
-      return playIdx(MQ.idx + 1, silent);
+      // v1.9.16 — 250ms -> 1200ms: network/CDN ko recover hone do, rapid-fire
+      // skip nahi (user ko apne-aap 'Next Next' nahi dikhega)
+      return setTimeout(function () { playIdx(MQ.idx + 1, silent); }, 1200);
     }
     var a = ensureAudio();
     // 320kbps HIGH-QUALITY try — load fail par 96kbps, wo bhi fail ho to SILENT
@@ -1544,8 +1587,12 @@ function playIdx(i, silent) {
         }
         a.onerror = null;
         MQ.skips++;
+        MQ.errChain++;
         MQ.playing = false;
-        setTimeout(function () { playIdx(MQ.idx + 1, silent); }, 250);
+        // v1.9.16 SKIP-CHAIN STOP — 3 lagataar error par rapid march BAND
+        if (MQ.errChain >= 3) return stopMusicQueue(silent);
+        // v1.9.16 — 250ms -> 1200ms — network/CDN ko recover hone do
+        setTimeout(function () { playIdx(MQ.idx + 1, silent); }, 1200);
       } catch (e2) {}
     };
     a.src = src;
