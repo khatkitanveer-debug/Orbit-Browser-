@@ -3313,9 +3313,17 @@ class MainActivity : Activity() {
             addView(content)
             isVerticalScrollBarEnabled = false
         }
-        pageOverlay.addView(scroll, LinearLayout.LayoutParams(
+        // v1.9.12 — FRAME OVERLAP FIX (user: "Setting me font mix ho rahe hai
+        // header me"): pageOverlay FRAME LAYOUT hai — pehle wala fix (v1.9.9)
+        // overlay ko sirf full-screen banata tha, par scroll MATCH_PARENT height
+        // se y=0 par hi paint hota tha = header bar (58dp) ke UPAR content ki
+        // pehli row ka title MIX ho jata tha (screenshot: "Search Settings" +
+        // "Default search engine" ek jagah). FIX: scroll ko topMargin=58dp se
+        // header ke NEECHE push — ab header/content kabhi overlap nahi karte
+        // (har settings/history/bookmarks/downloads page pe).
+        pageOverlay.addView(scroll, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
-        ))
+        ).apply { topMargin = dp(58) })
         pageOverlay.visibility = View.VISIBLE
         pageOpen = true
         // v1.9.9 — Animation setting ab REAL hai (pehle sirf naam tha):
