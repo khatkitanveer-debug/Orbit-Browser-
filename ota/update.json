@@ -1,7 +1,7 @@
 {
-  "versionCode": 48,
-  "versionName": "1.9.12",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.12/orbit-browser-1.9.12.apk",
-  "notes": "v1.9.12 — SETTINGS HEADER FIX: har settings page (Search/Browsing/Download/Notification/Themes/History/etc.) me page ka title aur pehli setting row ka text ek hi jagah mix ho rahe the. Ab header alag aur content uske neeche — sab settings pages ka header clean. versionCode 48",
+  "versionCode": 49,
+  "versionName": "1.9.13",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.13/orbit-browser-1.9.13.apk",
+  "notes": "v1.9.13 — OFFLINE CACHE: videos aur songs ab disk-cache me save hote hai — dobara kholne par turant chalte hai, offline me bhi (jitna download hua utna resume hota hai). Network band hone par browser cached pages se chalta hai (back/reload par bhi page dikhta hai). Main screen cached content se instant paint hoti hai. versionCode 49",
   "minVersionCode": 1
 }
