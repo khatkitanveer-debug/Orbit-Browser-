@@ -1,7 +1,7 @@
 {
-  "versionCode": 47,
-  "versionName": "1.9.11",
-  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.11/orbit-browser-1.9.11.apk",
-  "notes": "v1.9.11 — BACK BLANK SCREEN FIX: search ya koi site kholne ke baad back slide karne par blank screen (omnibox me about:blank) aati thi — na home aati thi na pichla page. Root: WebView pool ki purani blank entry back-history me chhupi reh jati thi. Ab back par pichla asli page khulega, history na ho to HOME screen khulegi — blank screen ab kabhi nahi aayegi (system back + edge slide dono fixed). versionCode 47",
+  "versionCode": 48,
+  "versionName": "1.9.12",
+  "apkUrl": "https://github.com/khatkitanveer-debug/Orbit-Browser-/releases/download/v1.9.12/orbit-browser-1.9.12.apk",
+  "notes": "v1.9.12 — SETTINGS HEADER FIX: har settings page (Search/Browsing/Download/Notification/Themes/History/etc.) me page ka title aur pehli setting row ka text ek hi jagah mix ho rahe the. Ab header alag aur content uske neeche — sab settings pages ka header clean. versionCode 48",
   "minVersionCode": 1
 }
